@@ -1,0 +1,23 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # The ci environment has no PyTorch or models: every test runs on CPU with small stand-ins.
+      - name: Install pixi and the ci environment
+        uses: prefix-dev/setup-pixi@v0.8.1
+        with:
+          pixi-version: v0.79.0
+          environments: ci
+          cache: true
+
+      - name: Run tests
+        run: pixi run -e ci test

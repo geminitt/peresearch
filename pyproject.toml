@@ -1,0 +1,15 @@
+[project]
+name = "peresearch"
+version = "0.1.0"
+description = "A personal research agent: your own files first, then the web, every claim cited"
+requires-python = ">=3.12"
+
+[project.scripts]
+peresearch = "peresearch.cli:main"
+
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]

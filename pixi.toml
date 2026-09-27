@@ -1,0 +1,28 @@
+[workspace]
+name = "peresearch"
+channels = ["conda-forge"]
+platforms = ["linux-64"]
+
+# base: indexing, search plumbing, guard and tests (CPU only; what CI installs)
+[dependencies]
+python = "3.12.*"
+numpy = "*"
+pytest = "*"
+
+[pypi-dependencies]
+peresearch = { path = ".", editable = true }
+bm25s = "*"
+pymupdf = "*"
+huggingface_hub = "*"
+
+# models: BGE-M3 and the reranker on the local GPU
+[feature.models.pypi-dependencies]
+torch = "*"
+sentence-transformers = "*"
+
+[environments]
+default = ["models"]
+ci = []
+
+[tasks]
+test = "pytest -q"
