@@ -151,3 +151,61 @@ def test_search_sees_an_update_made_by_another_process(home, notes):
     Index(home, embedder=FakeEmbedder()).update([notes])              # another process updates the index
     hits, _, _ = s.find("đồi thông hồ xuân hương", k=1)
     assert hits and hits[0].path.endswith("new.md")
+
+
+class SearchingEmbedder(FakeEmbedder):
+    """Embeds like FakeEmbedder, but first lets a search run: another process querying mid-update."""
+
+    def __init__(self, search):
+        self.search = search
+
+    def documents(self, texts):
+        self.search()
+        return super().documents(texts)
+
+
+def test_search_works_while_another_process_is_indexing(home, notes):
+    idx, s = make(home, notes)
+    idx.update([notes])
+    s.find("phở nước dùng", k=1)
+    (notes / "new.md").write_text("# Đà Lạt\n\nĐồi thông và hồ Xuân Hương.\n")
+    during = []
+    Index(home, embedder=SearchingEmbedder(lambda: during.append(s.find("đồi thông", k=3)))).update([notes])
+    assert len(during) == 1                                           # the search mid-update did not fail
+    hits, _, _ = s.find("đồi thông hồ xuân hương", k=1)
+    assert hits and hits[0].path.endswith("new.md")
+
+
+def test_search_works_between_the_vectors_write_and_the_commit(home, notes, monkeypatch):
+    idx, s = make(home, notes)
+    idx.update([notes])
+    s.find("phở nước dùng", k=1)
+    (notes / "food.md").unlink()                                      # the other process drops a file's chunks
+    (notes / "new.md").write_text("# Đà Lạt\n\nĐồi thông và hồ Xuân Hương.\n")   # and adds one
+    other = Index(home, embedder=FakeEmbedder())
+    save, during = other._save_dense, []
+
+    def save_then_search(ids, vecs):
+        save(ids, vecs)
+        during.append(s.find("phở nước dùng xương bò", k=3))           # new vectors, old chunks still committed
+    monkeypatch.setattr(other, "_save_dense", save_then_search)
+    other.update([notes])
+    assert len(during) == 1
+    hits, _, _ = s.find("đồi thông hồ xuân hương", k=1)
+    assert hits and hits[0].path.endswith("new.md")
+
+
+def test_an_index_written_before_the_single_vector_file_is_read_and_migrated(home, notes):
+    import numpy as np
+
+    idx, s = make(home, notes)
+    idx.update([notes])
+    ids, vecs = idx.dense()
+    (home / "dense.npz").unlink()
+    np.save(home / "dense_ids.npy", ids)                                # the old two-file layout
+    np.save(home / "dense.npy", vecs)
+    fresh, s2 = make(home, notes)
+    assert s2.find("gradient descent", k=1)[0][0].path.endswith("ml.md")
+    (notes / "new.md").write_text("# Mới\n\nMột ghi chú mới.\n")
+    fresh.update([notes])
+    assert (home / "dense.npz").exists() and not (home / "dense.npy").exists()

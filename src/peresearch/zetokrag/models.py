@@ -1,8 +1,8 @@
 """The local encoder models, pinned to exact Hugging Face revisions (a moved revision is a different model).
 
-ZetokRAG reranks with bge-reranker-v2-m3. Its dense embedder, Qwen3-Embedding-0.6B or BGE-M3, is not settled
-yet: a rule fixed before the full benchmark run decides it from that run. The other embedders are here so the
-benchmark can compare against them. Texts are cut at 512 tokens for every model alike.
+ZetokRAG embeds with Qwen3-Embedding-0.6B, chosen over BGE-M3 by a rule fixed before the benchmark
+(results/retrieval.md), and reranks with bge-reranker-v2-m3. The other embedders are here so the benchmark can
+compare against them. Texts are cut at 512 tokens for every model alike.
 """
 
 import numpy as np

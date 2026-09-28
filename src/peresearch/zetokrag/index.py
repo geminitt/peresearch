@@ -2,7 +2,9 @@
 
 `update` walks the declared folders and only re-reads files whose size or modification time changed (and
 only re-chunks them when their content hash changed). Files that disappeared or fell out of the declared
-folders are dropped. Paragraphs that look like they hold a credential are withheld: they are never stored, and
+folders are dropped. Another process may search while an update runs: the new chunks are embedded and the
+vectors written (one file, replaced atomically) before the chunks are committed, so a reader always sees
+vectors for every committed chunk; extra vectors of not-yet-committed chunks are ignored by the search. Paragraphs that look like they hold a credential are withheld: they are never stored, and
 the report names the file, not the content.
 """
 
@@ -24,7 +26,7 @@ CREATE TABLE IF NOT EXISTS chunks (id INTEGER PRIMARY KEY, path TEXT, section TE
                                    end INTEGER, text TEXT, sha TEXT);
 CREATE INDEX IF NOT EXISTS chunks_path ON chunks(path);
 """
-EMBEDDER = "qwen3-embedding-0.6b"   # default until the full benchmark run settles Qwen3 vs BGE-M3
+EMBEDDER = "qwen3-embedding-0.6b"   # chosen over BGE-M3 by a rule fixed before the benchmark (results/retrieval.md)
 MAX_FILES_PER_FOLDER = 500   # more files than this side by side is a dataset (e.g. 12,500 reviews), not notes
 
 
@@ -73,15 +75,30 @@ class Index:
         return self._embedder
 
     def dense(self) -> tuple[np.ndarray, np.ndarray]:
-        ids_path, vec_path = self.home / "dense_ids.npy", self.home / "dense.npy"
-        if ids_path.exists():
-            return np.load(ids_path), np.load(vec_path)
+        """(chunk ids, fp16 vectors), ids ascending. Read from one file, so ids and vectors always match."""
+        path = self.home / "dense.npz"
+        if path.exists():
+            with np.load(path) as z:
+                return z["ids"], z["vecs"]
+        old_ids, old_vecs = self.home / "dense_ids.npy", self.home / "dense.npy"   # indexes written before 0.1
+        if old_ids.exists():
+            return np.load(old_ids), np.load(old_vecs)
         return np.zeros(0, dtype=np.int64), np.zeros((0, 0), dtype=np.float16)
+
+    def _save_dense(self, ids: np.ndarray, vecs: np.ndarray) -> None:
+        """Write to a temporary file, then rename over the old one: a reader sees the old file or the new one."""
+        tmp = self.home / "dense.tmp.npz"
+        np.savez(tmp, ids=ids, vecs=vecs)
+        os.replace(tmp, self.home / "dense.npz")
+        for old in ("dense_ids.npy", "dense.npy"):
+            (self.home / old).unlink(missing_ok=True)
 
     def dense32(self) -> tuple[np.ndarray, np.ndarray]:
         """The stored vectors as float32, converted once and kept until the file on disk changes (an update by
         this or another process), instead of reading and converting them for every query."""
-        path = self.home / "dense.npy"
+        path = self.home / "dense.npz"
+        if not path.exists():
+            path = self.home / "dense.npy"
         stamp = path.stat().st_mtime_ns if path.exists() else None
         if self._dense32 is None or self._dense32[0] != stamp:
             ids, vecs = self.dense()
@@ -171,8 +188,8 @@ class Index:
             self.db.execute("DELETE FROM chunks WHERE path=?", (key,))
             self.db.execute("DELETE FROM files WHERE path=?", (key,))
             report.removed += 1
+        self._sync_dense()      # vectors first, then the chunks become visible to other processes
         self.db.commit()
-        self._sync_dense()
         self._bm25 = None
         report.chunks = self.db.execute("SELECT COUNT(*) FROM chunks").fetchone()[0]
         guard.audit("index", added=report.added, changed=report.changed, removed=report.removed,
@@ -180,7 +197,9 @@ class Index:
         return report
 
     def _sync_dense(self) -> None:
-        """Embed chunks that have no vector yet; drop vectors of deleted chunks."""
+        """Embed chunks that have no vector yet and drop vectors of deleted chunks, as this update's uncommitted
+        transaction sees them. Readers meanwhile see the old chunks: the few just deleted lose their vectors a
+        moment early, which the search tolerates."""
         old_ids, old_vecs = self.dense()
         rows = self.db.execute("SELECT id, section, text FROM chunks ORDER BY id").fetchall()
         ids = np.array([r[0] for r in rows], dtype=np.int64)
@@ -193,5 +212,4 @@ class Index:
             old_ids = np.concatenate([old_ids, [r[0] for r in new]]).astype(np.int64)
             old_vecs = np.concatenate([old_vecs, vecs]) if len(old_vecs) else vecs
         order = np.argsort(old_ids)
-        np.save(self.home / "dense_ids.npy", old_ids[order])
-        np.save(self.home / "dense.npy", old_vecs[order] if len(old_vecs) else old_vecs)
+        self._save_dense(old_ids[order], old_vecs[order] if len(old_vecs) else old_vecs)

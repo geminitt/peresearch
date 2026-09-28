@@ -67,10 +67,12 @@ class Searcher:
         dense_ids, vecs = self.index.dense32()
         if bm is None or len(dense_ids) == 0:
             return [], np.zeros(0, dtype=np.float32)
-        assert np.array_equal(bm_ids, dense_ids), "index out of sync: run `peresearch index`"
         lexical = bm.scores(query)
         q = self.index.embedder.queries([query])[0].astype(np.float32)
         semantic = vecs @ q
+        if not np.array_equal(bm_ids, dense_ids):     # another process is mid-update: align the two by chunk id
+            pos = np.minimum(np.searchsorted(dense_ids, bm_ids), len(dense_ids) - 1)
+            semantic = np.where(dense_ids[pos] == bm_ids, semantic[pos], -np.inf).astype(np.float32)
         cand, _ = core.fuse_minmax(lexical, semantic, RHO, N_FIRST)
         rows = self.index.rows(bm_ids[cand[:N_RERANK]])
         scores = self.reranker.scores(query, [embed_text(r[2], r[6]) for r in rows])
