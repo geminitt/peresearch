@@ -26,9 +26,17 @@ sentence-transformers = "*"
 pyarrow = ">=25.0.1, <26"
 pandas = ">=3.0.6, <4"
 
+# serve: vLLM on the laptop, to test deploy/modal_vllm.py's flags with a small model (deploy/local_vllm.py)
+[feature.serve.dependencies]
+numpy = "<2.4"          # vLLM needs numba and mistral-common, which do not support numpy 2.4 yet
+
+[feature.serve.pypi-dependencies]
+vllm = "==0.29.0"
+
 [environments]
 default = ["models"]
 ci = []
+serve = ["serve"]
 
 [tasks]
 test = "pytest -q"

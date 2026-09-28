@@ -82,7 +82,12 @@ class LLM:
 
     def __init__(self, url: str | None = None, model: str | None = None, key: str | None = None, client=None,
                  max_tokens: int = 4096, temperature: float = 0.6, top_p: float = 0.95, retries: int = 5,
-                 wait: float = 10.0, on_wait=None):
+                 wait: float = 10.0, on_wait=None, thinking: bool | None = None):
+        """`thinking` switches a Qwen model's reasoning on or off (vLLM's chat_template_kwargs); None keeps the
+        server's default. PERESEARCH_LLM_THINKING=on/off sets it from the settings."""
+        if thinking is None and settings.get("PERESEARCH_LLM_THINKING") in ("on", "off"):
+            thinking = settings.get("PERESEARCH_LLM_THINKING") == "on"
+        self.thinking, self.template_kwargs = thinking, True
         if client is None:
             from openai import OpenAI
 
@@ -95,15 +100,21 @@ class LLM:
         self.max_tokens, self.temperature, self.top_p = max_tokens, temperature, top_p
         self.retries, self.wait, self.on_wait = retries, wait, on_wait or (lambda msg: None)
 
-    def chat(self, messages: list[dict], tools: list[dict] | None = None) -> Reply:
+    def chat(self, messages: list[dict], tools: list[dict] | None = None, thinking: bool | None = None) -> Reply:
         sent = [_outbound(m) for m in messages]
+        thinking = self.thinking if thinking is None else thinking
         for attempt in range(self.retries):
+            extra = ({"extra_body": {"chat_template_kwargs": {"enable_thinking": thinking}}}
+                     if thinking is not None and self.template_kwargs else {})
             try:
                 r = self.client.chat.completions.create(model=self.model, messages=sent, tools=tools or None,
                                                         max_tokens=self.max_tokens, temperature=self.temperature,
-                                                        top_p=self.top_p)
+                                                        top_p=self.top_p, **extra)
                 break
             except Exception as e:
+                if type(e).__name__ == "BadRequestError" and extra:      # a server without chat_template_kwargs
+                    self.template_kwargs = False
+                    continue
                 if type(e).__name__ not in self.RETRYABLE or attempt == self.retries - 1:
                     raise
                 pause = self.wait * 2 ** attempt

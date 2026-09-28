@@ -30,8 +30,9 @@ class ScriptedLLM:
     def __init__(self, *replies):
         self.replies, self.seen = list(replies), []
 
-    def chat(self, messages, tools=None):
+    def chat(self, messages, tools=None, thinking=None):
         self.seen.append((json.loads(json.dumps(messages)), tools))
+        self.thinking = getattr(self, "thinking", []) + [thinking]
         return self.replies.pop(0) if self.replies else Reply("fallback answer [N1]")
 
 
@@ -115,9 +116,9 @@ def test_limits_cap_web_searches_and_steps(home, notes):
     loop = [Reply("", [ToolCall(f"c{i}", "web_search", {"query": f"q{i}"})]) for i in range(20)]
     a, llm = agent(home, notes, *loop, limits=Limits(steps=6, web_searches=2))
     ans = a.ask("search forever")
-    assert a.toolbox.web_calls == 2 and ans.stopped == "steps" and ans.steps == 7
+    assert a.toolbox.web_calls == 2 and ans.stopped == "steps" and ans.steps == 8   # 6 + the forced answer + its retry
     assert llm.seen[-1][1] is None                                    # the last call offers no tools: answer now
-    assert "Limit reached" in llm.seen[-1][0][-1]["content"]
+    assert any("Limit reached" in m["content"] for m in llm.seen[-1][0] if m["role"] == "user")
 
 
 def test_web_providers_rotate_and_then_the_web_is_unavailable(home, notes):
@@ -246,3 +247,40 @@ def test_the_terminal_interface_asks_and_shows_the_answer(home, notes):
             return md.source if hasattr(md, "source") else md._markdown
     shown = asyncio.run(run())
     assert "Your notes cover it [N1]." in shown and "**Sources**" in shown and "answer" in events
+
+
+def test_an_empty_answer_is_asked_again_without_reasoning(home, notes):
+    a, llm = agent(home, notes, Reply("", reasoning="it is all in here, never closed"), Reply("BPE merges pairs [N1]."))
+    ans = a.ask("BPE merges pairs?")
+    assert ans.text == "BPE merges pairs [N1]." and llm.thinking[-1] is False and ans.steps == 2
+
+
+def test_a_server_without_template_switches_is_asked_without_them():
+    class BadRequestError(Exception):
+        pass
+    seen = []
+
+    def create(**kw):
+        seen.append("extra_body" in kw)
+        if "extra_body" in kw:
+            raise BadRequestError("unknown field chat_template_kwargs")
+        return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content="ok", tool_calls=None))], usage=None)
+    llm = LLM(client=SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create))), model="m", thinking=False)
+    assert llm.chat([{"role": "user", "content": "x"}]).text == "ok" and seen == [True, False]
+    llm.chat([{"role": "user", "content": "y"}])
+    assert seen[-1] is False                                        # remembered for the session
+
+
+def test_the_check_ignores_quote_marks_that_do_not_enclose_a_cited_quote():
+    src = {"N1": Source("N1", "file", "a.md:L1", "", "KV cache stores keys and values.")}
+    text = 'The files do not define "KV cache" in Vietnamese. The notes [N1] and [N2] discuss it as "a cache".'
+    c = check(text.replace(" and [N2]", ""), src)
+    assert c.unsupported_quotes == [] and c.ok                          # from the real local run of 2026-09-29
+
+
+def test_the_model_is_told_when_the_web_is_unavailable(home, notes):
+    a, llm = agent(home, notes, Reply("Only your files [N1]."))
+    a.toolbox.web.providers = []
+    a.ask("BPE merges pairs?")
+    assert "Web search is NOT available" in llm.seen[0][0][0]["content"]
+    assert all(t["function"]["name"] not in ("web_search", "fetch") for t in llm.seen[0][1])

@@ -34,7 +34,8 @@ How to work:
 
 How to answer:
 - Answer in the language of the user's question; if it is unclear, in Vietnamese.
-- Three parts, in this order, each with a short heading in the answer's language:
+- Three parts, in this order, each with a short heading written in the answer's language (in Vietnamese:
+  "Trong tài liệu của bạn", "Mới từ web", "Tổng hợp"):
   1. what the user's own files already say (or that they say nothing about it);
   2. what is new from the web (or that the web was not needed / not available);
   3. a synthesis that answers the question.
@@ -42,8 +43,10 @@ How to answer:
   results. When you quote, quote exactly and cite the source of the quote.
 - If the sources do not support an answer, say so instead of guessing."""
 
+NO_WEB = ("\n\nWeb search is NOT available in this session (no provider configured, or all are out of credits). "
+          "Do not claim anything came from the web; say in part 2 that the web was not available.")
 _CITE = re.compile(r"\[((?:[NW]\d+)(?:\s*,\s*[NW]\d+)*)\]")
-_QUOTE = re.compile(r"[\"“]([^\"”]{12,300})[\"”]")
+_QUOTE = re.compile(r"[\"“]([^\"”\[\]\n]{12,300})[\"”]")     # one line, no citation inside it
 _INJECTION = re.compile(r"(?i)\b(ignore (all |any )?(previous|prior|above) (instructions|prompts?)|system prompt|"
                         r"you are now|disregard (the|all|your) |new instructions|developer mode|do not tell the user)")
 
@@ -92,10 +95,9 @@ def check(answer: str, sources: dict[str, Source]) -> Check:
         c.unknown_ids += [i for i in ids if i not in sources and i not in c.unknown_ids]
         cited_in.append((m.start(), ids))
     c.uncited = not cited_in and bool(sources)
-    for m in _QUOTE.finditer(answer):
+    for m in _QUOTE.finditer(answer):       # a quote attributed by a citation right after it must be verbatim
         near = [i for pos, ids in cited_in if 0 <= pos - m.end() <= 80 for i in ids if i in sources]
-        pool = [sources[i].text for i in near] or [s.text for s in sources.values()]
-        if not any(_norm(m.group(1)) in _norm(t) for t in pool):
+        if near and not any(_norm(m.group(1)) in _norm(sources[i].text) for i in near):
             c.unsupported_quotes.append(m.group(1))
     return c
 
@@ -143,7 +145,8 @@ class Agent:
         tb, lim, start = self.toolbox, self.limits, time.time()
         tb.sources = type(tb.sources)()
         tb.web_calls, fetches = 0, 0
-        messages = [{"role": "system", "content": SYSTEM}, *self.history(), {"role": "user", "content": question}]
+        system = SYSTEM + ("" if any(t["function"]["name"] == "web_search" for t in tb.schemas()) else NO_WEB)
+        messages = [{"role": "system", "content": system}, *self.history(), {"role": "user", "content": question}]
         self.on_event("tool", "search_notes (your files first)")
         first = tb.call("search_notes", {"query": question})
         messages += [{"role": "assistant", "content": "", "tool_calls": [{
@@ -163,6 +166,13 @@ class Agent:
             prompt, completion = prompt + reply.prompt_tokens, completion + reply.completion_tokens
             if not reply.calls or over:
                 text = reply.text
+                if not text.strip():        # e.g. the whole answer left inside unclosed reasoning: ask once more
+                    self.on_event("think", "empty answer; asking again without reasoning")
+                    messages.append({"role": "user", "content": "Write the final answer now, following the answer rules."})
+                    again = self.llm.chat(messages, None, thinking=False)
+                    steps += 1
+                    prompt, completion = prompt + again.prompt_tokens, completion + again.completion_tokens
+                    text = again.text
                 break
             messages.append({"role": "assistant", "content": reply.text, "tool_calls": [
                 {"id": c.id, "type": "function", "function": {"name": c.name, "arguments": json.dumps(c.args, ensure_ascii=False)}}
