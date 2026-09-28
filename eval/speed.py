@@ -115,19 +115,39 @@ def report(out_path: Path = RESULTS / "speed.md") -> str:
             lines.append(f"| {n} | {m} | {cell('embed')} | {cell('bm25')} | {cell('dense+fusion')} | "
                          f"{cell('rerank')} | {cell('total')} |")
     text = "\n".join(lines) + "\n"
+    out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(text)
     return text
 
 
-def main():
-    from peresearch.zetokrag.models import Reranker
+def gpu_memory() -> str:
+    import torch
 
+    free, total = torch.cuda.mem_get_info()
+    return (f"GPU used {(total - free) / 2**30:.2f} GiB of {total / 2**30:.2f}, by PyTorch "
+            f"{torch.cuda.memory_allocated() / 2**30:.2f} allocated / {torch.cuda.memory_reserved() / 2**30:.2f} reserved")
+
+
+def main(only=None):
+    """Every corpus this machine has embedded (or only those named); a failure (e.g. out of memory) is logged with the GPU memory state
+    and the next corpus still runs."""
+    import traceback
+
+    from peresearch.zetokrag.models import Reranker, free_gpu
+
+    log("start:", gpu_memory())
     reranker = Reranker()
-    for name in DATASETS:               # the corpora this machine has embedded (a worker may hold only some)
-        if all((RUNS / name / f"docs-{m}.npy").exists() for m in MODELS):
-            run_corpus(name, reranker)
+    for name in DATASETS:
+        if all((RUNS / name / f"docs-{m}.npy").exists() for m in MODELS) and (not only or name in only):
+            log(name, "before:", gpu_memory())
+            try:
+                run_corpus(name, reranker)
+            except Exception:
+                log(name, "FAILED:", gpu_memory())
+                traceback.print_exc()
+                free_gpu()
     print(report())
 
 
 if __name__ == "__main__":
-    report() if sys.argv[1:] == ["report"] else main()
+    report() if sys.argv[1:] == ["report"] else main(sys.argv[1:])
