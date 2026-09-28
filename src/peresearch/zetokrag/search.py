@@ -1,6 +1,6 @@
 """`find`: the ZetokRAG query over the local index.
 
-BM25 (diacritic-folded only for queries typed without accents) and Qwen3-Embedding-0.6B each propose their
+BM25 (diacritic-folded only for queries typed without accents) and the dense embedder each propose their
 top candidates, min-max fusion (rho) merges them, bge-reranker-v2-m3
 reranks the best N_RERANK, and the top k are returned with their source and neighbouring chunks. Before an
 excerpt is shown, its file is checked again: if the file changed and the excerpt is no longer in it, the

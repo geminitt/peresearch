@@ -6,7 +6,7 @@ searches the web, and cites every claim.**
 Status: under construction — the retrieval layer (ZetokRAG) and the guard are done; the agent is next. Design:
 
 - **ZetokRAG** (zero-token RAG) finds evidence in your own files without calling an LLM: BM25 plus dense
-  embeddings (Qwen3-Embedding-0.6B), min-max score fusion, reranking (bge-reranker-v2-m3), and a calibrated
+  embeddings (Qwen3-Embedding-0.6B or BGE-M3, being settled by the benchmark run below), min-max score fusion, reranking (bge-reranker-v2-m3), and a calibrated
   "enough / partial / nothing" verdict. Excerpts are quoted verbatim with their source.
 - **Agent**: one agent whose loop and tools run on your machine; the model (Qwen3.6-35B-A3B) runs on
   [Modal](https://modal.com). Your files come first, the web (free search APIs) second; answers separate
@@ -44,7 +44,8 @@ worse on Vietnamese, while inside the full pipeline it makes no difference; for 
 diacritics, the full pipeline with it is 9.1 [8.2, 10.0] points better than with plain BM25. ZetokRAG
 therefore folds diacritics only when the query has none. Swapping BGE-M3 for Qwen3-Embedding-0.6B changes
 nothing measurable on queries as typed (+0.0 to +0.1, intervals include 0) and adds 0.9 [0.4, 1.4] points on
-queries without diacritics, so ZetokRAG uses Qwen3-Embedding.
+queries without diacritics. These are early local numbers; the choice between the two is made by a rule fixed in
+advance, on the full benchmark now running on Kaggle, and this section will be replaced by its results.
 
 **The owner's own files** (`eval/personal.py`; the question set and index never leave the machine or enter
 this repository): 85 questions (60 answerable, 25 about topics absent from the files) over 8,059 chunks from

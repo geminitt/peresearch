@@ -24,7 +24,7 @@ CREATE TABLE IF NOT EXISTS chunks (id INTEGER PRIMARY KEY, path TEXT, section TE
                                    end INTEGER, text TEXT, sha TEXT);
 CREATE INDEX IF NOT EXISTS chunks_path ON chunks(path);
 """
-EMBEDDER = "qwen3-embedding-0.6b"   # chosen on the benchmark (results/variants.md)
+EMBEDDER = "qwen3-embedding-0.6b"   # default until the full benchmark run settles Qwen3 vs BGE-M3
 MAX_FILES_PER_FOLDER = 500   # more files than this side by side is a dataset (e.g. 12,500 reviews), not notes
 
 

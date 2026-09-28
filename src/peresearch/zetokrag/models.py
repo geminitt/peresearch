@@ -1,7 +1,8 @@
 """The local encoder models, pinned to exact Hugging Face revisions (a moved revision is a different model).
 
-ZetokRAG uses Qwen3-Embedding-0.6B (dense) and bge-reranker-v2-m3, chosen on the benchmark; the other
-embedders are here so the benchmark can compare against them. Texts are cut at 512 tokens for every model alike.
+ZetokRAG reranks with bge-reranker-v2-m3. Its dense embedder, Qwen3-Embedding-0.6B or BGE-M3, is not settled
+yet: a rule fixed before the full benchmark run decides it from that run. The other embedders are here so the
+benchmark can compare against them. Texts are cut at 512 tokens for every model alike.
 """
 
 import numpy as np
