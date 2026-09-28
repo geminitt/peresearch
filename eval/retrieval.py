@@ -453,8 +453,11 @@ def shard(k: int, n: int) -> list[str]:
 
 def report(out_path: Path = RESULTS / "retrieval.md", n_boot: int = 10_000) -> str:
     rng = np.random.default_rng(0)
+    manifests = [json.loads(m.read_text()) for m in sorted(RUNS.glob("*/*/manifest.json"))]
+    made = ", ".join(sorted({f"{m['gpu']} at commit {m['commit'][:7]}" for m in manifests})) or "unknown"
     lines = ["# Retrieval benchmark", "",
-             f"Every query of every corpus. First stage keeps the top {N_FIRST}; reranked methods rerank their top {N_RERANK} with "
+             f"Measured on {made}. Up to {MAX_QUERIES:,} queries per corpus (a fixed-seed sample where a corpus has more). "
+             f"First stage keeps the top {N_FIRST}; reranked methods rerank their top {N_RERANK} with "
              f"bge-reranker-v2-m3; min-max fusion uses rho = {RHO}. Texts are cut at 512 tokens. In ArguAna the "
              "query's own document is excluded from every ranking, as in BEIR. `zetokrag` is the configuration in "
              "use (BM25-auto + Qwen3-Embedding-0.6B); `zetokrag-bge` swaps in BGE-M3; `zetokrag-v0` is the first "
