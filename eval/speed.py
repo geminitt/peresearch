@@ -47,7 +47,7 @@ def run_corpus(name, reranker) -> None:
     sample = [texts[i] for i in rng.choice(len(texts), min(N_DOCS, len(texts)), replace=False)]
     queries = [qtexts[i] for i in rng.choice(len(qtexts), min(N_QUERIES, len(qtexts)), replace=False)]
     bm = {False: core.BM25(texts, folded=False), True: core.BM25(texts, folded=True)}
-    out = {"documents": len(texts), "index": {}, "query": {}}
+    out = {"documents": len(texts), "gpu": torch.cuda.get_device_name(0), "index": {}, "query": {}}
     for m in MODELS:
         e = Embedder(m)
         tok = e.model.tokenizer
@@ -89,11 +89,14 @@ def run_corpus(name, reranker) -> None:
 
 def report(out_path: Path = RESULTS / "speed.md") -> str:
     runs = {n: json.loads((OUT / f"{n}.json").read_text()) for n in DATASETS if (OUT / f"{n}.json").exists()}
-    import subprocess
 
-    gpu = subprocess.run(["nvidia-smi", "--query-gpu=name,memory.total", "--format=csv,noheader"],
-                         capture_output=True, text=True).stdout.strip()
-    lines = ["# ZetokRAG speed", "", f"One laptop GPU ({gpu}), fp16, batch 32, texts cut at 512 tokens. "
+    def gpu_of(n, r):   # recorded by the machine that measured (older files: the run's manifest)
+        m = RUNS / n / "as-typed" / "manifest.json"
+        return r.get("gpu") or (json.loads(m.read_text())["gpu"] if m.exists() else "unknown GPU")
+
+    gpus = sorted({gpu_of(n, r) for n, r in runs.items()})
+    lines = ["# ZetokRAG speed", "", f"Measured on {', '.join(gpus)} (one GPU at a time), fp16, batch 32, texts cut at "
+             "512 tokens. "
              f"Indexing: {N_DOCS} sampled documents per corpus; querying: {N_QUERIES} queries per corpus, "
              "median (90th percentile) in milliseconds.", "",
              "## Indexing (documents per second)", "",
