@@ -13,89 +13,69 @@ searches the web, and cites every claim.**
 
 ---
 
-> **Status:** under construction — the retrieval layer (ZetokRAG) and the guard are done; the agent is next.
+> **Status:** under construction — the retrieval layer (ZetokRAG) and the guard are done and measured; the agent
+> is next.
 
-## Design
+## How it works
 
 | Part | What it does |
 |---|---|
-| **ZetokRAG** (zero-token RAG) | Finds evidence in your own files without calling an LLM: BM25 plus dense embeddings (Qwen3-Embedding-0.6B or BGE-M3, being settled by the benchmark run below), min-max score fusion, reranking (bge-reranker-v2-m3), and a calibrated "enough / partial / nothing" verdict. Excerpts are quoted verbatim with their source. |
+| **ZetokRAG** (zero-token RAG) | Finds evidence in your own files without calling an LLM: BM25 (on diacritic-free words only when the query is typed without them) plus Qwen3-Embedding-0.6B, min-max score fusion, reranking of the top 30 with bge-reranker-v2-m3, and a calibrated "enough / partial / nothing" verdict. Excerpts are quoted verbatim with their source. |
 | **Agent** | One agent whose loop and tools run on your machine; the model (Qwen3.6-35B-A3B) runs on [Modal](https://modal.com). Your files come first, the web (free search APIs) second; answers separate "already in your notes", "new from the web" and the synthesis, each claim cited. |
 | **Guard** | Only declared folders are read, credentials are never indexed, and everything that leaves the machine passes one filter. |
 
 ---
 
-## ZetokRAG: measured
-
-In short: on Vietnamese, ZetokRAG is among the best methods measured but not ahead of all of them (it ties
-BGE-M3 + reranking); on English, Qwen3-Embedding alone is better; on the owner's own files it is clearly
-better than BM25 and statistically tied with every embedding-based method tried.
+## Results
 
 ### Public corpora
 
-`eval/retrieval.py` → [`results/retrieval.md`](results/retrieval.md): 17 corpora, about 915,000 documents — five
-BEIR sets in English, their Vietnamese translations and seven more Vietnamese sets from VN-MTEB (including Zalo
-legal retrieval, natively Vietnamese); up to 1,000 queries each. In ArguAna each query is itself a document of
-the corpus; as in BEIR it is excluded from every ranking. nDCG@10, mean over corpora.
+17 corpora, about 915,000 documents: five BEIR sets in English, their Vietnamese translations and seven more
+Vietnamese sets from VN-MTEB (including Zalo legal retrieval, natively Vietnamese); up to 1,000 queries per
+corpus. Every Vietnamese corpus is run twice: queries as written, and the same queries without diacritics
+("hoc may"), the way they are often typed. nDCG@10, mean over corpora; measured on Kaggle T4s at commit
+`fad66ca`.
 
-> **Note:** this run measured an earlier ZetokRAG configuration — BGE-M3, and BM25 on diacritic-free words for
-> every query; the configuration in use differs only in those two choices, compared below.
+| Method | English (5) | Vietnamese (12) | Vietnamese, no diacritics (12) |
+|---|---:|---:|---:|
+| BM25 | 36.4 | 46.2 | 24.7 |
+| BM25, diacritic-free when the query is | 36.4 | 46.2 | 44.2 |
+| BGE-M3 | 41.4 | 58.0 | 30.9 |
+| Qwen3-Embedding-0.6B | **48.4** | 57.3 | 36.3 |
+| Fusion, no rerank | 46.3 | 56.7 | 47.3 |
+| BGE-M3 + rerank | 44.3 | 60.8 | 36.1 |
+| ZetokRAG with BGE-M3 | 45.1 | 60.8 | 46.7 |
+| **ZetokRAG** | 45.1 | **60.9** | **47.7** |
 
-| | BM25 | BGE-M3 | multilingual-e5-large | Qwen3-Embedding-0.6B | fusion, no rerank | BGE-M3 + rerank | **ZetokRAG** |
-|---|---:|---:|---:|---:|---:|---:|---:|
-| English (5) | 36.4 | 41.5 | 43.9 | **48.4** | 43.0 | 44.3 | 45.1 |
-| Vietnamese (12) | 46.2 | 58.0 | 57.9 | 57.3 | 55.9 | **60.8** | 60.7 |
+- **Vietnamese as typed:** ZetokRAG ties BGE-M3 + rerank (+0.1 [−0.2, +0.5], paired bootstrap, 95%) and is
+  ahead of every other method.
+- **Vietnamese without diacritics:** ZetokRAG is best, tied only with fusion without reranking (+0.5
+  [−0.1, +1.1]); embedding-only methods fall 11–27 points behind.
+- **English:** Qwen3-Embedding alone is better by 3.3 [2.3, 4.2] points; the reranker costs most on ArguAna
+  and SCIDOCS.
+- **Embedder:** a rule fixed before the run kept Qwen3-Embedding over BGE-M3 only if it helped on queries
+  without diacritics and did not hurt as typed: +1.1 [+0.8, +1.4] and +0.1 [−0.2, +0.5].
 
-Paired bootstrap over queries (ZetokRAG minus the other method, points, 95% interval): on Vietnamese it is
-ahead of BM25 (+14.5 [13.8, 15.2]) and of each embedding model alone (+2.7 to +3.4, all intervals above 0),
-and tied with BGE-M3 + rerank (−0.2 [−0.5, +0.2]). On English, Qwen3-Embedding alone is 3.3 [2.4, 4.3] points
-better: the reranker costs most on ArguAna (find the *counter*-argument, −12.3) and SCIDOCS (find the papers
-a paper cites, −4.6), while on SciFact ZetokRAG is 4.2 ahead.
-
-### Configuration
-
-`eval/variants.py` → [`results/variants.md`](results/variants.md), 200 queries per corpus: matching every query
-on diacritic-free words ("ma" for ma, má, mà, mả, mã, mạ) makes BM25 alone 4.6 points worse on Vietnamese,
-while inside the full pipeline it makes no difference; for queries typed **without** diacritics, the full
-pipeline with it is 9.1 [8.2, 10.0] points better than with plain BM25. ZetokRAG therefore folds diacritics
-only when the query has none. Swapping BGE-M3 for Qwen3-Embedding-0.6B changes nothing measurable on queries as
-typed (+0.0 to +0.1, intervals include 0) and adds 0.9 [0.4, 1.4] points on queries without diacritics.
-
-> **Note:** these are early local numbers; the choice between the two is made by a rule fixed in advance, on
-> the full benchmark now running on Kaggle, and this section will be replaced by its results.
+All 14 methods, four metrics per corpus, every paired comparison and the "does the corpus hold an answer?"
+test: [`results/retrieval.md`](results/retrieval.md).
 
 ### The owner's own files
 
-`eval/personal.py`; the question set and index never leave the machine or enter this repository: 85 questions
-(60 answerable, 25 about topics absent from the files) over 8,059 chunks from 453 files of notes, projects and
-course material. The questions were written by the assistant from the labelled passages and reviewed by the
-owner; written that way they tend to reuse the passage's words, so real questions are likely harder. Strict
-scoring (the labelled file and lines), the same chunks for every method:
+85 questions (60 answerable, 25 about topics absent from the files) over 8,059 chunks of notes, projects and
+course material; the questions and index never leave the machine. ZetokRAG: hit@5 95.0%, nDCG@10 0.850 —
+ahead of BM25 (+0.091 [+0.017, +0.171]) and statistically tied with every embedding-based method. Every
+unanswerable question scored below the "partial" threshold and every answerable one above it. Details:
+[`results/personal.md`](results/personal.md).
 
-| | hit@1 | hit@5 | hit@10 | nDCG@10 | ZetokRAG minus it [95% interval] |
-|---|---:|---:|---:|---:|---|
-| BM25 | 61.7% | 83.3% | 91.7% | 0.758 | +0.091 [+0.017, +0.171] |
-| BGE-M3 | 68.3% | 91.7% | 95.0% | 0.818 | +0.032 [−0.039, +0.103] |
-| Qwen3-Embedding-0.6B | 61.7% | 95.0% | 98.3% | 0.818 | +0.032 [−0.037, +0.102] |
-| fusion, no rerank | 66.7% | 95.0% | 98.3% | 0.827 | +0.023 [−0.039, +0.089] |
-| BGE-M3 + rerank | 68.3% | 91.7% | 96.7% | 0.837 | +0.013 [−0.022, +0.050] |
-| Qwen3-Embedding + rerank | 68.3% | 95.0% | 100.0% | 0.856 | −0.006 [−0.018, +0.000] |
-| BM25 + rerank | 66.7% | 91.7% | 95.0% | 0.822 | +0.027 [−0.007, +0.074] |
-| **ZetokRAG** | 68.3% | 95.0% | 98.3% | 0.850 | |
+### Speed
 
-Counting the same passage kept in another file (e.g. a solution notebook) as found, ZetokRAG reaches 76.7%
-hit@1 and nDCG@10 0.885. With 60 answerable questions only the gap to BM25 is resolved.
+On a T4, indexing runs at 115 documents/s with BGE-M3 and 43 with Qwen3-Embedding (2.7x slower); answering
+one query takes 0.26–0.89 s (median, by corpus), mostly the reranker. Details: [`results/speed.md`](results/speed.md).
 
-**"Does the index hold an answer?"** The reranker's best score was at most 0.16 for every unanswerable question
-and at least 0.56 for every answerable one, and the verdict thresholds ("partial" from 0.25, "enough" from
-0.5) were set in that gap *after* seeing these scores — so the resulting 25/25 rejected and 0/60 wrongly
-rejected are in-sample. Their exact 95% intervals, [86.3%, 100%] and [0%, 6.0%], are what 25 and 60 questions
-can support. On the public corpora 86% of answerable queries reach 0.25, and the same test is weak (AUROC
-0.54–0.96): removing a query's labelled documents leaves other, unlabelled relevant ones behind, so
-"unanswerable" there is often not.
-
-> **Limits:** one answerable question was labelled with a single passage although the README of the same
-> project answers it too, which counts as a miss above; the set is small.
+> **Limits:** the verdict thresholds were set on the same 85 questions (in-sample); the questions were written by
+> the assistant from the labelled passages, so real questions are likely harder; one answerable question is
+> also answered by a file it was not labelled with; on the public corpora the "no answer" test is weak (AUROC
+> 0.54–0.97), because removing a query's labelled documents leaves unlabelled relevant ones behind.
 
 ---
 
@@ -126,10 +106,16 @@ pixi run peresearch find "hybrid retrieval"         # search your files: no mode
 ## Reproduce the measurements
 
 ```bash
-pixi run python eval/retrieval.py run     # 17 corpora x 10 methods, ~14 h on a 6 GB laptop GPU; resumable
-pixi run python eval/variants.py run      # ZetokRAG variants, ~1.5 h
-pixi run python eval/personal.py ~/notes  # your own question set in $PERESEARCH_HOME/eval/personal.jsonl
-pixi run python eval/personal.py compare  # the same questions for eight other methods
+# public corpora: two Kaggle kernels, 2 x T4 each (5.2 h and 4.4 h), resumable
+python kaggle/push.py retrieval --job full-shards-0-1 --set 'SHARDS=[0, 1]'
+python kaggle/push.py retrieval --job full-shards-2-3 --set 'SHARDS=[2, 3]'
+# with both kernels' runs/ outputs downloaded into $PERESEARCH_RUNS:
+pixi run python eval/retrieval.py report  # results/retrieval.md
+pixi run python eval/speed.py report      # results/speed.md
+# your own question set in $PERESEARCH_HOME/eval/personal.jsonl
+pixi run python eval/personal.py ~/notes                       # Qwen3-Embedding index
+pixi run python eval/personal.py --embedder bge-m3 ~/notes     # BGE-M3 index
+pixi run python eval/personal.py compare                       # results/personal.md
 ```
 
 ---
