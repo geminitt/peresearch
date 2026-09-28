@@ -403,6 +403,27 @@ def run_dataset(name: str, setting: str = "as-typed") -> None:
     log(name, setting, "zetokrag nDCG@10", round(float(np.mean([m["ndcg@10"] for m in per_method["zetokrag"]])), 4))
 
 
+def run(names) -> list[str]:
+    """Every job of these corpora. A failing job is logged and the next one still runs (what finished is cached,
+    so a rerun resumes); returns the failed jobs."""
+    import traceback
+
+    from peresearch.zetokrag.models import free_gpu, gpu_memory
+
+    preflight()
+    failed = []
+    for name, setting in jobs(names):
+        try:
+            run_dataset(name, setting)
+            continue
+        except Exception:
+            log(name, setting, "FAILED;", gpu_memory())
+            traceback.print_exc()
+            failed.append(f"{name}/{setting}")
+        free_gpu()                      # outside `except`, whose frames still hold the models
+    return failed
+
+
 def jobs(names=None) -> list[tuple[str, str]]:
     names = names or list(DATASETS)
     return [(n, st) for n in names for st in SETTINGS if st == "as-typed" or DATASETS[n][3] == "vi"]
@@ -508,23 +529,7 @@ if __name__ == "__main__":
         if "--shard" in args:
             k, n = map(int, args[args.index("--shard") + 1].split("/"))
             names = shard(k, n)
-        preflight()
-        failed = []
-        for name, setting in jobs(names):
-            try:
-                run_dataset(name, setting)
-            except Exception:   # the next corpus still runs; what finished is cached, a rerun resumes
-                import traceback
-
-                from peresearch.zetokrag.models import gpu_memory
-
-                log(name, setting, "FAILED;", gpu_memory())
-                traceback.print_exc()
-                failed.append(f"{name}/{setting}")
-            if failed and failed[-1] == f"{name}/{setting}":   # outside `except`: its frames hold the models
-                from peresearch.zetokrag.models import free_gpu
-
-                free_gpu()
+        failed = run(names)
         print(report())
         if failed:
             sys.exit(f"failed: {' '.join(failed)}")

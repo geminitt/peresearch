@@ -37,8 +37,9 @@ def run_corpus(name, reranker) -> None:
     """One embedder on the GPU at a time (with the reranker), freed between models and corpora."""
     import torch
 
-    from peresearch.zetokrag.models import Embedder, free_gpu
+    from peresearch.zetokrag.models import Embedder, free_gpu, gpu_memory
 
+    cuda = torch.cuda.is_available()
     path = OUT / f"{name}.json"
     if path.exists():
         return
@@ -47,20 +48,21 @@ def run_corpus(name, reranker) -> None:
     sample = [texts[i] for i in rng.choice(len(texts), min(N_DOCS, len(texts)), replace=False)]
     queries = [qtexts[i] for i in rng.choice(len(qtexts), min(N_QUERIES, len(qtexts)), replace=False)]
     bm = {False: core.BM25(texts, folded=False), True: core.BM25(texts, folded=True)}
-    out = {"documents": len(texts), "gpu": torch.cuda.get_device_name(0), "index": {}, "query": {}}
+    out = {"documents": len(texts), "gpu": torch.cuda.get_device_name(0) if cuda else "cpu", "index": {}, "query": {}}
     for m in MODELS:
         e = Embedder(m)
         tok = e.model.tokenizer
         lengths = [min(len(tok(t, add_special_tokens=True)["input_ids"]), 512) for t in sample]
         e.documents(sample[:32])                                    # warm-up
         gpu_sync()
-        torch.cuda.reset_peak_memory_stats()
+        if cuda:
+            torch.cuda.reset_peak_memory_stats()
         t = time.perf_counter()
         e.documents(sample)
         gpu_sync()
         dt = time.perf_counter() - t
         out["index"][m] = {"docs_per_s": len(sample) / dt, "mean_tokens": float(np.mean(lengths)),
-                           "peak_gpu_mb": torch.cuda.max_memory_allocated() / 2**20}
+                           "peak_gpu_mb": torch.cuda.max_memory_allocated() / 2**20 if cuda else 0.0}
         log(name, m, f"{len(sample) / dt:.0f} docs/s;", gpu_memory())
         docs = np.load(RUNS / name / f"docs-{m}.npy").astype(np.float32)
         stages = {"embed": [], "bm25": [], "dense+fusion": [], "rerank": [], "total": []}
@@ -89,6 +91,8 @@ def run_corpus(name, reranker) -> None:
 
 def report(out_path: Path = RESULTS / "speed.md") -> str:
     runs = {n: json.loads((OUT / f"{n}.json").read_text()) for n in DATASETS if (OUT / f"{n}.json").exists()}
+    if not runs:
+        return "# ZetokRAG speed\n\nNo corpus measured yet.\n"
 
     def gpu_of(n, r):   # recorded by the machine that measured (older files: the run's manifest)
         m = RUNS / n / "as-typed" / "manifest.json"
