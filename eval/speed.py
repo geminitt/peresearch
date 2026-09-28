@@ -61,7 +61,7 @@ def run_corpus(name, reranker) -> None:
         dt = time.perf_counter() - t
         out["index"][m] = {"docs_per_s": len(sample) / dt, "mean_tokens": float(np.mean(lengths)),
                            "peak_gpu_mb": torch.cuda.max_memory_allocated() / 2**20}
-        log(name, m, f"{len(sample) / dt:.0f} docs/s")
+        log(name, m, f"{len(sample) / dt:.0f} docs/s;", gpu_memory())
         docs = np.load(RUNS / name / f"docs-{m}.npy").astype(np.float32)
         stages = {"embed": [], "bm25": [], "dense+fusion": [], "rerank": [], "total": []}
         for q in queries:
@@ -123,20 +123,12 @@ def report(out_path: Path = RESULTS / "speed.md") -> str:
     return text
 
 
-def gpu_memory() -> str:
-    import torch
-
-    free, total = torch.cuda.mem_get_info()
-    return (f"GPU used {(total - free) / 2**30:.2f} GiB of {total / 2**30:.2f}, by PyTorch "
-            f"{torch.cuda.memory_allocated() / 2**30:.2f} allocated / {torch.cuda.memory_reserved() / 2**30:.2f} reserved")
-
-
 def main(only=None):
     """Every corpus this machine has embedded (or only those named); a failure (e.g. out of memory) is logged with the GPU memory state
     and the next corpus still runs."""
     import traceback
 
-    from peresearch.zetokrag.models import Reranker, free_gpu
+    from peresearch.zetokrag.models import Reranker, free_gpu, gpu_memory
 
     log("start:", gpu_memory())
     reranker = Reranker()
@@ -148,7 +140,7 @@ def main(only=None):
             except Exception:
                 log(name, "FAILED:", gpu_memory())
                 traceback.print_exc()
-                free_gpu()
+            free_gpu()          # outside `except`: its frames hold the model
     print(report())
 
 

@@ -171,7 +171,7 @@ def exclude(per_query, own) -> list:
 
 def document_embeddings(name, model, texts, base: Path) -> np.ndarray:
     """Embeddings of every document, saved slice by slice so an interrupted run resumes."""
-    from peresearch.zetokrag.models import Embedder, free_gpu
+    from peresearch.zetokrag.models import Embedder, free_gpu, gpu_memory
 
     path = base / f"docs-{model}.npy"
     if path.exists():
@@ -182,7 +182,7 @@ def document_embeddings(name, model, texts, base: Path) -> np.ndarray:
         if not part.exists():
             emb = emb or Embedder(model)
             np.save(part, emb.documents(texts[a:a + step]))
-            log(name, model, f"{min(a + step, len(texts))}/{len(texts)} docs, {time.time() - t:.0f}s")
+            log(name, model, f"{min(a + step, len(texts))}/{len(texts)} docs, {time.time() - t:.0f}s;", gpu_memory())
         parts.append(part)
     docs = np.concatenate([np.load(x) for x in parts])
     np.save(path, docs)
@@ -198,7 +198,7 @@ def first_stages(name, texts, qtexts, out: Path, own, base: Path) -> dict:
     and full score vectors are never kept, so memory stays flat for corpora with 6,000 queries."""
     import torch
 
-    from peresearch.zetokrag.models import Embedder, free_gpu
+    from peresearch.zetokrag.models import Embedder, free_gpu, gpu_memory
 
     path = out / "first_stage.npz"
     if path.exists():
@@ -210,6 +210,7 @@ def first_stages(name, texts, qtexts, out: Path, own, base: Path) -> dict:
     for m in EMBEDDERS:
         e = Embedder(m)
         qvecs[m] = e.queries(qtexts)
+        log(name, m, f"{len(qtexts)} queries;", gpu_memory())
         del e
         free_gpu()
     docs = {m: torch.from_numpy(v).to(device) for m, v in docs.items()}
@@ -267,7 +268,7 @@ def rerank_all(name, texts, qtexts, rels, doc_ids, stages, out: Path) -> dict:
     path = out / "rerank.json"
     if path.exists():
         return json.loads(path.read_text())
-    from peresearch.zetokrag.models import Reranker, free_gpu
+    from peresearch.zetokrag.models import Reranker, free_gpu, gpu_memory
 
     rr = Reranker()
     cache_path = out / "rerank_scores.json"
@@ -293,7 +294,7 @@ def rerank_all(name, texts, qtexts, rels, doc_ids, stages, out: Path) -> dict:
             orders.append(reordered.tolist())
         result["orders"][view] = orders
         cache_path.write_text(json.dumps([{str(k): v for k, v in d.items()} for d in cache]))
-        log(name, "reranked", view, f"{time.time() - t:.0f}s")
+        log(name, "reranked", view, f"{time.time() - t:.0f}s;", gpu_memory())
     # negative rejection: the same query with its relevant documents gone from the corpus
     pos = {d: i for i, d in enumerate(doc_ids)}
     ids = stages["hybrid-auto-qwen"][0]
@@ -458,9 +459,25 @@ if __name__ == "__main__":
         if "--shard" in args:
             k, n = map(int, args[args.index("--shard") + 1].split("/"))
             names = shard(k, n)
+        failed = []
         for name, setting in jobs(names):
-            run_dataset(name, setting)
+            try:
+                run_dataset(name, setting)
+            except Exception:   # the next corpus still runs; what finished is cached, a rerun resumes
+                import traceback
+
+                from peresearch.zetokrag.models import gpu_memory
+
+                log(name, setting, "FAILED;", gpu_memory())
+                traceback.print_exc()
+                failed.append(f"{name}/{setting}")
+            if failed and failed[-1] == f"{name}/{setting}":   # outside `except`: its frames hold the models
+                from peresearch.zetokrag.models import free_gpu
+
+                free_gpu()
         print(report())
+        if failed:
+            sys.exit(f"failed: {' '.join(failed)}")
     elif args == ["report"]:
         print(report())
     else:

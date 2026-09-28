@@ -1,6 +1,6 @@
 """Pin the commit and push a kernel with the kaggle CLI.
 
-    python kaggle/push.py retrieval --job a --set 'SHARDS=[0, 1]' --commit <sha>
+    python kaggle/push.py retrieval --job a --set 'SHARDS=[0, 1]' --commit <sha> --input spritker/peresearch-retrieval-b
 
 The kernel clones this repository at the pinned commit (it must be on GitHub), so the code that runs is exactly
 a commit of the repository.
@@ -18,6 +18,7 @@ ap.add_argument("kernel")
 ap.add_argument("--commit", default=None, help="defaults to HEAD, which must be pushed")
 ap.add_argument("--set", nargs="*", default=[], help="NAME=VALUE overrides of top-level constants")
 ap.add_argument("--job", default=None, help="suffix of a separate kernel, so jobs run in parallel")
+ap.add_argument("--input", nargs="*", default=[], help="earlier kernels whose outputs this one reads")
 args = ap.parse_args()
 
 commit = args.commit or subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
@@ -31,6 +32,7 @@ for kv in args.set:
     src, n = re.subn(rf'^{k} = .*$', f"{k} = {v}", src, flags=re.M)
     assert n == 1, f"no top-level constant {k}"
 meta = json.loads((HERE / args.kernel / "kernel-metadata.json").read_text())
+meta["kernel_sources"] = args.input
 build = HERE / args.kernel / "build"
 if args.job:
     meta["id"] += f"-{args.job}"

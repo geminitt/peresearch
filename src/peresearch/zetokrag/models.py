@@ -79,3 +79,15 @@ def free_gpu() -> None:
     gc.collect()
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
+
+
+def gpu_memory() -> str:
+    """Device memory in use by everything on the GPU, and the part PyTorch holds (the rest is CUDA contexts and
+    other libraries: a JAX that grabbed the GPU showed up here as 11 GiB)."""
+    import torch
+
+    if not torch.cuda.is_available():
+        return "no GPU"
+    free, total = torch.cuda.mem_get_info()
+    return (f"GPU used {(total - free) / 2**30:.2f} of {total / 2**30:.2f} GiB, PyTorch "
+            f"{torch.cuda.memory_allocated() / 2**30:.2f} allocated / {torch.cuda.memory_reserved() / 2**30:.2f} reserved")
