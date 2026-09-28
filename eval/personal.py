@@ -1,6 +1,7 @@
 """ZetokRAG on the user's own files: the reviewed question set in $PERESEARCH_HOME/eval/personal.jsonl.
 
     pixi run python eval/personal.py ~/projects/monodist ~/class ...     # folders to index for the run
+    pixi run python eval/personal.py --embedder bge-m3 ~/notes ...        # another embedder, own index
 
 The question set and the index stay outside the repository (they hold excerpts of private files); only the
 aggregate numbers are printed. Two ways of scoring a hit:
@@ -20,6 +21,7 @@ import numpy as np
 from peresearch import guard
 from peresearch.zetokrag import search
 from peresearch.zetokrag.core import tokenize
+from peresearch.zetokrag import index as index_module
 from peresearch.zetokrag.index import Index
 from peresearch.zetokrag.search import Searcher
 
@@ -49,10 +51,14 @@ def gains(rows, relevant, texts, mode) -> list[int]:
     return out
 
 
-def main(folders: list[str]) -> None:
+def main(folders: list[str], embedder: str = index_module.EMBEDDER) -> None:
     home = guard.home() / "eval"
     items = [json.loads(line) for line in open(home / "personal.jsonl")]
-    idx = Index(home / "index", embedder=None)
+    from peresearch.zetokrag.models import Embedder
+
+    where = home / ("index" if embedder == index_module.EMBEDDER else f"index-{embedder}")
+    idx = Index(where, embedder=Embedder(embedder))
+    print(f"embedder: {embedder}")
     report = idx.update([Path(f).expanduser().resolve() for f in folders])
     print(f"indexed {report.chunks} chunks from {report.added + report.changed + report.unchanged} files")
     s = Searcher(idx)
@@ -70,11 +76,12 @@ def main(folders: list[str]) -> None:
             g = gains(rows, it["relevant"], texts, mode)
             dcg = sum(x / math.log2(i + 2) for i, x in enumerate(g))
             ideal = sum(1 / math.log2(i + 2) for i in range(min(len(it["relevant"]), 10)))
-            ans[mode].append({"r1": g[0] == 1 if g else False, "r5": any(g[:5]), "r10": any(g), "ndcg": dcg / ideal,
-                              "best": best})
+            ans[mode].append({"id": it["id"], "r1": g[0] == 1 if g else False, "r5": any(g[:5]), "r10": any(g),
+                              "ndcg": dcg / ideal, "best": best})
     for mode, a in ans.items():
         print(f"answerable {len(a)} ({mode}): hit@1 {np.mean([x['r1'] for x in a]):.1%}, hit@5 {np.mean([x['r5'] for x in a]):.1%}, "
               f"hit@10 {np.mean([x['r10'] for x in a]):.1%}, nDCG@10 {np.mean([x['ndcg'] for x in a]):.3f}")
+    (home / f"scores-{embedder}.json").write_text(json.dumps({"answerable": ans, "unanswerable": neg}))
     ans = ans["strict"]
     print(f"best score: answerable min {min(x['best'] for x in ans):.3f}, median {np.median([x['best'] for x in ans]):.3f}; "
           f"unanswerable max {max(neg):.3f}, median {np.median(neg):.3f}")
@@ -87,4 +94,8 @@ def main(folders: list[str]) -> None:
 
 
 if __name__ == "__main__":
-    main(sys.argv[1:])
+    args = sys.argv[1:]
+    if args[:1] == ["--embedder"]:
+        main(args[2:], args[1])
+    else:
+        main(args)

@@ -48,6 +48,10 @@ files) and reviewed by them — 60 answerable, 25 about topics absent from the f
 | exact labelled passage | 68.3% | 95.0% | 98.3% | 0.850 |
 | same passage in any file (e.g. a solution notebook) | 76.7% | 95.0% | 98.3% | 0.885 |
 
+The same set run with BGE-M3 in place of Qwen3-Embedding gives the same results on 58 of the 60 answerable
+questions (one better, one worse; nDCG@10 0.846 vs 0.850, difference +0.004 [−0.015, +0.025]), so on the
+owner's files the two are tied; Qwen3-Embedding stays for its edge on queries typed without diacritics.
+
 The reranker's best score separates the two kinds of question completely (AUROC 1.000): every unanswerable
 question scored at most 0.16, every answerable one at least 0.56. The verdict thresholds sit in that gap —
 "partial" from 0.25 (on the public corpora 90% of answerable queries reach it), "enough" from 0.5. On the
