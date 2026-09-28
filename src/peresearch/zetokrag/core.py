@@ -9,10 +9,15 @@ and the two are mixed with weight rho, the fusion Zero-Mem uses. A cross-encoder
 fused candidates. No step calls an LLM, hence "zero-token".
 """
 
+import os
 import re
 import unicodedata
 
 import numpy as np
+
+# bm25s imports JAX when it is installed (Kaggle's image has it) and runs one JAX op at import; JAX then claims
+# 75% of the GPU for itself, and the embedders run out of memory. Nothing here needs JAX on the GPU.
+os.environ.setdefault("JAX_PLATFORMS", "cpu")
 
 _WORD = re.compile(r"\w+")
 

@@ -44,3 +44,10 @@ def test_rrf_and_rerank():
 def test_accented_detects_typed_diacritics():
     assert core.accented("học máy") and core.accented("Đà Nẵng")
     assert not core.accented("hoc may") and not core.accented("BPE tokenizer")
+
+
+def test_jax_is_kept_off_the_gpu():
+    # bm25s imports JAX when it is installed; on the GPU, JAX would claim 75% of the memory at that import
+    import os
+
+    assert os.environ["JAX_PLATFORMS"] == "cpu"
