@@ -19,6 +19,8 @@ huggingface_hub = "*"
 [feature.models.pypi-dependencies]
 torch = "*"
 sentence-transformers = "*"
+pyarrow = ">=25.0.1, <26"
+pandas = ">=3.0.6, <4"
 
 [environments]
 default = ["models"]
