@@ -13,15 +13,17 @@ searches the web, and cites every claim.**
 
 ---
 
-> **Status:** under construction — the retrieval layer (ZetokRAG) and the guard are done and measured; the agent
-> is next.
+> **Status:** the retrieval layer (ZetokRAG) and the guard are done and measured; the agent, its tools and the
+> terminal interface are built and tested end to end on a laptop with a small model of the same family; the
+> Modal deployment is written but not yet run.
 
 ## How it works
 
 | Part | What it does |
 |---|---|
 | **ZetokRAG** (zero-token RAG) | Finds evidence in your own files without calling an LLM: BM25 (on diacritic-free words only when the query is typed without them) plus Qwen3-Embedding-0.6B, min-max score fusion, reranking of the top 30 with bge-reranker-v2-m3, and a calibrated "enough / partial / nothing" verdict. Excerpts are quoted verbatim with their source. |
-| **Agent** | One agent whose loop and tools run on your machine; the model (Qwen3.6-35B-A3B) runs on [Modal](https://modal.com). Your files come first, the web (free search APIs) second; answers separate "already in your notes", "new from the web" and the synthesis, each claim cited. |
+| **Agent** | One loop, written out rather than taken from a framework, running on your machine; only the model (Qwen3.6-35B-A3B, vLLM) runs on [Modal](https://modal.com). Your files are searched before the model speaks; then it may grep, list and read them, search the web (Tavily, then Exa once Tavily's free credits run out) and read pages a search returned. Limits on steps, searches, pages and time. Answers separate "already in your files", "new from the web" and the synthesis; a rule-based check verifies every cited source id and every quote. |
+| **Interface** | `peresearch chat`: a terminal interface (Textual), inline like a shell session; `peresearch ask` for one question. |
 | **Guard** | Only declared folders are read, credentials are never indexed, and everything that leaves the machine passes one filter. |
 
 ---
@@ -79,12 +81,29 @@ one query takes 0.26–0.89 s (median, by corpus), mostly the reranker. Details:
 
 ---
 
-## Usage (so far)
+## Usage
 
 ```bash
 pixi run peresearch add ~/notes ~/projects/x/docs   # declare the folders peresearch may read
 pixi run peresearch index                           # index them on this machine (local GPU)
 pixi run peresearch find "hybrid retrieval"         # search your files: no model call, nothing leaves
+pixi run peresearch chat                            # the agent, in the terminal
+pixi run peresearch ask "how does SuperBPE differ from BPE?"
+```
+
+The agent reads its settings from the environment or `~/.local/share/peresearch/settings.env` (`chmod 600`;
+never indexed): `PERESEARCH_LLM_URL`, `PERESEARCH_LLM_KEY`, and optionally `TAVILY_API_KEY`, `EXA_API_KEY`,
+`JINA_API_KEY` — see [`src/peresearch/settings.py`](src/peresearch/settings.py). Without a search key the agent
+works from your files alone and says so.
+
+**The model.** [`deploy/modal_vllm.py`](deploy/modal_vllm.py) serves Qwen3.6-35B-A3B-FP8 on one L40S: private
+(a Modal proxy token is the API key), one container at most, stopped after five idle minutes. Its flags are
+tested first on the laptop with Qwen3.5-0.8B:
+
+```bash
+pixi run -e serve python deploy/local_vllm.py                               # http://localhost:8000/v1
+PERESEARCH_LLM_URL=http://localhost:8000/v1 pixi run peresearch chat
+modal run deploy/modal_vllm.py::download && modal deploy deploy/modal_vllm.py   # then on Modal
 ```
 
 ---
@@ -93,10 +112,12 @@ pixi run peresearch find "hybrid retrieval"         # search your files: no mode
 
 | Risk | Handling | Test |
 |---|---|---|
-| Credentials read or sent out | Only declared folders; symlinks resolved and must stay inside them; protected names (`.ssh`, `.env`, token and key files, `.modal.toml`...) never read; paragraphs that look like a credential never indexed; everything leaving the machine redacted, search queries with a credential refused | `tests/test_canary.py`: fake credentials in 12 formats planted in notes, `.env`, key files, notebooks and behind symlinks; none reaches the index, the search results, the outbound text or the logs |
+| Credentials read or sent out | Only declared folders; symlinks resolved and must stay inside them; protected names (`.ssh`, `.env`, token and key files, `.modal.toml`...) never read; paragraphs that look like a credential never indexed; everything leaving the machine redacted, search queries with a credential refused | `tests/test_canary.py`: fake credentials in 16 formats planted in notes, `.env`, key files, notebooks and behind symlinks; none reaches the index, the search results, the outbound text or the logs. `tests/test_agent.py`: none reaches the model, even from a file the agent reads in full |
+| The model sending data out through a URL | `fetch` opens only URLs that a web search returned in the same question; every query and URL passes the secret filter | `tests/test_agent.py` |
+| A runaway agent | Limits per question: 12 model calls, 4 web searches, 6 pages, 15 minutes; at a limit the model must answer with what it has | `tests/test_agent.py` |
 | Broken or unreadable files | Reported by name, never fatal: binary, too large, unsupported, corrupt, PDF without a text layer ("needs OCR") | `tests/test_parse_chunk.py` |
 | Quoting a file that changed | The file is re-checked before an excerpt is shown; an excerpt no longer in the file is dropped, one still present is flagged | `tests/test_index_search.py` |
-| Instructions hidden in a document | Documents are data: indexed and returned as text, never executed | `tests/test_canary.py` (the agent-side check comes with the agent) |
+| Instructions hidden in a document or a page | Every tool result reaches the model wrapped as untrusted data, and text that reads like an instruction is flagged; the tools are read-only | `tests/test_canary.py`, `tests/test_agent.py` |
 | Terminal escape sequences in untrusted text | Stripped before printing | `tests/test_guard.py` |
 | Logs holding sensitive text | The audit log records events and counts, never content | `tests/test_guard.py`, `tests/test_canary.py` |
 | Changed models or packages | Hugging Face revisions pinned to commits; `pixi.lock` | `tests/test_supply_chain.py` |
