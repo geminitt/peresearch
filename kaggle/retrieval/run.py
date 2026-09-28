@@ -30,7 +30,8 @@ if not SRC.exists():
 sh(f"cd {SRC} && git fetch -q origin && git checkout -q {COMMIT} && git log -1 --oneline")
 sh("nvidia-smi --query-gpu=name,memory.total --format=csv")
 env = {**os.environ, "PYTHONPATH": f"{SRC}/src", "PERESEARCH_RUNS": str(TEMP / "runs"),
-       "PERESEARCH_RESULTS": str(WORK / "results"), "TOKENIZERS_PARALLELISM": "false"}
+       "PERESEARCH_RESULTS": str(WORK / "results"), "TOKENIZERS_PARALLELISM": "false",
+       "PYTORCH_ALLOC_CONF": "expandable_segments:True"}
 
 
 def sync():

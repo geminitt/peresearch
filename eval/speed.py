@@ -33,8 +33,11 @@ def gpu_sync():
         torch.cuda.synchronize()
 
 
-def run_corpus(name, embedders, reranker) -> None:
+def run_corpus(name, reranker) -> None:
+    """One embedder on the GPU at a time (with the reranker), freed between models and corpora."""
     import torch
+
+    from peresearch.zetokrag.models import Embedder, free_gpu
 
     path = OUT / f"{name}.json"
     if path.exists():
@@ -43,8 +46,10 @@ def run_corpus(name, embedders, reranker) -> None:
     rng = np.random.default_rng(0)
     sample = [texts[i] for i in rng.choice(len(texts), min(N_DOCS, len(texts)), replace=False)]
     queries = [qtexts[i] for i in rng.choice(len(qtexts), min(N_QUERIES, len(qtexts)), replace=False)]
+    bm = {False: core.BM25(texts, folded=False), True: core.BM25(texts, folded=True)}
     out = {"documents": len(texts), "index": {}, "query": {}}
-    for m, e in embedders.items():
+    for m in MODELS:
+        e = Embedder(m)
         tok = e.model.tokenizer
         lengths = [min(len(tok(t, add_special_tokens=True)["input_ids"]), 512) for t in sample]
         e.documents(sample[:32])                                    # warm-up
@@ -57,9 +62,7 @@ def run_corpus(name, embedders, reranker) -> None:
         out["index"][m] = {"docs_per_s": len(sample) / dt, "mean_tokens": float(np.mean(lengths)),
                            "peak_gpu_mb": torch.cuda.max_memory_allocated() / 2**20}
         log(name, m, f"{len(sample) / dt:.0f} docs/s")
-    bm = {False: core.BM25(texts, folded=False), True: core.BM25(texts, folded=True)}
-    docs = {m: np.load(RUNS / name / f"docs-{m}.npy").astype(np.float32) for m in MODELS}
-    for m, e in embedders.items():
+        docs = np.load(RUNS / name / f"docs-{m}.npy").astype(np.float32)
         stages = {"embed": [], "bm25": [], "dense+fusion": [], "rerank": [], "total": []}
         for q in queries:
             t0 = time.perf_counter()
@@ -68,7 +71,7 @@ def run_corpus(name, embedders, reranker) -> None:
             t1 = time.perf_counter()
             lexical = bm[not core.accented(q)].scores(q)
             t2 = time.perf_counter()
-            cand, _ = core.fuse_minmax(lexical, docs[m] @ qv, search.RHO, search.N_FIRST)
+            cand, _ = core.fuse_minmax(lexical, docs @ qv, search.RHO, search.N_FIRST)
             t3 = time.perf_counter()
             reranker.scores(q, [texts[i] for i in cand[:search.N_RERANK]])
             gpu_sync()
@@ -78,6 +81,8 @@ def run_corpus(name, embedders, reranker) -> None:
         out["query"][m] = {k: {"median_ms": float(np.median(v)), "p90_ms": float(np.percentile(v, 90))}
                            for k, v in stages.items()}
         log(name, m, f"query median {out['query'][m]['total']['median_ms']:.0f} ms")
+        del e, docs
+        free_gpu()
     OUT.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(out))
 
@@ -115,13 +120,12 @@ def report(out_path: Path = RESULTS / "speed.md") -> str:
 
 
 def main():
-    from peresearch.zetokrag.models import Embedder, Reranker
+    from peresearch.zetokrag.models import Reranker
 
-    embedders = {m: Embedder(m) for m in MODELS}
     reranker = Reranker()
     for name in DATASETS:               # the corpora this machine has embedded (a worker may hold only some)
         if all((RUNS / name / f"docs-{m}.npy").exists() for m in MODELS):
-            run_corpus(name, embedders, reranker)
+            run_corpus(name, reranker)
     print(report())
 
 
