@@ -49,3 +49,19 @@ def test_every_corpus_is_pinned_and_shards_cover_all_once():
     shards = [retrieval.shard(k, 4) for k in range(4)]
     assert sorted(c for s in shards for c in s) == sorted(retrieval.DATASETS)
     assert len(retrieval.jobs()) == 29
+
+
+def test_retry_gives_up_only_after_the_last_try():
+    import pytest
+
+    calls = []
+
+    def flaky():
+        calls.append(1)
+        if len(calls) < 3:
+            raise ConnectionError("429")
+        return "ok"
+
+    assert retrieval.retry(flaky, tries=3, wait=0) == "ok" and len(calls) == 3
+    with pytest.raises(ConnectionError):
+        retrieval.retry(lambda: (_ for _ in ()).throw(ConnectionError("429")), tries=2, wait=0)

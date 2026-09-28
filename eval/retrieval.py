@@ -3,6 +3,7 @@
     pixi run python eval/retrieval.py run [corpus ...]      # resumable; every finished step is cached
     pixi run python eval/retrieval.py report                # results/retrieval.md
     python eval/retrieval.py run --shard 0/4                # one of four workers (see kaggle/)
+    python eval/retrieval.py prefetch [corpus ...]          # download data and models first (see kaggle/)
 
 Corpora: five BEIR sets (English, from mteb), their Vietnamese translations from VN-MTEB (GreenNode), six
 more Vietnamese sets from VN-MTEB (named "nano-*" there, though each corpus holds about 100k documents), and
@@ -97,12 +98,24 @@ FUSIONS = {  # view: (kind, BM25 view, embedder)
 
 # --- data -------------------------------------------------------------------------------------------------
 
+def retry(fn, tries: int = 6, wait: float = 30):
+    """fn(), tried again after 30 s, 1, 2, 4 and 8 min: Hugging Face answers 429 or times out now and then."""
+    for k in range(tries):
+        try:
+            return fn()
+        except Exception as e:
+            if k == tries - 1:
+                raise
+            log("retry", k + 1, f"after {type(e).__name__}: {e}"[:300])
+            time.sleep(wait * 2 ** k)
+
+
 def load(name: str):
     import pandas as pd
     from huggingface_hub import hf_hub_download
 
     repo, layout, split, _ = DATASETS[name]
-    get = lambda f: hf_hub_download(repo, f, repo_type="dataset", revision=REVISIONS[name])
+    get = lambda f: retry(lambda: hf_hub_download(repo, f, repo_type="dataset", revision=REVISIONS[name]))
     if layout == "mteb":
         corpus = pd.read_json(get("corpus.jsonl"), lines=True, dtype=False)
         queries = pd.read_json(get("queries.jsonl"), lines=True, dtype=False)
@@ -148,6 +161,40 @@ def auroc(pos: list[float], neg: list[float]) -> float:
 
 
 # --- run --------------------------------------------------------------------------------------------------
+
+def prefetch(names) -> None:
+    """Download the corpora and every model once, before any worker starts, so the workers can run offline
+    (no Hugging Face request mid-run, hence no rate limit or timeout mid-run)."""
+    from peresearch.zetokrag.models import Embedder, Reranker
+
+    for name in names:
+        doc_ids, _, qs, _, _ = load(name)
+        log(name, f"{len(doc_ids)} documents, {len(qs)} queries")
+    for m in EMBEDDERS:
+        retry(lambda: Embedder(m))
+        log(m, "ready")
+    retry(Reranker)
+    log("bge-reranker-v2-m3 ready")
+
+
+def preflight() -> None:
+    """Stop before any corpus if something besides PyTorch holds the GPU. JAX, which bm25s imports, took 11 GiB
+    of a T4 this way and every worker ran out of memory at its second corpus."""
+    import torch
+
+    from peresearch.zetokrag.models import gpu_memory
+
+    core.BM25(["a b", "c d"])            # imports bm25s, and JAX with it if installed
+    if not torch.cuda.is_available():
+        return
+    torch.zeros(1, device="cuda")        # the CUDA context itself (about 0.3 GiB) counts as outside PyTorch
+    free, total = torch.cuda.mem_get_info()
+    other = (total - free - torch.cuda.memory_reserved()) / 2**30
+    log("preflight:", gpu_memory())
+    if other > 1.5:
+        sys.exit(f"{other:.1f} GiB of the GPU is held outside PyTorch (by a library here or another process): "
+                 "stopping before any corpus")
+
 
 def log(*a):
     print(time.strftime("%H:%M:%S"), *a, flush=True)
@@ -454,11 +501,14 @@ def report(out_path: Path = RESULTS / "retrieval.md", n_boot: int = 10_000) -> s
 
 if __name__ == "__main__":
     args = sys.argv[1:]
-    if args[:1] == ["run"]:
+    if args[:1] == ["prefetch"]:
+        prefetch([a for a in args[1:] if a in DATASETS] or list(DATASETS))
+    elif args[:1] == ["run"]:
         names = [a for a in args[1:] if a in DATASETS]
         if "--shard" in args:
             k, n = map(int, args[args.index("--shard") + 1].split("/"))
             names = shard(k, n)
+        preflight()
         failed = []
         for name, setting in jobs(names):
             try:

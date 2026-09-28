@@ -17,7 +17,7 @@ from pathlib import Path
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).parent))
-from retrieval import DATASETS, RESULTS, RUNS, load, log  # noqa: E402
+from retrieval import DATASETS, RESULTS, RUNS, load, log, preflight  # noqa: E402
 
 from peresearch.zetokrag import core, search  # noqa: E402
 
@@ -130,7 +130,7 @@ def main(only=None):
 
     from peresearch.zetokrag.models import Reranker, free_gpu, gpu_memory
 
-    log("start:", gpu_memory())
+    preflight()
     reranker = Reranker()
     for name in DATASETS:
         if all((RUNS / name / f"docs-{m}.npy").exists() for m in MODELS) and (not only or name in only):

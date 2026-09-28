@@ -4,7 +4,9 @@
 # a manifest (code, data and model revisions, packages, GPU), the first-stage candidates and every reranker
 # score (to re-analyse without a GPU), plus the document embeddings (kept on Kaggle to reuse as a kernel input;
 # not downloaded), the speed results and the logs. Outputs of earlier kernels attached as inputs are copied in
-# first, so finished corpora are skipped and saved embeddings are reused.
+# first, so finished corpora are skipped and saved embeddings are reused. Data and models are downloaded once
+# before the workers start, which then run offline; the workers are stopped after 11 hours, so the session
+# ends by itself before Kaggle's 12-hour limit, with every finished corpus saved.
 COMMIT = "main"
 SHARDS = [0, 1]          # of 4; the other kernel runs [2, 3]
 CORPORA = None           # e.g. [["nfcorpus-vn", "scifact-vn"], []]: these corpora per GPU (smoke test), not SHARDS
@@ -13,7 +15,10 @@ PINS = "sentence-transformers==6.1.0 transformers==5.17.0 bm25s==0.3.11 huggingf
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
+
+DEADLINE = time.time() + 11 * 3600
 
 REPO, SRC = "https://github.com/geminitt/peresearch.git", Path("/tmp/peresearch")
 WORK = Path("/kaggle/working")
@@ -42,18 +47,32 @@ sys.path[:0] = [f"{SRC}/eval", f"{SRC}/src"]
 from retrieval import shard  # noqa: E402
 
 groups = CORPORA or [shard(k, 4) for k in SHARDS]
+names = [n for g in groups for n in g]
 print("corpora per GPU:", groups, flush=True)
+subprocess.run([sys.executable, f"{SRC}/eval/retrieval.py", "prefetch", *names], cwd=SRC, check=True,
+               env={**env, "CUDA_VISIBLE_DEVICES": ""})
+env["HF_HUB_OFFLINE"] = "1"
 workers = []
-for gpu, names in enumerate(groups):
-    if not names:
+for gpu, group in enumerate(groups):
+    if not group:
         continue
     log = open(WORK / f"worker{gpu}.log", "w")
-    workers.append(subprocess.Popen([sys.executable, f"{SRC}/eval/retrieval.py", "run", *names], cwd=SRC,
+    workers.append(subprocess.Popen([sys.executable, f"{SRC}/eval/retrieval.py", "run", *group], cwd=SRC,
                                     env={**env, "CUDA_VISIBLE_DEVICES": str(gpu)}, stdout=log, stderr=subprocess.STDOUT))
-codes = [w.wait() for w in workers]
+codes = []
+for w in workers:
+    try:
+        codes.append(w.wait(timeout=max(1, DEADLINE - time.time())))
+    except subprocess.TimeoutExpired:
+        w.terminate()
+        codes.append(f"stopped at the deadline ({w.wait()})")
 print("workers exited with", codes, flush=True)
 with open(WORK / "speed.log", "w") as log:
-    subprocess.run([sys.executable, f"{SRC}/eval/speed.py", *[n for g in groups for n in g]], cwd=SRC,
-                   env={**env, "CUDA_VISIBLE_DEVICES": "0"}, stdout=log, stderr=subprocess.STDOUT)
-sh(f"pip freeze > {WORK}/pip-freeze.txt && du -sh {WORK}/runs")
-sh(f"tail -n 5 {WORK}/worker*.log {WORK}/speed.log")
+    try:
+        subprocess.run([sys.executable, f"{SRC}/eval/speed.py", *names], cwd=SRC, stdout=log, stderr=subprocess.STDOUT,
+                       env={**env, "CUDA_VISIBLE_DEVICES": "0"}, timeout=max(1, DEADLINE + 1800 - time.time()))
+    except subprocess.TimeoutExpired:
+        print("speed test stopped at the deadline", flush=True)
+sh(f"pip freeze > {WORK}/pip-freeze.txt && du -sh {WORK}/runs && df -h {WORK}")
+sh(f"find {WORK}/runs -name metrics.json | sort; ls {WORK}/runs/speed || true")
+sh(f"grep -hE 'FAILED|Error|retry|preflight' {WORK}/worker*.log {WORK}/speed.log || true")
