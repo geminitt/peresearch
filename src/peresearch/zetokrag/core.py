@@ -64,8 +64,10 @@ class BM25:
 
 
 def top(scores: np.ndarray, n: int) -> np.ndarray:
-    """Indices of the n highest scores, best first."""
-    n = min(n, len(scores))
+    """Indices of the n highest scores, best first; a score of -inf marks an excluded text, never returned."""
+    n = min(n, int((scores > -np.inf).sum()))
+    if n == 0:
+        return np.zeros(0, dtype=np.int64)
     idx = np.argpartition(-scores, n - 1)[:n]
     return idx[np.argsort(-scores[idx], kind="stable")]
 

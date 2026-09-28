@@ -51,3 +51,11 @@ def test_jax_is_kept_off_the_gpu():
     import os
 
     assert os.environ["JAX_PLATFORMS"] == "cpu"
+
+
+def test_excluded_texts_never_reach_a_ranking():
+    s = np.array([0.5, -np.inf, 0.9, 0.1], dtype=np.float32)
+    assert core.top(s, 10).tolist() == [2, 0, 3]
+    ids, fused = core.fuse_minmax(s, np.array([0.2, -np.inf, 0.3, 0.8], dtype=np.float32), 0.5, 10)
+    assert 1 not in ids and np.isfinite(fused).all()
+    assert len(core.top(np.full(3, -np.inf), 5)) == 0
