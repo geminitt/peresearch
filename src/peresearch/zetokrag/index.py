@@ -60,6 +60,7 @@ class Index:
         self.db.executescript(SCHEMA)
         self._embedder = embedder
         self._bm25 = None
+        self._dense32 = None
 
     # --- storage ---
 
@@ -76,6 +77,16 @@ class Index:
         if ids_path.exists():
             return np.load(ids_path), np.load(vec_path)
         return np.zeros(0, dtype=np.int64), np.zeros((0, 0), dtype=np.float16)
+
+    def dense32(self) -> tuple[np.ndarray, np.ndarray]:
+        """The stored vectors as float32, converted once and kept until the file on disk changes (an update by
+        this or another process), instead of reading and converting them for every query."""
+        path = self.home / "dense.npy"
+        stamp = path.stat().st_mtime_ns if path.exists() else None
+        if self._dense32 is None or self._dense32[0] != stamp:
+            ids, vecs = self.dense()
+            self._dense32 = (stamp, ids, vecs.astype(np.float32))
+        return self._dense32[1], self._dense32[2]
 
     def rows(self, ids=None) -> list[tuple]:
         q = "SELECT id, path, section, unit, start, end, text, sha FROM chunks"

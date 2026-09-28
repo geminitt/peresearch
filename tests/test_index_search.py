@@ -128,3 +128,16 @@ def test_accented_queries_use_plain_bm25_and_bare_queries_folded(home, tmp_path)
     assert bm.scores("má").tolist().count(0.0) == 1          # plain: "má" only in a.md
     ids, bm = idx.bm25(folded=True)
     assert (bm.scores("ma") > 0).sum() == 2                    # bare: matches both
+
+
+def test_float32_vectors_are_kept_until_the_index_changes(home, notes):
+    idx, s = make(home, notes)
+    idx.update([notes])
+    ids, v = idx.dense32()
+    assert idx.dense32()[1] is v                                      # no reload or conversion per query
+    ids16, v16 = idx.dense()
+    assert (ids == ids16).all() and (v == v16.astype("float32")).all()   # the same numbers as converting each time
+    (notes / "new.md").write_text("# Mới\n\nMột ghi chú mới.\n")
+    other = Index(home, embedder=FakeEmbedder())                      # another process updates the index
+    other.update([notes])
+    assert len(idx.dense32()[0]) == 3                                 # the change on disk is picked up
