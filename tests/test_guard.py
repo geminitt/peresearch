@@ -18,7 +18,11 @@ CANARIES = {
     "google-api-key": "AIza" + "SyCanary0Canary1Canary2Canary3Canar",
     "slack-token": "xoxb-" + "1234567890-canarycanary",
     "modal-token": "ak-" + "Canary0Canary1Canary2Canary3",
+    "modal-proxy-token": "ws-" + "Canary0Canary1Canary2Canary3",
     "tavily-key": "tvly-" + "Canary0Canary1Canary2Canary3",
+    "groq-key": "gsk_" + "Canary0Canary1Canary2Canary3Canary4Canary5Canary6",
+    "cerebras-key": "csk-" + "Canary0Canary1Canary2Canary3Canary4",
+    "jina-key": "jina_" + "Canary0Canary1Canary2Canary3Canary4Canary5Canary6",
     "jwt": "eyJ" + "hbGciOiJIUzI1Ni" + ".eyJ" + "zdWIiOiIxMjM0NTY" + ".SflKxwRJSMeKKF2QT4",
     "assigned-secret": "api_key = 'Zx9#Qw7!Er5$Ty3&Ui1Op0'".replace("#", "Q").replace("!", "w").replace("$", "e").replace("&", "r"),
 }

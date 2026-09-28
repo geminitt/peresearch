@@ -51,7 +51,11 @@ SECRET_PATTERNS = {
     "slack-token": r"\bxox[abprs]-[A-Za-z0-9\-]{10,}",
     "stripe-key": r"\b[rs]k_live_[0-9A-Za-z]{20,}\b",
     "modal-token": r"\ba[ks]-[A-Za-z0-9]{20,}\b",
+    "modal-proxy-token": r"\bw[ks]-[A-Za-z0-9]{20,}\b",
     "tavily-key": r"\btvly-[A-Za-z0-9\-]{20,}\b",
+    "groq-key": r"\bgsk_[A-Za-z0-9]{40,}\b",
+    "cerebras-key": r"\bcsk-[A-Za-z0-9]{30,}\b",
+    "jina-key": r"\bjina_[A-Za-z0-9_\-]{40,}\b",
     "jwt": r"\beyJ[A-Za-z0-9_\-]{10,}\.eyJ[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}",
 }
 _SECRET_RE = [(kind, re.compile(p)) for kind, p in SECRET_PATTERNS.items()]

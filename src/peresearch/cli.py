@@ -5,6 +5,8 @@
     peresearch folders                          list the declared folders
     peresearch index                            (re)index the declared folders, on this machine
     peresearch find "query"                     search your files only; no model call, nothing leaves
+    peresearch ask "question"                   one question to the agent: your files first, then the web
+    peresearch chat                             the terminal interface (TUI) for a conversation
 """
 
 import argparse
@@ -74,6 +76,37 @@ def cmd_find(args):
         _print(f"\n{stale} excerpts dropped: their files changed; run `peresearch index`")
 
 
+def make_agent(project: str = "default", on_event=None):
+    """The agent with its real parts: the local index, the web providers that have keys, the model endpoint."""
+    from peresearch.agent import Agent
+    from peresearch.llm import LLM
+    from peresearch.tools import Toolbox
+    from peresearch.web import Web
+    from peresearch.zetokrag.index import Index
+    from peresearch.zetokrag.search import Searcher
+
+    on_event = on_event or (lambda kind, detail: None)
+    llm = LLM(on_wait=lambda msg: on_event("wait", msg))
+    return Agent(llm, Toolbox(Searcher(Index()), Web()), project=project, on_event=on_event)
+
+
+def cmd_ask(args):
+    from peresearch.tui import render
+
+    def event(kind, detail):
+        print(guard.sanitize(f"· {kind}: {detail}" if detail else f"· {kind}"), file=sys.stderr)
+
+    answer = make_agent(args.project, event).ask(args.question)
+    _print(render(answer))
+
+
+def cmd_chat(args):
+    from peresearch.tui import Chat
+
+    heading = f"peresearch · project {args.project} · {len(guard.roots())} declared folders"
+    Chat(lambda on_event: make_agent(args.project, on_event), heading).run(inline=not args.full)
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="peresearch", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -87,6 +120,14 @@ def main(argv=None):
     p.add_argument("query")
     p.add_argument("-k", type=int, default=5)
     p.set_defaults(fn=cmd_find)
+    p = sub.add_parser("ask")
+    p.add_argument("question")
+    p.add_argument("--project", default="default", help="conversation history to use and extend")
+    p.set_defaults(fn=cmd_ask)
+    p = sub.add_parser("chat")
+    p.add_argument("--project", default="default", help="conversation history to use and extend")
+    p.add_argument("--full", action="store_true", help="full-screen instead of inline in the terminal")
+    p.set_defaults(fn=cmd_chat)
     args = ap.parse_args(argv)
     args.fn(args)
 
