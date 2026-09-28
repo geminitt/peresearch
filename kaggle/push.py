@@ -1,6 +1,6 @@
 """Pin the commit and push a kernel with the kaggle CLI.
 
-    python kaggle/push.py retrieval --job a --set 'SHARDS=[0, 1]' --commit <sha> --input spritker/peresearch-retrieval-b
+    python kaggle/push.py retrieval --job full-shards-0-1 --set 'SHARDS=[0, 1]' --commit <sha> --input <earlier kernel>
 
 The kernel clones this repository at the pinned commit (it must be on GitHub), so the code that runs is exactly
 a commit of the repository.

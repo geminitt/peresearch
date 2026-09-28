@@ -3,7 +3,7 @@
 Two first-stage views score every text: BM25 and a dense embedding. BM25 matches words as typed, except when
 the query itself has no diacritics ("hoc may"): then it matches on diacritic-free forms, so the notes written
 with accents are still found. (Matching every query on bare forms merges too many Vietnamese words: ma, má,
-mà, mả, mã, mạ; the benchmark in results/variants.md chose this "auto" rule.)
+mà, mả, mã, mạ; results/retrieval.md compares this "auto" rule with folding always and never.)
 Each view keeps its top candidates, min-max normalizes their scores (a text missing from a view gets 0),
 and the two are mixed with weight rho, the fusion Zero-Mem uses. A cross-encoder then reranks the best
 fused candidates. No step calls an LLM, hence "zero-token".

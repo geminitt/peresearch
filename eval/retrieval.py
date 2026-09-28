@@ -4,6 +4,7 @@
     pixi run python eval/retrieval.py report                # results/retrieval.md
     python eval/retrieval.py run --shard 0/4                # one of four workers (see kaggle/)
     python eval/retrieval.py prefetch [corpus ...]          # download data and models first (see kaggle/)
+    pixi run python eval/retrieval.py cost                  # recompute COST below from token counts (CPU)
 
 Corpora: five BEIR sets (English, from mteb), their Vietnamese translations from VN-MTEB (GreenNode), six
 more Vietnamese sets from VN-MTEB (named "nano-*" there, though each corpus holds about 100k documents), and
@@ -429,13 +430,37 @@ def jobs(names=None) -> list[tuple[str, str]]:
     return [(n, st) for n in names for st in SETTINGS if st == "as-typed" or DATASETS[n][3] == "vi"]
 
 
-# T4 minutes per corpus, to split the corpora evenly across workers: its documents' tokens (cut at 512) over the
-# slowest rate measured on Kaggle's T4 for each embedder (BGE-M3 15,600, e5 17,300, Qwen3 7,000 tokens/s), plus
-# 1.65 s of reranking per query and setting (the slowest measured). A Vietnamese corpus counts both settings.
+# T4 minutes per corpus, to split the corpora evenly across workers; `cost()` computes them.
 COST = {"scifact": 16, "nfcorpus": 15, "fiqa": 61, "arguana": 36, "scidocs": 54, "scifact-vn": 16, "nfcorpus-vn": 16,
         "fiqa-vn": 71, "arguana-vn": 66, "scidocs-vn": 56, "nano-nq-vn": 120, "nano-hotpotqa-vn": 101,
         "nano-fever-vn": 115, "nano-dbpedia-vn": 74, "nano-climate-fever-vn": 114, "nano-msmarco-vn": 97,
         "zalo-legal-vn": 118}
+
+
+# Slowest rates measured on Kaggle's T4 (first full run and smoke runs, 2026-09-28): tokens per second per embedder
+# and seconds of reranking per query and setting.
+T4_TOKENS_PER_S = {"bge-m3": 15_624, "multilingual-e5-large": 17_302, "qwen3-embedding-0.6b": 6_982}
+T4_RERANK_S = 1.65
+
+
+def cost(names=None) -> dict[str, int]:
+    """COST: each corpus's document tokens (cut at 512, as the models see them) over the slowest measured rate of
+    each embedder, plus reranking every query in every setting (a Vietnamese corpus counts both)."""
+    from transformers import AutoTokenizer
+
+    from peresearch.zetokrag.models import EMBEDDERS as SPECS
+
+    toks = {m: AutoTokenizer.from_pretrained(SPECS[m]["repo"], revision=SPECS[m]["revision"]) for m in EMBEDDERS}
+    out = {}
+    for name in names or DATASETS:
+        _, texts, qs, _, _ = load(name)
+        seconds = len(qs) * sum(1 for _ in jobs([name])) * T4_RERANK_S
+        for m, tok in toks.items():
+            ids = tok([SPECS[m].get("doc_prefix", "") + t for t in texts], add_special_tokens=True)["input_ids"]
+            seconds += sum(min(len(x), 512) for x in ids) / T4_TOKENS_PER_S[m]
+        out[name] = round(seconds / 60)
+        log(name, out[name], "min")
+    return out
 
 
 def shard(k: int, n: int) -> list[str]:
@@ -524,7 +549,9 @@ def report(out_path: Path = RESULTS / "retrieval.md", n_boot: int = 10_000) -> s
 
 if __name__ == "__main__":
     args = sys.argv[1:]
-    if args[:1] == ["prefetch"]:
+    if args == ["cost"]:
+        print(cost())
+    elif args[:1] == ["prefetch"]:
         prefetch([a for a in args[1:] if a in DATASETS] or list(DATASETS))
     elif args[:1] == ["run"]:
         names = [a for a in args[1:] if a in DATASETS]
