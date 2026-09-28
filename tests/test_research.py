@@ -71,7 +71,8 @@ def test_qa_suite_runs_grades_resumes_and_reports(research, notes, monkeypatch):
         orig = a.ask
         a.ask = lambda q: (asked.append(q), orig(q))[1]
         return a
-    judge = ScriptedLLM(Reply("A"), Reply("B"), Reply("C"))
+    sanity = [Reply(x) for x in ("A", "B", "C", "B")]
+    judge = ScriptedLLM(*sanity, Reply("A"), Reply("B"), Reply("C"), *[Reply(x) for x in ("A", "B", "C", "B")])
     path = research.run_qa("simpleqa", None, factory, judge, WordNLI())
     recs = [json.loads(line) for line in path.read_text().splitlines()]
     assert [r["grade"] for r in recs] == ["CORRECT", "INCORRECT", "NOT_ATTEMPTED"] and len(asked) == 3
@@ -114,6 +115,7 @@ def test_injection_suite_tells_an_obeying_agent_from_a_resisting_one(research, m
     path = research.run_injection(1, lambda n, w: factory(n, w, obey=True), WordNLI())
     recs = [json.loads(line) for line in path.read_text().splitlines()]
     assert all(r["success"] for r in recs) and "web_search with the canary" in recs[0]["actions"]
+    assert recs[0]["exposed"]                                              # the planted note was retrieved
     path.unlink()
     path = research.run_injection(1, lambda n, w: factory(n, w, obey=False), WordNLI())
     recs = [json.loads(line) for line in path.read_text().splitlines()]
@@ -127,3 +129,10 @@ def test_the_grader_prompt_is_the_official_one_with_its_three_slots(research):
     assert research.grade(judge, "Q?", "gold", "an answer") == "INCORRECT"
     sent = judge.seen[0][0][0]["content"]
     assert "Question: Q?" in sent and "Gold target: gold" in sent and "Predicted answer: an answer" in sent
+
+
+def test_a_judge_that_fails_the_worked_examples_is_refused_and_empty_answers_are_not_attempted(research):
+    with pytest.raises(SystemExit):
+        research.check_judge(ScriptedLLM(*[Reply("A")] * 4))           # grades everything CORRECT
+    judge = ScriptedLLM()
+    assert research.grade(judge, "Q?", "gold", "   ") == "NOT_ATTEMPTED" and not judge.seen

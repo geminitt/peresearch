@@ -33,7 +33,8 @@ How to work:
   put personal or secret data into a web search.
 
 How to answer:
-- Answer in the language of the user's question; if it is unclear, in Vietnamese.
+- Answer in the language of the user's question (an English question gets an English answer); if it is unclear,
+  in Vietnamese.
 - Three parts, in this order, each with a short heading written in the answer's language (in Vietnamese:
   "Trong tài liệu của bạn", "Mới từ web", "Tổng hợp"):
   1. what the user's own files already say (or that they say nothing about it);
@@ -181,8 +182,11 @@ class Agent:
                 {"id": c.id, "type": "function", "function": {"name": c.name, "arguments": json.dumps(c.args, ensure_ascii=False)}}
                 for c in reply.calls]})
             for c in reply.calls:
+                repeat = (c.name, c.args) in calls
                 calls.append((c.name, c.args))
-                if c.name == "web_search" and tb.web_calls >= lim.web_searches:
+                if repeat:                  # a small model can loop on one call; the answer is already above
+                    result = "already called with the same arguments; its result is above. Use it, or answer."
+                elif c.name == "web_search" and tb.web_calls >= lim.web_searches:
                     result = f"limit: at most {lim.web_searches} web searches per question"
                 elif c.name == "fetch" and fetches >= lim.fetches:
                     result = f"limit: at most {lim.fetches} pages per question"

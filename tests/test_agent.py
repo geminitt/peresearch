@@ -284,3 +284,12 @@ def test_the_model_is_told_when_the_web_is_unavailable(home, notes):
     a.ask("BPE merges pairs?")
     assert "Web search is NOT available" in llm.seen[0][0][0]["content"]
     assert all(t["function"]["name"] not in ("web_search", "fetch") for t in llm.seen[0][1])
+
+
+def test_a_repeated_identical_call_is_not_run_again(home, notes):
+    same = ToolCall("c", "glob", {"pattern": "*.md"})
+    a, llm = agent(home, notes, Reply("", [same]), Reply("", [ToolCall("d", "glob", {"pattern": "*.md"})]),
+                   Reply("Done [N1]."))
+    a.ask("BPE merges pairs?")
+    tool_msgs = [m["content"] for m in llm.seen[-1][0] if m["role"] == "tool"]
+    assert "bpe.md" in tool_msgs[-2] and "already called with the same arguments" in tool_msgs[-1]
