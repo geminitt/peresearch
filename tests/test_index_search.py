@@ -141,3 +141,13 @@ def test_float32_vectors_are_kept_until_the_index_changes(home, notes):
     other = Index(home, embedder=FakeEmbedder())                      # another process updates the index
     other.update([notes])
     assert len(idx.dense32()[0]) == 3                                 # the change on disk is picked up
+
+
+def test_search_sees_an_update_made_by_another_process(home, notes):
+    idx, s = make(home, notes)
+    idx.update([notes])
+    s.find("phở nước dùng", k=1)                                      # builds this process's BM25
+    (notes / "new.md").write_text("# Đà Lạt\n\nĐồi thông và hồ Xuân Hương.\n")
+    Index(home, embedder=FakeEmbedder()).update([notes])              # another process updates the index
+    hits, _, _ = s.find("đồi thông hồ xuân hương", k=1)
+    assert hits and hits[0].path.endswith("new.md")

@@ -59,7 +59,7 @@ class Index:
         self.db = sqlite3.connect(self.home / "index.sqlite")
         self.db.executescript(SCHEMA)
         self._embedder = embedder
-        self._bm25 = None
+        self._bm25 = self._bm25_version = None
         self._dense32 = None
 
     # --- storage ---
@@ -96,9 +96,11 @@ class Index:
         return [got[int(i)] for i in ids if int(i) in got]
 
     def bm25(self, folded: bool):
-        """(ids, BM25) over all chunks, plain or diacritic-folded; built on first use after an update."""
-        if self._bm25 is None:
-            self._bm25 = {}
+        """(ids, BM25) over all chunks, plain or diacritic-folded; built on first use after an update, whether this
+        process made it or another one (SQLite's data_version changes when another connection commits)."""
+        version = self.db.execute("PRAGMA data_version").fetchone()[0]
+        if self._bm25 is None or self._bm25_version != version:
+            self._bm25, self._bm25_version = {}, version
         if folded not in self._bm25:
             from peresearch.zetokrag.core import BM25
 
