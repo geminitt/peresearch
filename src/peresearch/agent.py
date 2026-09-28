@@ -80,6 +80,7 @@ class Answer:
     prompt_tokens: int = 0
     completion_tokens: int = 0
     stopped: str = ""          # which limit ended the search, if any
+    calls: list = field(default_factory=list)   # every tool call made: (name, args), in order
 
 
 def _norm(s: str) -> str:
@@ -109,8 +110,10 @@ def _wrap(name: str, result: str) -> str:
 
 
 class Agent:
-    def __init__(self, llm, toolbox: Toolbox, project: str = "default", limits: Limits | None = None, on_event=None):
-        self.llm, self.toolbox, self.project = llm, toolbox, project
+    def __init__(self, llm, toolbox: Toolbox, project: str = "default", limits: Limits | None = None, on_event=None,
+                 record: bool = True):
+        """`record=False` keeps no history (evaluation: every question stands alone)."""
+        self.llm, self.toolbox, self.project, self.record = llm, toolbox, project, record
         self.limits = limits or Limits()
         self.on_event = on_event or (lambda kind, detail: None)
         self.history_path = guard.home() / "sessions" / f"{re.sub(r'[^A-Za-z0-9_.-]', '_', project)}.jsonl"
@@ -118,7 +121,7 @@ class Agent:
     # --- history ---
 
     def history(self) -> list[dict]:
-        if not self.history_path.exists():
+        if not self.record or not self.history_path.exists():
             return []
         turns = [json.loads(line) for line in self.history_path.read_text().splitlines() if line.strip()]
         kept, used = [], 0
@@ -154,7 +157,7 @@ class Agent:
                          "function": {"name": "search_notes", "arguments": json.dumps({"query": question}, ensure_ascii=False)}}]},
                      {"role": "tool", "tool_call_id": "local-0", "content": _wrap("search_notes", first)}]
         prompt = completion = steps = 0
-        stopped, text = "", ""
+        stopped, text, calls = "", "", [("search_notes", {"query": question})]
         while True:
             over = ("steps" if steps >= lim.steps else "time" if time.time() - start > lim.seconds else "")
             if over:
@@ -178,6 +181,7 @@ class Agent:
                 {"id": c.id, "type": "function", "function": {"name": c.name, "arguments": json.dumps(c.args, ensure_ascii=False)}}
                 for c in reply.calls]})
             for c in reply.calls:
+                calls.append((c.name, c.args))
                 if c.name == "web_search" and tb.web_calls >= lim.web_searches:
                     result = f"limit: at most {lim.web_searches} web searches per question"
                 elif c.name == "fetch" and fetches >= lim.fetches:
@@ -188,7 +192,8 @@ class Agent:
                     result = tb.call(c.name, c.args)
                 messages.append({"role": "tool", "tool_call_id": c.id, "content": _wrap(c.name, result)})
         sources = dict(tb.sources.items)
-        answer = Answer(text, sources, check(text, sources), steps, prompt, completion, stopped)
-        self._remember(question, answer)
+        answer = Answer(text, sources, check(text, sources), steps, prompt, completion, stopped, calls)
+        if self.record:
+            self._remember(question, answer)
         self.on_event("answer", "")
         return answer
