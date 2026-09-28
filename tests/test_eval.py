@@ -41,3 +41,11 @@ def test_exact_binomial_interval():
     assert lo == 0.0 and abs(hi - (1 - 0.025 ** (1 / 60))) < 1e-6
     lo, hi = personal.exact_interval(5, 10)
     assert abs(lo - 0.1871) < 1e-3 and abs(hi - 0.8129) < 1e-3      # textbook Clopper-Pearson for 5/10
+
+
+def test_every_corpus_is_pinned_and_shards_cover_all_once():
+    assert set(retrieval.REVISIONS) == set(retrieval.DATASETS)
+    assert all(len(r) == 40 for r in retrieval.REVISIONS.values())
+    shards = [retrieval.shard(k, 4) for k in range(4)]
+    assert sorted(c for s in shards for c in s) == sorted(retrieval.DATASETS)
+    assert len(retrieval.jobs()) == 29

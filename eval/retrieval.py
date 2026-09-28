@@ -6,7 +6,9 @@
 
 Corpora: five BEIR sets (English, from mteb), their Vietnamese translations from VN-MTEB (GreenNode), six
 more Vietnamese sets from VN-MTEB (named "nano-*" there, though each corpus holds about 100k documents), and
-Zalo legal retrieval (native Vietnamese). Every query of every corpus is used. Every Vietnamese corpus is run
+Zalo legal retrieval (native Vietnamese), each pinned to a dataset revision. Corpora are used whole; query sets
+above 1,000 are subsampled with a fixed seed (with all queries the confidence intervals of the conclusions
+narrowed by only 0.01-0.07 points, as the smallest corpora dominate them). Every Vietnamese corpus is run
 twice: with its queries as written, and with the same queries stripped of diacritics ("hoc may"), the way they
 are often typed. Methods share one first stage per view, and every reranked method reranks the top 30 of its
 own first stage with the same model.
@@ -32,6 +34,7 @@ RUNS = Path(os.environ.get("PERESEARCH_RUNS", ROOT / "runs")) / "retrieval"
 RESULTS = Path(os.environ.get("PERESEARCH_RESULTS", ROOT / "results"))
 N_FIRST, N_RERANK, RHO = 100, 30, 0.5
 QUERY_BATCH = 256
+MAX_QUERIES = 1000   # per corpus, subsampled with seed 0
 
 DATASETS = {  # name: (repo, layout, split, language)
     **{n: (f"mteb/{n}", "mteb", "test", "en") for n in ["scifact", "nfcorpus", "fiqa", "arguana", "scidocs"]},
@@ -41,6 +44,25 @@ DATASETS = {  # name: (repo, layout, split, language)
        for n in ["nq", "hotpotqa", "fever", "dbpedia", "climate-fever"]},
     "nano-msmarco-vn": ("GreenNode/nano-msmarco-vn", "greennode", "dev", "vi"),
     "zalo-legal-vn": ("GreenNode/zalo-ai-legal-text-retrieval-vn", "greennode", "test", "vi"),
+}
+REVISIONS = {  # Hugging Face dataset commits, so a changed dataset cannot change the benchmark silently
+    "scifact": "cf10ab6856b15b0e670ef8ae5dae4e266c12d035",
+    "nfcorpus": "52ac3f19d3449632d9f00aab0ad34a110fc03816",
+    "fiqa": "5e59eeb3a7df6b85882112b747008547c21587ea",
+    "arguana": "6c1bcf74b13dfd823aff056b79d4d93e702f19c7",
+    "scidocs": "490848228d0a9ca7a7244f5e77d8fe33e6df6974",
+    "scifact-vn": "3fe01c71905b40964f70fa93f255505fd5009ea5",
+    "nfcorpus-vn": "3a0a6496015fd44ac99d39f994e6a6f15b068ec1",
+    "fiqa-vn": "d8a8236d8fb09789467121124f7d379fb330e24c",
+    "arguana-vn": "137122e4a56c03399d31bce35a045f0034242a4c",
+    "scidocs-vn": "2314d706e594b92b12999bb15159a45bc4cb8949",
+    "nano-nq-vn": "1ad4d6556fe0e5314994839089ce070fb0db8b19",
+    "nano-hotpotqa-vn": "f4de19a2fae1a582de114e5bcd178bb262183113",
+    "nano-fever-vn": "457ca6b058ed19b28f2359e2d816d7527af6bef8",
+    "nano-dbpedia-vn": "bbc3259bc63bf1e250d7034024092cc3230d5850",
+    "nano-climate-fever-vn": "1852e852f07403d4529a8520d52b91ff6d57869b",
+    "nano-msmarco-vn": "f149369c82ec228b05b0f6677699ab4bfbab73f6",
+    "zalo-legal-vn": "12d76d4d04b94ceada970fcfbe7fec20bfa97389",
 }
 # In ArguAna each query is itself an argument from the corpus. As in BEIR's evaluation, the query's own document
 # is excluded from every ranking; otherwise every method finds the query itself first and is scored wrong.
@@ -80,7 +102,7 @@ def load(name: str):
     from huggingface_hub import hf_hub_download
 
     repo, layout, split, _ = DATASETS[name]
-    get = lambda f: hf_hub_download(repo, f, repo_type="dataset")
+    get = lambda f: hf_hub_download(repo, f, repo_type="dataset", revision=REVISIONS[name])
     if layout == "mteb":
         corpus = pd.read_json(get("corpus.jsonl"), lines=True, dtype=False)
         queries = pd.read_json(get("queries.jsonl"), lines=True, dtype=False)
@@ -103,6 +125,8 @@ def load(name: str):
     rel = {q: r for q, r in rel.items() if r}
     qtext = dict(zip(queries[qid].astype(str), queries["text"]))
     qs = sorted(q for q in rel if q in qtext)
+    if len(qs) > MAX_QUERIES:
+        qs = sorted(np.random.default_rng(0).choice(qs, MAX_QUERIES, replace=False).tolist())
     return doc_ids, texts.tolist(), qs, [qtext[q] for q in qs], {q: rel[q] for q in qs}
 
 
@@ -287,6 +311,25 @@ def rerank_all(name, texts, qtexts, rels, doc_ids, stages, out: Path) -> dict:
     return result
 
 
+def manifest(name: str, setting: str, n_docs: int, n_queries: int) -> dict:
+    """What produced a result: code, data and model revisions, packages, hardware."""
+    import platform
+    from importlib.metadata import version
+
+    import torch
+
+    from peresearch.zetokrag.models import EMBEDDERS as SPECS, RERANKER
+
+    return {"corpus": name, "setting": setting, "dataset": DATASETS[name][0], "dataset_revision": REVISIONS[name],
+            "documents": n_docs, "queries": n_queries, "max_queries": MAX_QUERIES,
+            "commit": os.environ.get("PERESEARCH_COMMIT", "unknown"),
+            "models": {**{m: SPECS[m]["revision"] for m in EMBEDDERS}, "bge-reranker-v2-m3": RERANKER["revision"]},
+            "packages": {p: version(p) for p in ("torch", "transformers", "sentence-transformers", "bm25s", "numpy")},
+            "python": platform.python_version(),
+            "gpu": torch.cuda.get_device_name(0) if torch.cuda.is_available() else "cpu",
+            "n_first": N_FIRST, "n_rerank": N_RERANK, "rho": RHO, "time": time.strftime("%Y-%m-%d %H:%M:%S")}
+
+
 def run_dataset(name: str, setting: str = "as-typed") -> None:
     base = RUNS / name
     out = base / setting
@@ -297,6 +340,7 @@ def run_dataset(name: str, setting: str = "as-typed") -> None:
     doc_ids, texts, qs, qtexts, rel = load(name)
     qtexts = [SETTINGS[setting](q) for q in qtexts]
     log(name, setting, f"{len(texts)} documents, {len(qs)} queries")
+    (out / "manifest.json").write_text(json.dumps(manifest(name, setting, len(texts), len(qs)), indent=1))
     own = own_documents(name, doc_ids, qs)
     stages = first_stages(name, texts, qtexts, out, own, base)
     rels = [rel[q] for q in qs]
@@ -318,9 +362,11 @@ def jobs(names=None) -> list[tuple[str, str]]:
 
 # Rough relative cost of a corpus (document embeddings, then reranking every query), to split the corpora
 # across workers evenly; a Vietnamese corpus counts twice (both query settings).
-COST = {"scifact": 6, "nfcorpus": 5, "fiqa": 55, "arguana": 20, "scidocs": 35, "scifact-vn": 8, "nfcorpus-vn": 7,
-        "fiqa-vn": 60, "arguana-vn": 35, "scidocs-vn": 35, "nano-nq-vn": 130, "nano-hotpotqa-vn": 330,
-        "nano-fever-vn": 280, "nano-dbpedia-vn": 130, "nano-climate-fever-vn": 125, "nano-msmarco-vn": 180,
+# Estimated T4 minutes: embedding the documents with the three models (once per corpus) plus reranking about
+# one second per query (per query setting). From the Kaggle smoke run on SciFact.
+COST = {"scifact": 20, "nfcorpus": 12, "fiqa": 80, "arguana": 30, "scidocs": 55, "scifact-vn": 16, "nfcorpus-vn": 10,
+        "fiqa-vn": 75, "arguana-vn": 30, "scidocs-vn": 45, "nano-nq-vn": 120, "nano-hotpotqa-vn": 120,
+        "nano-fever-vn": 125, "nano-dbpedia-vn": 135, "nano-climate-fever-vn": 120, "nano-msmarco-vn": 115,
         "zalo-legal-vn": 110}
 
 
@@ -331,7 +377,7 @@ def shard(k: int, n: int) -> list[str]:
     for name in sorted(DATASETS, key=lambda c: -COST[c]):
         w = int(np.argmin(load_))
         owner[name] = w
-        load_[w] += COST[name] * (2 if DATASETS[name][3] == "vi" else 1)
+        load_[w] += COST[name]
     return [c for c in DATASETS if owner[c] == k]
 
 
