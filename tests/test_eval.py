@@ -21,3 +21,23 @@ def test_auroc():
     assert retrieval.auroc([0.9, 0.8], [0.1, 0.2]) == 1.0
     assert retrieval.auroc([0.5], [0.5]) == 0.5
     assert retrieval.auroc([0.1], [0.9]) == 0.0
+
+
+def test_own_document_is_excluded_only_where_the_query_is_in_the_corpus():
+    import numpy as np
+    assert retrieval.own_documents("scifact", ["a", "q1"], ["q1"]) == [None]
+    assert retrieval.own_documents("arguana", ["a", "q1"], ["q1", "q9"]) == [1, None]
+    scores = retrieval.exclude([np.array([0.2, 0.9])], [1])[0]
+    assert scores[1] == -np.inf and int(np.argmax(scores)) == 0
+
+
+def test_exact_binomial_interval():
+    spec2 = importlib.util.spec_from_file_location("personal", Path(__file__).parent.parent / "eval" / "personal.py")
+    personal = importlib.util.module_from_spec(spec2)
+    spec2.loader.exec_module(personal)
+    lo, hi = personal.exact_interval(25, 25)
+    assert hi == 1.0 and abs(lo - 0.025 ** (1 / 25)) < 1e-6          # 0.863: the rule of three's exact form
+    lo, hi = personal.exact_interval(0, 60)
+    assert lo == 0.0 and abs(hi - (1 - 0.025 ** (1 / 60))) < 1e-6
+    lo, hi = personal.exact_interval(5, 10)
+    assert abs(lo - 0.1871) < 1e-3 and abs(hi - 0.8129) < 1e-3      # textbook Clopper-Pearson for 5/10

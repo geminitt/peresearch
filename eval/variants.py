@@ -22,7 +22,7 @@ from pathlib import Path
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).parent))
-from retrieval import DATASETS, RUNS, auroc, load, log, metrics  # noqa: E402
+from retrieval import DATASETS, RUNS, auroc, load, log, metrics, own_documents  # noqa: E402
 
 from peresearch.zetokrag import core  # noqa: E402
 
@@ -44,6 +44,7 @@ def run_corpus(name: str, rr, embedders) -> None:
     pick = sorted(np.random.default_rng(1).choice(len(qs), min(N_QUERIES, len(qs)), replace=False).tolist())
     qs, qtexts = [qs[i] for i in pick], [qtexts[i] for i in pick]
     rels = [rel[q] for q in qs]
+    own = own_documents(name, doc_ids, qs)
     bm = {"plain": core.BM25(texts, folded=False), "fold": core.BM25(texts, folded=True)}
     docs = {m: np.load(RUNS / name / f"docs-{m}.npy").astype(np.float32) for m in embedders}
     out = {"queries": qs, "runs": {}}
@@ -57,6 +58,8 @@ def run_corpus(name: str, rr, embedders) -> None:
                 kind = lex if lex != "auto" else ("plain" if accented(q) else "fold")
                 lexical = bm[kind].scores(q)
                 dense = docs[model] @ qvec[model][qi]
+                if own[qi] is not None:          # ArguAna: the query's own document (see retrieval.py)
+                    lexical[own[qi]] = dense[own[qi]] = -np.inf
                 ids, _ = core.fuse_minmax(lexical, dense, RHO, N_FIRST)
                 head = ids[:N_RERANK]
                 order, s = core.rerank(ids, rr(q, head, texts))

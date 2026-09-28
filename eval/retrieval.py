@@ -37,6 +37,9 @@ DATASETS = {  # name: (repo, layout, split, language)
     "nano-msmarco-vn": ("GreenNode/nano-msmarco-vn", "greennode", "dev", "vi"),
     "zalo-legal-vn": ("GreenNode/zalo-ai-legal-text-retrieval-vn", "greennode", "test", "vi"),
 }
+# In ArguAna each query is itself an argument from the corpus. As in BEIR's evaluation, the query's own document
+# is excluded from every ranking; otherwise every method finds the query itself first and is scored wrong.
+SELF_IN_CORPUS = {"arguana", "arguana-vn"}
 EMBEDDERS = ["bge-m3", "multilingual-e5-large", "qwen3-embedding-0.6b"]
 METHODS = {  # name: (first stage, reranked?)
     "bm25": ("bm25", False),
@@ -103,7 +106,23 @@ def log(*a):
     print(time.strftime("%H:%M:%S"), *a, flush=True)
 
 
-def first_stages(name, doc_ids, texts, qtexts, out: Path) -> dict:
+def own_documents(name, doc_ids, qs) -> list:
+    """Per query, the index of the query's own document when the corpus contains it (else None)."""
+    if name not in SELF_IN_CORPUS:
+        return [None] * len(qs)
+    pos = {d: i for i, d in enumerate(doc_ids)}
+    return [pos.get(q) for q in qs]
+
+
+def exclude(per_query, own) -> list:
+    """Scores with each query's own document pushed to the bottom."""
+    for scores, i in zip(per_query, own):
+        if i is not None:
+            scores[i] = -np.inf
+    return per_query
+
+
+def first_stages(name, doc_ids, texts, qtexts, out: Path, own) -> dict:
     """Top N_FIRST (index, score) per query for every first-stage view; cached."""
     from peresearch.zetokrag.models import Embedder, free_gpu
 
@@ -120,7 +139,7 @@ def first_stages(name, doc_ids, texts, qtexts, out: Path) -> dict:
 
     for folded, view in ((False, "bm25"), (True, "bm25-fold")):
         bm = core.BM25(texts, folded=folded)
-        per_query = [bm.scores(q) for q in qtexts]
+        per_query = exclude([bm.scores(q) for q in qtexts], own)
         keep(view, per_query)
         if folded:
             full["bm25-fold"] = per_query
@@ -141,7 +160,7 @@ def first_stages(name, doc_ids, texts, qtexts, out: Path) -> dict:
         queries = emb.queries(qtexts)
         del emb
         free_gpu()
-        per_query = list((queries.astype(np.float32) @ docs.astype(np.float32).T))
+        per_query = exclude(list((queries.astype(np.float32) @ docs.astype(np.float32).T)), own)
         keep(f"dense-{model}", per_query)
         if model == "bge-m3":
             full["bge-m3"] = per_query
@@ -212,13 +231,15 @@ def run_dataset(name: str) -> None:
     out.mkdir(parents=True, exist_ok=True)
     doc_ids, texts, qs, qtexts, rel = load(name)
     log(name, f"{len(texts)} documents, {len(qs)} queries")
-    stages = first_stages(name, doc_ids, texts, qtexts, out)
+    own = own_documents(name, doc_ids, qs)
+    stages = first_stages(name, doc_ids, texts, qtexts, out, own)
     rels = [rel[q] for q in qs]
     rr = rerank_all(name, texts, qtexts, rels, doc_ids, stages, out)
     per_method = {}
     for method, (view, reranked) in METHODS.items():
         orders = rr["orders"][view] if reranked else [[int(i) for i in row if i >= 0] for row in stages[view][0]]
-        per_method[method] = [metrics([doc_ids[i] for i in o], r) for o, r in zip(orders, rels)]
+        # the own document never reaches a ranking; the filter only guards the metric
+        per_method[method] = [metrics([doc_ids[i] for i in o if i != x], r) for o, r, x in zip(orders, rels, own)]
     done.write_text(json.dumps({"queries": qs, "documents": len(texts), "per_query": per_method,
                                 "answerable": rr["answerable"], "unanswerable": rr["unanswerable"]}))
     log(name, "zetokrag nDCG@10", round(float(np.mean([m["ndcg@10"] for m in per_method["zetokrag"]])), 4))
