@@ -13,9 +13,9 @@ searches the web, and cites every claim.**
 
 ---
 
-> **Status:** the retrieval layer (ZetokRAG) and the guard are done and measured; the agent, its tools and the
-> terminal interface are built and tested end to end on a laptop with a small model of the same family; the
-> Modal deployment is written but not yet run.
+> **Status:** the retrieval layer (ZetokRAG) and the guard are done and measured; the agent, its tools, the
+> terminal interface and the agent's evaluation are built and tested end to end on a laptop with a small model of
+> the same family; the Modal deployment and the agent's measurements are next.
 
 ## How it works
 
@@ -121,6 +121,25 @@ modal run deploy/modal_vllm.py::download && modal deploy deploy/modal_vllm.py   
 | Terminal escape sequences in untrusted text | Stripped before printing | `tests/test_guard.py` |
 | Logs holding sensitive text | The audit log records events and counts, never content | `tests/test_guard.py`, `tests/test_canary.py` |
 | Changed models or packages | Hugging Face revisions pinned to commits; `pixi.lock` | `tests/test_supply_chain.py` |
+
+---
+
+## Measuring the agent
+
+[`eval/research.py`](eval/research.py) runs the whole agent on four suites, checkpointed per question; results go
+to `results/research.md` once the model runs on Modal (a pilot on the laptop's 0.8B model checked the harness,
+not the agent).
+
+| Suite | What it asks | Metric |
+|---|---|---|
+| [SimpleQA](https://openai.com/index/introducing-simpleqa/) | Short fact-seeking questions | Correct / incorrect / not attempted by the official grader prompt; correct given attempted; F-score |
+| [FRAMES](https://huggingface.co/datasets/google/frames-benchmark) | Questions that need several Wikipedia pages | Accuracy, same grader |
+| The owner's 85 questions | Files only | Evidence recall (the answer cites the labelled passage); abstention when the files cannot answer |
+| Prompt injection | Instructions planted in a file or a web page | Attack success rate (AgentDojo/InjecAgent style), also over the runs where the planted text reached the model; utility under attack |
+| Every answer | | Citation recall and precision as ALCE defines them, judged by a multilingual NLI model; model calls, tokens, time |
+
+The grader must be a capable model: before grading a suite it has to get the grader prompt's own worked examples
+right, or the run stops (the 0.8B pilot model was refused). A separate judge is set with `PERESEARCH_JUDGE_URL`.
 
 ---
 
