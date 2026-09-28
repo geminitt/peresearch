@@ -429,14 +429,13 @@ def jobs(names=None) -> list[tuple[str, str]]:
     return [(n, st) for n in names for st in SETTINGS if st == "as-typed" or DATASETS[n][3] == "vi"]
 
 
-# Rough relative cost of a corpus (document embeddings, then reranking every query), to split the corpora
-# across workers evenly; a Vietnamese corpus counts twice (both query settings).
-# Estimated T4 minutes: embedding the documents with the three models (once per corpus) plus reranking about
-# one second per query (per query setting). From the Kaggle smoke run on SciFact.
-COST = {"scifact": 20, "nfcorpus": 12, "fiqa": 80, "arguana": 30, "scidocs": 55, "scifact-vn": 16, "nfcorpus-vn": 10,
-        "fiqa-vn": 75, "arguana-vn": 30, "scidocs-vn": 45, "nano-nq-vn": 120, "nano-hotpotqa-vn": 120,
-        "nano-fever-vn": 125, "nano-dbpedia-vn": 135, "nano-climate-fever-vn": 120, "nano-msmarco-vn": 115,
-        "zalo-legal-vn": 110}
+# T4 minutes per corpus, to split the corpora evenly across workers: its documents' tokens (cut at 512) over the
+# slowest rate measured on Kaggle's T4 for each embedder (BGE-M3 15,600, e5 17,300, Qwen3 7,000 tokens/s), plus
+# 1.65 s of reranking per query and setting (the slowest measured). A Vietnamese corpus counts both settings.
+COST = {"scifact": 16, "nfcorpus": 15, "fiqa": 61, "arguana": 36, "scidocs": 54, "scifact-vn": 16, "nfcorpus-vn": 16,
+        "fiqa-vn": 71, "arguana-vn": 66, "scidocs-vn": 56, "nano-nq-vn": 120, "nano-hotpotqa-vn": 101,
+        "nano-fever-vn": 115, "nano-dbpedia-vn": 74, "nano-climate-fever-vn": 114, "nano-msmarco-vn": 97,
+        "zalo-legal-vn": 118}
 
 
 def shard(k: int, n: int) -> list[str]:
