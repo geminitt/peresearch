@@ -19,8 +19,8 @@ from peresearch.zetokrag import core
 from peresearch.zetokrag.index import Index, embed_text, sha256
 
 RHO, N_FIRST, N_RERANK = 0.5, 100, 30
-# Reranker-score thresholds. On the user's own 85-question set every unanswerable question scored at most 0.16
-# and every answerable one at least 0.56; on the public corpora 90% of answerable queries score above 0.25.
+# Reranker-score thresholds, set after seeing the user's own 85-question set: every unanswerable question scored
+# at most 0.16 and every answerable one at least 0.56; on the public corpora 86% of answerable queries reach 0.25.
 ENOUGH, PARTIAL = 0.5, 0.25
 
 
