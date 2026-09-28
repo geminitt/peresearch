@@ -2,7 +2,8 @@
 
     pixi run python eval/personal.py ~/projects/monodist ~/class ...     # folders to index for the run
     pixi run python eval/personal.py --embedder bge-m3 ~/notes ...        # another embedder, own index
-    pixi run python eval/personal.py compare    # nine retrieval methods on the same chunks (both indexes built)
+    pixi run python eval/personal.py compare    # eleven retrieval methods on the same chunks (both indexes built);
+                                                # writes results/personal.md (aggregate numbers only)
 
 The question set and the index stay outside the repository (they hold excerpts of private files); only the
 aggregate numbers are printed. Two ways of scoring a hit:
@@ -118,8 +119,9 @@ def exact_interval(k: int, n: int) -> tuple[float, float]:
     return lower, upper
 
 
-def compare(n_boot: int = 10_000) -> None:
-    """Rank the 85 questions with nine retrieval methods over the same chunks; ZetokRAG minus each, paired."""
+def compare(n_boot: int = 10_000, out_path: Path = Path(__file__).parent.parent / "results" / "personal.md") -> str:
+    """Rank the questions with eleven retrieval methods over the same chunks; ZetokRAG minus each, paired. The
+    report holds aggregate numbers only: no question, passage or path leaves the machine."""
     from peresearch.zetokrag import core
     from peresearch.zetokrag.index import embed_text
     from peresearch.zetokrag.models import Embedder, Reranker, free_gpu
@@ -160,40 +162,75 @@ def compare(n_boot: int = 10_000) -> None:
         "dense-bge-m3+rerank": lambda qi, q: rerank(q, core.top(vecs["bge"] @ qvecs["bge"][qi], 100)),
         "dense-qwen3+rerank": lambda qi, q: rerank(q, core.top(vecs["qwen"] @ qvecs["qwen"][qi], 100)),
         "bm25-auto+rerank": lambda qi, q: rerank(q, core.top(lexical(q, "auto"), 100)),
+        "zetokrag-v0": lambda qi, q: rerank(q, core.fuse_minmax(lexical(q, "fold"), vecs["bge"] @ qvecs["bge"][qi],
+                                                                search.RHO, search.N_FIRST)[0]),
+        "zetokrag-bge": lambda qi, q: rerank(q, core.fuse_minmax(lexical(q, "auto"), vecs["bge"] @ qvecs["bge"][qi],
+                                                                 search.RHO, search.N_FIRST)[0]),
         "zetokrag": lambda qi, q: rerank(q, core.fuse_minmax(lexical(q, "auto"), vecs["qwen"] @ qvecs["qwen"][qi],
                                                              search.RHO, search.N_FIRST)[0]),
     }
+    chunk_text = {(c["path"], c["unit"], c["start"], c["end"]): c["text"]
+                  for c in map(json.loads, open(home / "chunks.jsonl"))}
     results = {}
     for name, fn in methods.items():
-        ndcg, hits, best_a, best_n = [], [], [], []
+        ndcg, hits, best_a, best_n, content = [], [], [], [], []
         for qi, it in enumerate(items):
             order, best = fn(qi, it["question"])
             if not it["answerable"]:
                 best_n.append(best)
                 continue
-            g = gains([rows[i] for i in order], it["relevant"], [""] * len(it["relevant"]), "strict")
+            ranked = [rows[i] for i in order]
             ideal = sum(1 / math.log2(i + 2) for i in range(min(len(it["relevant"]), 10)))
+            g = gains(ranked, it["relevant"], [""] * len(it["relevant"]), "strict")
             ndcg.append(sum(x / math.log2(i + 2) for i, x in enumerate(g)) / ideal)
             hits.append((g[:1] == [1], any(g[:5]), any(g)))
             best_a.append(best)
-        results[name] = {"ndcg": np.array(ndcg), "hits": np.array(hits), "best_a": best_a, "best_n": best_n}
+            texts_k = [chunk_text.get((r["path"], r["unit"], r["start"], r["end"]), "") for r in it["relevant"]]
+            gc = gains(ranked, it["relevant"], texts_k, "content")
+            content.append((gc[:1] == [1], sum(x / math.log2(i + 2) for i, x in enumerate(gc)) / ideal))
+        results[name] = {"ndcg": np.array(ndcg), "hits": np.array(hits), "best_a": best_a, "best_n": best_n,
+                         "content": np.array(content)}
     rng = np.random.default_rng(0)
     z = results["zetokrag"]["ndcg"]
-    print(f"\n{'method':22s} {'hit@1':>6s} {'hit@5':>6s} {'hit@10':>7s} {'nDCG@10':>8s}   ZetokRAG minus it [95% CI]")
+    n_ans, n_neg = len(z), len(results["zetokrag"]["best_n"])
+    lines = ["# ZetokRAG on the owner's own files", "",
+             f"{n_ans + n_neg} questions ({n_ans} answerable, {n_neg} about topics absent from the files) over "
+             f"{len(rows):,} chunks of notes, projects and course material; the questions and passages stay on the "
+             "owner's machine, only these aggregate numbers are published. Strict scoring: a hit is a chunk from "
+             "the labelled file that overlaps the labelled lines (pages, cells). The interval is a paired "
+             f"bootstrap over questions ({n_boot:,} resamples, 95%).", "",
+             "| method | hit@1 | hit@5 | hit@10 | nDCG@10 | ZetokRAG minus it [95% interval] |",
+             "|---|---:|---:|---:|---:|---|"]
     for name, r in results.items():
         d = z - r["ndcg"]
         boot = [d[rng.integers(0, len(d), len(d))].mean() for _ in range(n_boot)]
         lo, hi = np.percentile(boot, [2.5, 97.5])
         cmp = "" if name == "zetokrag" else f"{d.mean():+.3f} [{lo:+.3f}, {hi:+.3f}]"
         h = r["hits"].mean(0)
-        print(f"{name:22s} {h[0]:6.1%} {h[1]:6.1%} {h[2]:7.1%} {r['ndcg'].mean():8.3f}   {cmp}")
+        label = f"**{name}**" if name == "zetokrag" else name
+        lines.append(f"| {label} | {h[0]:.1%} | {h[1]:.1%} | {h[2]:.1%} | {r['ndcg'].mean():.3f} | {cmp} |")
+    c = results["zetokrag"]["content"]
+    lines += ["", f"Counting the same passage kept in another file as found (word overlap with the labelled passage "
+              f"of at least 80%, Jaccard), ZetokRAG reaches hit@1 {c[:, 0].mean():.1%} and nDCG@10 {c[:, 1].mean():.3f}.",
+              "", "## Does the index hold an answer?", "",
+              "ZetokRAG's verdict compares the reranker's best score with two thresholds. Intervals are exact "
+              "(Clopper-Pearson) 95%.", ""]
     a, n = np.array(results["zetokrag"]["best_a"]), np.array(results["zetokrag"]["best_n"])
+    lines.append(f"Best score: answerable questions {a.min():.3f}–{a.max():.3f} (median {np.median(a):.3f}), "
+                 f"unanswerable {n.min():.3f}–{n.max():.3f} (median {np.median(n):.3f}); AUROC "
+                 f"{float(np.mean([(x > y) + 0.5 * (x == y) for x in a for y in n])):.3f}.")
+    lines += ["", "| threshold | unanswerable rejected | answerable wrongly rejected |", "|---|---|---|"]
     for label, tau in (("PARTIAL", search.PARTIAL), ("ENOUGH", search.ENOUGH)):
         kr, kf = int((n < tau).sum()), int((a < tau).sum())
         lo_r, hi_r = exact_interval(kr, len(n))
         lo_f, hi_f = exact_interval(kf, len(a))
-        print(f"{label} {tau}: unanswerable rejected {kr}/{len(n)} [{lo_r:.1%}, {hi_r:.1%}], "
-              f"answerable rejected {kf}/{len(a)} [{lo_f:.1%}, {hi_f:.1%}]  (exact 95% intervals)")
+        lines.append(f"| {label} = {tau} | {kr}/{len(n)} [{lo_r:.1%}, {hi_r:.1%}] | {kf}/{len(a)} [{lo_f:.1%}, {hi_f:.1%}] |")
+    lines += ["", "The thresholds were set on this same question set, so these rejection rates are in-sample."]
+    text = "\n".join(lines) + "\n"
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(text)
+    print(text)
+    return text
 
 
 if __name__ == "__main__":
