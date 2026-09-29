@@ -482,6 +482,30 @@ def test_vietnamese_input_method_bursts_type_correctly(home, notes):
     assert app.typed == "chào"                               # Textual alone gave "chao": ⌫ ran after the letters
 
 
+def test_typing_after_a_click_on_the_conversation_still_goes_to_the_prompt(home, notes):
+    from peresearch.tui import Prompt
+
+    async def steps(app, pilot):
+        await pilot.pause()
+        for i in range(60):
+            app.note(f"line {i}")
+        await pilot.pause()
+        await pilot.click("#log", offset=(10, 5))
+        await pilot.press("x", "i", "n")
+        await pilot.pause()
+        app.typed = app.query_one("#ask", Prompt).value
+        app.focus_after = app.focused
+        log = app.query_one("#log")
+        bottom = log.scroll_y
+        await pilot.press("pageup")
+        await pilot.pause()
+        app.scrolled = (bottom, log.scroll_y)
+    app = tui_run(lambda e: agent(home, notes)[0], steps, size=(100, 30))
+    assert app.typed == "xin"                                # the click had moved focus: keys were lost
+    assert isinstance(app.focus_after, Prompt)
+    assert app.scrolled[1] < app.scrolled[0]                 # PageUp from the prompt scrolls the conversation
+
+
 def test_the_daily_budget_counts_container_time_and_stops_the_model(home):
     from peresearch.llm import Budget, BudgetExceeded
     now = [1_800_000_000.0]

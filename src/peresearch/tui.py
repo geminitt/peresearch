@@ -4,7 +4,9 @@
   `● tool(args)` with a `⎿ result` line under it, then the cited answer, its sources and the citation check.
 - A status line while the agent works: a spinner, what it is doing, elapsed seconds and tokens so far.
 - The prompt at the bottom: Enter asks, ↑/↓ recall earlier questions, `/` opens the command menu (↑/↓ to pick,
-  Tab or Enter to take it, Esc to close), Esc during a question interrupts it at the next step.
+  Tab or Enter to take it, Esc to close), Esc during a question interrupts it at the next step. PageUp/PageDown
+  scroll the conversation; the conversation never takes the focus, so typing always reaches the prompt, also
+  after a click on it.
 - Folders are managed here too: /add <folder> (Tab completes the path), /remove, /folders, /index. On start, the
   index is brought up to date with the declared folders (only new or changed files are read).
 The agent runs in a worker thread. Everything that came from a file, a page or the model is stripped of terminal
@@ -65,7 +67,8 @@ class Prompt(Input):
     characters at once but runs the backspace binding later, so the burst came out as "chao" or "chaà"."""
 
     BINDINGS = [Binding("up", "app.up", show=False), Binding("down", "app.down", show=False),
-                Binding("tab", "app.complete", show=False), Binding("escape", "app.escape", show=False)]
+                Binding("tab", "app.complete", show=False), Binding("escape", "app.escape", show=False),
+                Binding("pageup", "app.page(-1)", show=False), Binding("pagedown", "app.page(1)", show=False)]
 
     async def _on_key(self, event: events.Key) -> None:
         if event.key == "backspace":
@@ -102,11 +105,11 @@ class Chat(App):
 
     def compose(self) -> ComposeResult:
         yield Static(f"✻ {self.heading()}", id="heading")
-        yield VerticalScroll(id="log")
+        yield VerticalScroll(id="log", can_focus=False)
         yield Static("", id="status")
         yield OptionList(id="commands")
         yield Prompt(placeholder="> Ask about your files or the web", id="ask")
-        yield Static("/ commands · ↑↓ earlier questions · esc interrupt · ctrl+c quit", id="hints")
+        yield Static("/ commands · ↑↓ earlier questions · pgup/pgdn scroll · esc interrupt · ctrl+c quit", id="hints")
 
     def on_mount(self) -> None:
         self.query_one("#ask", Prompt).focus()
@@ -230,7 +233,7 @@ class Chat(App):
             self.exit()
         elif name == "/help":
             self.add(Markdown("**Keys** — Enter ask · ↑↓ earlier questions · `/` commands (↑↓ pick, Tab/Enter take, "
-                              "Esc close) · Esc interrupt · Ctrl+C quit\n\n**Commands**\n"
+                              "Esc close) · PgUp/PgDn scroll · Esc interrupt · Ctrl+C quit\n\n**Commands**\n"
                               + "\n".join(f"- `{c}` {d}" for c, d in COMMANDS.items())))
         elif name == "/new":
             if self.busy:
@@ -344,6 +347,10 @@ class Chat(App):
                 menu.clear_options()
                 menu.add_options([Option(m, id="path:" + m) for m in matches[:50]])
                 menu.display, menu.highlighted = True, 0
+
+    def action_page(self, direction: int) -> None:
+        log = self.query_one("#log", VerticalScroll)
+        (log.scroll_page_down if direction > 0 else log.scroll_page_up)(animate=False)
 
     def action_escape(self) -> None:
         menu = self.query_one("#commands", OptionList)
