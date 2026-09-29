@@ -99,12 +99,17 @@ Settings live in `~/.local/share/peresearch/settings.env` (written by `setup`, `
 alone and says so. The local models run on the GPU when it has room and on the CPU otherwise.
 
 **The model.** [`deploy/modal_vllm.py`](deploy/modal_vllm.py) serves Qwen3.6-35B-A3B-FP8 on one L40S: private
-(a Modal proxy token is the API key), one container at most, stopped after five idle minutes. Its flags are
-tested first on the laptop with Qwen3.5-0.8B:
+(a Modal proxy token is the API key), one container at most, stopped after five idle minutes, and a vLLM that
+fails at start takes its container down within seconds instead of waiting out the startup timeout. The agent keeps
+a daily spending cap for the endpoint (`PERESEARCH_BUDGET_USD_PER_DAY`, $1 unless set): it counts, as an upper
+bound, every request plus the five idle minutes after it at the GPU's price, and stops calling the model at the cap.
+
+Nothing is deployed before it has run on the laptop for free:
 
 ```bash
-pixi run chat-local                                    # the laptop model server + chat; the server stops when you quit
-modal run deploy/modal_vllm.py::download && modal deploy deploy/modal_vllm.py   # then on Modal
+pixi run chat-local      # the same vLLM flags with Qwen3.5-0.8B (same chat and tool-call format) + the TUI
+pixi run replica         # the Modal image rebuilt with Docker from the same spec, served, and asked for a tool call
+pixi run modal-deploy    # runs the tests and the replica first; deploys only if both pass
 ```
 
 ---

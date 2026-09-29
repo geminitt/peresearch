@@ -41,3 +41,7 @@ serve = ["serve"]
 [tasks]
 test = "pytest -q"
 chat-local = "python deploy/chat_local.py"      # the laptop model server + the TUI, server stopped on quit
+replica = "python deploy/replica.py"            # the Modal image rebuilt with Docker and run with a small model
+# The only way to deploy: the tests and the Docker replica must pass first, so no GPU time is paid for a server
+# that would fail.
+modal-deploy = { cmd = "modal deploy deploy/modal_vllm.py", depends-on = ["test", "replica"] }

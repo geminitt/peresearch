@@ -18,12 +18,16 @@ MODEL, REVISION = "Qwen/Qwen3.5-0.8B", "2fc06364715b967f1860aea9cf38778875588b17
 LOCAL = {"--max-model-len": "16384", "--gpu-memory-utilization": "0.80"}
 
 
-def modal_flags() -> list[str]:
+def modal_constant(name: str):
     tree = ast.parse((Path(__file__).parent / "modal_vllm.py").read_text())
     for node in tree.body:
-        if isinstance(node, ast.Assign) and getattr(node.targets[0], "id", "") == "FLAGS":
+        if isinstance(node, ast.Assign) and getattr(node.targets[0], "id", "") == name:
             return ast.literal_eval(node.value)
-    raise SystemExit("FLAGS not found in deploy/modal_vllm.py")
+    raise SystemExit(f"{name} not found in deploy/modal_vllm.py")
+
+
+def modal_flags() -> list[str]:
+    return modal_constant("FLAGS")
 
 
 def command() -> list[str]:
@@ -36,8 +40,7 @@ def command() -> list[str]:
 if __name__ == "__main__":
     cmd = command()
     print(*cmd, flush=True)
-    # vLLM turns pinned memory off under WSL2 unless asked, and its GPU model runner needs it (UVA buffers);
-    # FlashInfer's sampler is compiled on first use and needs nvcc, which the Modal image has and this laptop
-    # does not: PyTorch's sampler does the same job here.
-    env = {**os.environ, "VLLM_WSL2_ENABLE_PIN_MEMORY": "1", "VLLM_USE_FLASHINFER_SAMPLER": "0"}
+    # The Modal image's environment, plus one laptop-only switch: vLLM turns pinned memory off under WSL2 unless
+    # asked, and its GPU model runner needs it (UVA buffers).
+    env = {**os.environ, **modal_constant("ENV"), "VLLM_WSL2_ENABLE_PIN_MEMORY": "1"}
     sys.exit(subprocess.call(cmd, env=env))
