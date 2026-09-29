@@ -405,3 +405,39 @@ def test_the_prompt_takes_several_lines(home, notes):
     sent = [m["content"] for m in make.llm.seen[-1][0] if m["role"] == "user"][-1]
     assert sent.endswith("a\nb") and app.emptied == ""
     assert "❯ a\nb" in app.shown
+
+
+def test_ctrl_c_copies_the_selection_and_ctrl_q_quits(home, notes):
+    """Ctrl+C used to quit even with text selected; now it copies (the conversation's mouse selection first, else
+    the prompt's), and Ctrl+Q quits."""
+    from peresearch.tui import Prompt
+
+    async def steps(app, pilot):
+        await pilot.pause()
+        app.note("SuperBPE merges across spaces")
+        await pilot.pause()
+        note = app.query(".note").last()
+        await pilot.mouse_down(note, offset=(0, 0))                 # drag over the note's first words
+        await pilot.hover(note, offset=(8, 0))
+        await pilot.mouse_up(note, offset=(8, 0))
+        await pilot.press("ctrl+c")
+        app.from_log = app.clipboard
+        app.running_after_copy = app.is_running
+        app.screen.clear_selection()
+        prompt = app.query_one("#ask", Prompt)
+        prompt.value = "copy me"
+        await pilot.press("shift+home", "ctrl+c")
+        app.from_prompt = app.clipboard
+        app._clipboard = ""
+        prompt.value = ""
+        await pilot.press("ctrl+c")                                 # nothing selected: a reminder, no quitting
+        await pilot.pause()
+        app.reminded = str(app.query_one("#status").render())
+        await pilot.press("ctrl+q")
+        await pilot.pause()
+        app.running_after_quit = app.is_running
+    app = tui_run(lambda e: agent(home, notes)[0], steps)
+    assert app.from_log.startswith("SuperBPE") and app.running_after_copy
+    assert app.from_prompt == "copy me"
+    assert "ctrl+q" in app.reminded
+    assert not app.running_after_quit

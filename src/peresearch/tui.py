@@ -124,7 +124,8 @@ class Prompt(TextArea):
             self.prompt, self.value = prompt, value
 
     OWN = {"enter": "submit", "ctrl+j": "newline", "ctrl+enter": "newline", "up": "up", "down": "down",
-           "tab": "app.complete", "escape": "app.escape", "pageup": "app.page(-1)", "pagedown": "app.page(1)"}
+           "tab": "app.complete", "escape": "app.escape", "pageup": "app.page(-1)", "pagedown": "app.page(1)",
+           "ctrl+c": "app.copy"}
     BINDINGS = [Binding(key, action, show=False) for key, action in OWN.items()]
 
     def __init__(self, placeholder: str = "", id: str | None = None):
@@ -297,7 +298,7 @@ class Chat(App):
     Screen > .screen--selection { background: ansi_default; color: ansi_default; text-style: reverse; }
     #hints { height: 1; padding: 0 1; color: ansi_default; text-style: dim; }
     """
-    BINDINGS = [Binding("ctrl+c", "quit", "Quit", priority=True)]
+    BINDINGS = [Binding("ctrl+q", "quit", "Quit", priority=True)]     # Ctrl+C copies (the owner's choice)
     ENABLE_COMMAND_PALETTE = False       # Textual's own palette (Ctrl+P): another look, and it switches themes
 
     def __init__(self, make_agent, heading=lambda: "peresearch", workspace=None, index_on_start: bool = True):
@@ -307,6 +308,7 @@ class Chat(App):
         self.agent, self.busy, self.last, self.pending_new = None, False, None, False
         self.asked, self.recall = [], None
         self.started, self.doing, self.tokens, self.frame = 0.0, "", 0, 0
+        self.flash, self.flash_until = "", 0.0         # a short message on the status line when idle
 
     def compose(self) -> ComposeResult:
         yield Static(f"✻ {self.heading()}", id="heading")
@@ -316,7 +318,7 @@ class Chat(App):
         yield Menu(id="commands")
         yield Prompt(placeholder="❯ Ask about your files or the web", id="ask")
         yield Static("/ commands · ctrl+enter new line · ↑↓ earlier questions · pgup/pgdn scroll · esc interrupt · "
-                     "ctrl+c quit", id="hints")
+                     "ctrl+c copy · ctrl+q quit", id="hints")
 
     def on_mount(self) -> None:
         self.register_theme(TERMINAL)
@@ -342,7 +344,7 @@ class Chat(App):
     def tick(self) -> None:
         status = self.status
         if not self.busy:
-            status.update("")
+            status.update(self.flash if time.time() < self.flash_until else "")
             return
         self.frame += 1
         spin = SPINNER[self.frame % len(SPINNER)]
@@ -461,7 +463,7 @@ class Chat(App):
             self.exit()
         elif name == "/help":
             self.add(Page("**Keys** — Enter ask · Ctrl+Enter new line · ↑↓ earlier questions · `/` commands (↑↓ pick, Tab/Enter take, "
-                              "Esc close) · PgUp/PgDn scroll · Esc interrupt · Ctrl+C quit\n\n**Commands**\n"
+                              "Esc close) · PgUp/PgDn scroll · Esc interrupt · Ctrl+C copy the selection · Ctrl+Q quit\n\n**Commands**\n"
                               + "\n".join(f"- `{c}` {d}" for c, d in COMMANDS.items())))
         elif name == "/new":
             if self.busy:
@@ -579,6 +581,20 @@ class Chat(App):
                 menu.clear_options()
                 menu.add_options([Option(m, id="path:" + m) for m in matches[:50]])
                 menu.display, menu.highlighted = True, 0
+
+    def say(self, text: str, seconds: float = 2.5) -> None:
+        """A short message on the status line, shown while nothing runs."""
+        self.flash, self.flash_until = text, time.time() + seconds
+        self.tick()
+
+    def action_copy(self) -> None:
+        """Ctrl+C: the text selected with the mouse in the conversation, else the prompt's selection."""
+        text = self.screen.get_selected_text() or self.query_one("#ask", Prompt).selected_text
+        if text:
+            self.copy_to_clipboard(text)
+            self.say(f"copied {len(text):,} characters")
+        else:
+            self.say("select text with the mouse to copy it · ctrl+q quits")
 
     def action_page(self, direction: int) -> None:
         log = self.query_one("#log", VerticalScroll)

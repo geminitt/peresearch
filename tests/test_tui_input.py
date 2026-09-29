@@ -216,3 +216,15 @@ def test_ctrl_enter_starts_a_new_line_and_enter_sends(terminal):
     terminal.write("line one\nline two\r")
     terminal.read(1.5)
     assert terminal.sent() == ["line one\nline two"]
+
+
+def test_ctrl_q_quits_and_ctrl_c_does_not(terminal):
+    """Through the real driver: ^C (0x03) must not end the TUI any more, ^Q (0x11) must."""
+    terminal.write("\x03")
+    terminal.read(1.0)
+    assert terminal.proc.poll() is None
+    terminal.write("\x11")
+    end = time.time() + 5
+    while time.time() < end and terminal.proc.poll() is None:
+        terminal.read(0.1)
+    assert terminal.proc.poll() is not None
