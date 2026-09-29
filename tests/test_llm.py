@@ -222,3 +222,17 @@ def test_an_answer_cut_off_every_time_is_an_error(flaky_server):
     with pytest.raises(Exception, match="ended without a finish reason"):
         LLM(url=url, model="m", wait=0, retries=3).chat([{"role": "user", "content": "x"}])
     assert state["requests"] == 3
+
+
+def test_a_local_server_that_is_not_running_fails_fast():
+    """Nothing listening on localhost will not start listening by waiting: 2 tries, not 2.5 minutes of retries
+    (a remote endpoint such as Modal keeps the long retries, since it may be waking up)."""
+    import socket
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        port = s.getsockname()[1]                                 # closed again: nothing listens there
+    waits = []
+    t0 = time.time()
+    with pytest.raises(Exception) as err:
+        LLM(url=f"http://127.0.0.1:{port}/v1", model="m", on_wait=waits.append).chat([{"role": "user", "content": "x"}])
+    assert type(err.value).__name__ == "APIConnectionError" and time.time() - t0 < 6 and len(waits) == 1

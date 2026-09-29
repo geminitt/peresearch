@@ -38,3 +38,20 @@ def test_the_heading_counts_folders_inside_another_declared_one_once(home, tmp_p
     (tmp_path / "class").mkdir()
     guard.set_roots([tmp_path / "projects", tmp_path / "projects" / "a", tmp_path / "class"])
     assert "· 2 folders ·" in heading("default")
+
+
+def test_ask_explains_a_model_that_does_not_answer(home, monkeypatch, capsys):
+    from types import SimpleNamespace
+
+    from peresearch import cli
+
+    class APIConnectionError(Exception):
+        pass
+
+    def broken(**kw):
+        raise APIConnectionError("Connection error.")
+    monkeypatch.setattr(cli, "make_agent", lambda project, on_event: SimpleNamespace(
+        toolbox=SimpleNamespace(ask=None), ask=lambda q: broken()))
+    code = cli.cmd_ask(SimpleNamespace(project="default", question="hello"))
+    err = capsys.readouterr().err
+    assert code == 1 and "does not answer" in err and "Traceback" not in err

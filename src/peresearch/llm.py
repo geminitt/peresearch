@@ -198,6 +198,7 @@ class LLM:
         if thinking is None and settings.get("PERESEARCH_LLM_THINKING") in ("on", "off"):
             thinking = settings.get("PERESEARCH_LLM_THINKING") == "on"
         self.thinking, self.template_kwargs, self.usage_option = thinking, True, True
+        self.local = False                             # a server on this machine: refused means not running
         if client is None:
             from openai import OpenAI
 
@@ -206,6 +207,8 @@ class LLM:
                 raise RuntimeError("no model endpoint: set PERESEARCH_LLM_URL (see peresearch/settings.py)")
             client = OpenAI(base_url=url, api_key=key or settings.get("PERESEARCH_LLM_KEY") or "none",
                             timeout=600.0, max_retries=0)
+            from urllib.parse import urlparse
+            self.local = urlparse(url).hostname in ("localhost", "127.0.0.1", "::1")
             budget = budget or Budget.from_settings(url)
         self.budget = budget
         self.client, self.model = client, model or settings.get("PERESEARCH_LLM_MODEL")
@@ -265,9 +268,12 @@ class LLM:
                 if type(e).__name__ == "BadRequestError" and self.usage_option:   # one without usage in streams
                     self.usage_option = False
                     continue
-                if type(e).__name__ not in self.RETRYABLE or attempt == self.retries - 1:
+                # Nothing listening on this machine will not start listening by waiting: fail after one more try
+                # instead of 2.5 minutes of retries (a remote endpoint may be waking up, so it keeps them).
+                refused_here = self.local and type(e).__name__ == "APIConnectionError"
+                if type(e).__name__ not in self.RETRYABLE or attempt == (1 if refused_here else self.retries - 1):
                     raise
-                pause = self.wait * 2 ** attempt
+                pause = 2.0 if refused_here else self.wait * 2 ** attempt
                 self.on_wait(f"model not ready ({type(e).__name__}); retrying in {pause:.0f} s")
                 end = time.time() + pause
                 while time.time() < end:

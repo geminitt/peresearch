@@ -51,6 +51,7 @@ COMMANDS = {
     "/index": "bring the index up to date with the folders",
     "/new": "start a fresh conversation (earlier questions no longer sent as context)",
     "/resume": "pick an earlier conversation of this project and continue it",
+    "/retry": "ask the last question again",
     "/sources": "every source of the last answer, in full",
     "/exit": "quit",
 }
@@ -80,6 +81,32 @@ TERMINAL = Theme(
         "footer-background": "ansi_default", "footer-key-foreground": "ansi_blue",
     },
 )
+
+
+WHY = {
+    "APIConnectionError": "The model server does not answer. If it is the local one, start it with `pixi run "
+                          "chat-local`; a Modal endpoint may still be waking up.",
+    "APITimeoutError": "The model server took too long to answer.",
+    "AuthenticationError": "The model server refused the key (`PERESEARCH_LLM_KEY`, set with `peresearch setup`).",
+    "PermissionDeniedError": "The model server refused the key (`PERESEARCH_LLM_KEY`, set with `peresearch setup`).",
+    "NotFoundError": "The model server has no such path or model: check `PERESEARCH_LLM_URL` (ending in /v1) and "
+                     "`PERESEARCH_LLM_MODEL`.",
+    "RateLimitError": "The model server is limiting requests; wait a moment.",
+    "InternalServerError": "The model server failed while answering.",
+    "StreamCut": "The connection to the model server was cut mid-answer, again and again.",
+}
+
+
+def explain(error: Exception) -> str:
+    """An error as the reader can act on it (Markdown), the technical name kept at the end."""
+    name, text = type(error).__name__, guard.sanitize(str(error))[:300]
+    if name == "RuntimeError" and "no model endpoint" in text:
+        why = "No model endpoint is set: run `peresearch setup` (or set `PERESEARCH_LLM_URL`)."
+    elif name == "BudgetExceeded":
+        why = text
+    else:
+        why = WHY.get(name, text)
+    return f"> **Error:** {why} `/retry` asks again. <sub>({name}{': ' + text if name not in WHY else ''})</sub>"
 
 
 def render(answer) -> str:
@@ -310,6 +337,7 @@ class Chat(App):
         self.index_on_start = index_on_start and workspace is not None
         self.agent, self.busy, self.last, self.pending_new = None, False, None, False
         self.pending_resume = None                    # a conversation picked before the agent existed
+        self.last_question = None                     # (as shown, as sent) for /retry
         self.menu_kind = ""                           # what the menu lists: "commands", "paths" or "conversations"
         self.asked, self.recall = [], None
         self.started, self.doing, self.tokens, self.frame = 0.0, "", 0, 0
@@ -402,9 +430,13 @@ class Chat(App):
             return
         self.asked.append(q)
         self.recall = None
+        self.ask(q, self.query_one("#ask", Prompt).expand(q))
+
+    def ask(self, shown: str, sent: str) -> None:
+        self.last_question = (shown, sent)
         self.start("Starting")
-        self.add(Static(f"❯ {guard.sanitize(q)}", classes="question", markup=False))
-        self.run_agent(self.query_one("#ask", Prompt).expand(q))
+        self.add(Static(f"❯ {guard.sanitize(shown)}", classes="question", markup=False))
+        self.run_agent(sent)
 
     @work(thread=True, exclusive=True)
     def run_agent(self, question: str) -> None:
@@ -424,7 +456,7 @@ class Chat(App):
             self.last = answer
             self.call_from_thread(self.add, Page(render(answer)))
         except Exception as e:
-            self.call_from_thread(self.add, Page(f"> **Error:** {guard.sanitize(type(e).__name__ + ': ' + str(e))[:500]}"))
+            self.call_from_thread(self.add, Page(explain(e)))
         finally:
             self.call_from_thread(self.done)
 
@@ -484,6 +516,13 @@ class Chat(App):
             self.pending_new, self.pending_resume = self.agent is None, None
             self.query_one("#log", VerticalScroll).remove_children()
             self.note("New conversation: earlier questions are no longer sent as context.")
+        elif name == "/retry":
+            if self.busy:
+                self.note("wait for the current question to finish, or press esc")
+            elif self.last_question is None:
+                self.note("nothing to retry yet")
+            else:
+                self.ask(*self.last_question)
         elif name == "/resume":
             if self.busy:
                 self.note("wait for the current question to finish, or press esc")

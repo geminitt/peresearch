@@ -488,3 +488,56 @@ def test_resume_with_no_earlier_conversation_says_so(home, notes):
         await pilot.pause()
     app = tui_run(lambda e: agent(home, notes)[0], steps)
     assert "no earlier conversation" in app.shown
+
+
+def test_a_model_that_does_not_answer_is_explained_and_retry_asks_again(home, notes):
+    """The error names what is wrong and what to do; /retry sends the same question again."""
+    class APIConnectionError(Exception):
+        pass
+
+    class Flaky(ScriptedLLM):
+        fail = True
+
+        def chat(self, messages, tools=None, thinking=None, stop=None):
+            if Flaky.fail:
+                raise APIConnectionError("Connection error.")
+            return super().chat(messages, tools, thinking)
+
+    def make(on_event):
+        llm = Flaky(Reply("BPE merges pairs [N1]."))
+        make.llm = llm
+        return Agent(llm, toolbox(home, notes))
+
+    async def steps(app, pilot):
+        from peresearch.tui import Prompt
+        prompt = app.query_one("#ask", Prompt)
+        prompt.value = "/retry"
+        await pilot.press("enter")                                    # nothing to retry yet
+        await pilot.pause()
+        prompt.value = "How does BPE work?"
+        await pilot.press("enter")
+        await settle(app, pilot, lambda: not app.busy and "does not answer" in texts(app))
+        app.error = texts(app)
+        Flaky.fail = False
+        prompt.value = "/retry"
+        await pilot.press("enter")
+        await settle(app, pilot, lambda: not app.busy and app.last is not None)
+    app = tui_run(make, steps)
+    assert "nothing to retry" in app.error
+    assert "does not answer" in app.error and "/retry" in app.error and "APIConnectionError" not in app.error.split("does not answer")[0][-40:]
+    assert app.last.text == "BPE merges pairs [N1]."
+    sent = [m["content"] for m in make.llm.seen[-1][0] if m["role"] == "user"]
+    assert sent[-1].endswith("How does BPE work?")
+
+
+def test_no_model_endpoint_says_how_to_set_one(home, notes):
+    def make(on_event):
+        raise RuntimeError("no model endpoint: set PERESEARCH_LLM_URL (see peresearch/settings.py)")
+
+    async def steps(app, pilot):
+        from peresearch.tui import Prompt
+        app.query_one("#ask", Prompt).value = "hello"
+        await pilot.press("enter")
+        await settle(app, pilot, lambda: not app.busy and "setup" in texts(app))
+    app = tui_run(make, steps)
+    assert "peresearch setup" in app.shown

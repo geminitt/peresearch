@@ -13,6 +13,7 @@
 import argparse
 import getpass
 import os
+import re
 import sys
 
 from peresearch import guard, settings
@@ -80,14 +81,19 @@ def make_agent(project: str = "default", on_event=None, index=None):
 
 
 def cmd_ask(args):
-    from peresearch.tui import render
+    from peresearch.tui import explain, render
 
     def event(kind, detail):
         print(guard.sanitize(f"· {kind}: {detail}" if detail else f"· {kind}"), file=sys.stderr)
 
-    agent = make_agent(args.project, event)
-    agent.toolbox.ask = ask_in_terminal if sys.stdin.isatty() else None     # nobody to ask: nothing outside is read
-    _print(render(agent.ask(args.question)))
+    try:
+        agent = make_agent(args.project, event)
+        agent.toolbox.ask = ask_in_terminal if sys.stdin.isatty() else None     # nobody to ask: nothing outside read
+        answer = agent.ask(args.question)
+    except Exception as e:                    # what went wrong and what to do, not a traceback
+        print(re.sub(r"</?sub>|\*\*|`", "", explain(e)).replace("/retry asks again. ", "").lstrip("> "), file=sys.stderr)
+        return 1
+    _print(render(answer))
 
 
 def ask_in_terminal(tool: str, path) -> str:
@@ -175,8 +181,8 @@ def main(argv=None):
     p.add_argument("--project", default="default", help="conversation history to use and extend")
     p.set_defaults(fn=cmd_chat)
     args = ap.parse_args(argv)
-    args.fn(args)
+    return args.fn(args) or 0                  # a command's failure becomes the exit status
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
