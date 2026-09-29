@@ -1,6 +1,6 @@
 """The terminal interface, full screen, laid out the way Claude Code's is.
 
-- The conversation scrolls above; each question is shown as `> question`, each tool the agent calls as
+- The conversation scrolls above; each question is shown as `❯ question`, each tool the agent calls as
   `● tool(args)` with a `⎿ result` line under it, then the cited answer, its sources and the citation check.
 - A status line while the agent works: a spinner, what it is doing, elapsed seconds and tokens so far.
 - The prompt at the bottom: Enter asks, ↑/↓ recall earlier questions, `/` opens the command menu (↑/↓ to pick,
@@ -9,8 +9,10 @@
   after a click on it.
 - Folders are managed here too: /add <folder> (Tab completes the path), /remove, /folders, /index. On start, the
   index is brought up to date with the declared folders (only new or changed files are read).
-Colors are the terminal's own: the default foreground and background and its 16-color palette, never RGB, so
-the terminal's color scheme (light or dark) decides how everything looks; muted text is dimmed, not blended.
+Colors are the terminal's own, so its color scheme (light or dark) decides how everything looks: the default
+foreground and background and the six plain hues, never RGB, 256 colors, black, white or the bright colors (black
+or white is the background in some scheme, the bright ones are grays in Solarized). Muted text is dimmed; the
+cursor, selections and the chosen menu row are the default colors reversed; nothing is drawn on a colored background.
 The agent runs in a worker thread. Everything that came from a file, a page or the model is stripped of terminal
 control sequences before it is shown.
 """
@@ -21,10 +23,13 @@ from textual import events, work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from rich.style import Style as RichStyle
+from pygments.token import Token
 from textual.containers import VerticalScroll
+from textual.highlight import ANSIDarkHighlightTheme, highlight
 from textual.strip import Strip
 from textual.theme import Theme
 from textual.widgets import Input, Markdown, OptionList, Static
+from textual.widgets._markdown import MarkdownFence
 from textual.widgets.option_list import Option
 
 from peresearch import guard
@@ -53,8 +58,10 @@ TERMINAL = Theme(
         "border": "ansi_blue", "border-blurred": "ansi_blue",
         "input-cursor-background": "ansi_default", "input-cursor-foreground": "ansi_default",
         "input-cursor-text-style": "reverse",
-        "input-selection-background": "ansi_blue", "input-selection-foreground": "ansi_default",
-        "screen-selection-background": "ansi_blue", "screen-selection-foreground": "ansi_default",
+        "input-selection-background": "ansi_default", "input-selection-foreground": "ansi_default",
+        "screen-selection-background": "ansi_default", "screen-selection-foreground": "ansi_default",
+        "link-color-hover": "ansi_blue", "link-background-hover": "ansi_default", "link-style-hover": "bold underline",
+        "markdown-h2-color": "ansi_blue",
         "block-cursor-background": "ansi_default", "block-cursor-foreground": "ansi_default",
         "block-cursor-blurred-background": "ansi_default", "block-cursor-blurred-foreground": "ansi_default",
         "block-hover-background": "ansi_default",
@@ -107,6 +114,29 @@ class Prompt(Input):
         await super()._on_key(event)
 
 
+class CodeColors(ANSIDarkHighlightTheme):
+    """Textual's ANSI code colors, without its one bright color (shell backticks, bright black: nearly the
+    background in Solarized Dark)."""
+
+    STYLES = {**ANSIDarkHighlightTheme.STYLES, Token.Literal.String.Backtick: "ansi_green"}
+
+
+class Fence(MarkdownFence):
+    """A code block colored with CodeColors."""
+
+    @classmethod
+    def highlight(cls, code: str, language: str, ansi: bool = False, dark: bool = False):
+        if not ansi:
+            return super().highlight(code, language, ansi, dark)
+        return highlight(code, language=language or None, theme=CodeColors)
+
+
+class Page(Markdown):
+    """Markdown whose code blocks use CodeColors."""
+
+    BLOCKS = {**Markdown.BLOCKS, "fence": Fence, "code_block": Fence}
+
+
 class Menu(OptionList):
     """The command menu. It never has the focus (typing stays on the prompt), and Textual draws a list row from a
     style that drops `reverse`, so with the terminal's colors its chosen row looked like every other. The chosen row
@@ -141,9 +171,12 @@ class Chat(App):
     /* Textual draws an ANSI-mode cursor black on white; black is the background in some schemes (Solarized Dark),
        so the cursor vanished. The default colors reversed are what a terminal's own cursor looks like. */
     #ask > .input--cursor { background: ansi_default; color: ansi_default; text-style: reverse; }
+    #ask > .input--selection { background: ansi_default; color: ansi_default; text-style: reverse; }
+    Screen > .screen--selection { background: ansi_default; color: ansi_default; text-style: reverse; }
     #hints { height: 1; padding: 0 1; color: ansi_default; text-style: dim; }
     """
     BINDINGS = [Binding("ctrl+c", "quit", "Quit", priority=True)]
+    ENABLE_COMMAND_PALETTE = False       # Textual's own palette (Ctrl+P): another look, and it switches themes
 
     def __init__(self, make_agent, heading=lambda: "peresearch", workspace=None, index_on_start: bool = True):
         super().__init__()
@@ -250,9 +283,9 @@ class Chat(App):
                     self.agent.new_session()
             answer = self.agent.ask(question)
             self.last = answer
-            self.call_from_thread(self.add, Markdown(render(answer)))
+            self.call_from_thread(self.add, Page(render(answer)))
         except Exception as e:
-            self.call_from_thread(self.add, Markdown(f"> **Error:** {guard.sanitize(type(e).__name__ + ': ' + str(e))[:500]}"))
+            self.call_from_thread(self.add, Page(f"> **Error:** {guard.sanitize(type(e).__name__ + ': ' + str(e))[:500]}"))
         finally:
             self.call_from_thread(self.done)
 
@@ -284,7 +317,7 @@ class Chat(App):
         if name == "/exit":
             self.exit()
         elif name == "/help":
-            self.add(Markdown("**Keys** — Enter ask · ↑↓ earlier questions · `/` commands (↑↓ pick, Tab/Enter take, "
+            self.add(Page("**Keys** — Enter ask · ↑↓ earlier questions · `/` commands (↑↓ pick, Tab/Enter take, "
                               "Esc close) · PgUp/PgDn scroll · Esc interrupt · Ctrl+C quit\n\n**Commands**\n"
                               + "\n".join(f"- `{c}` {d}" for c, d in COMMANDS.items())))
         elif name == "/new":
@@ -300,7 +333,7 @@ class Chat(App):
             if not self.last or not self.last.sources:
                 self.note("no sources yet")
                 return
-            self.add(Markdown("\n\n".join(f"**`{s.id}`** {guard.sanitize(s.where)}\n\n> "
+            self.add(Page("\n\n".join(f"**`{s.id}`** {guard.sanitize(s.where)}\n\n> "
                                           + guard.sanitize(s.text[:600]).replace("\n", "\n> ")
                                           for s in self.last.sources.values())))
         elif name == "/folders":

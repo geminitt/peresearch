@@ -142,6 +142,8 @@ def test_every_color_comes_from_the_terminal_scheme(terminal):
     terminal.read(0.5)
     terminal.write("\x7f\x7fabc")                         # the cursor after typed text, through a blink or two
     terminal.read(1.5)
+    terminal.write("\x1b[1;2H")                           # Shift+Home selects the typed text
+    terminal.read(0.6)
     shown = re.sub(r"\s+", " ", re.sub(r"\x1b\[[0-9;?<>=:$]*[a-zA-Z~]", "", terminal.screen.decode("utf-8", "replace")))
     for part in ("Heading", "def f", "a quote", "item", "search_notes", "Sources", "quotes not found", "/help"):
         assert part in shown, part                        # every kind of element was drawn
@@ -149,10 +151,18 @@ def test_every_color_comes_from_the_terminal_scheme(terminal):
     fixed = {c.decode() for c in codes if re.search(rb"(^|;)(38|48)[;:](2|5)[;:]", c)}
     assert codes and not fixed, sorted(fixed)[:5]
     params = [c.decode().split(";") for c in codes]
-    near_background = {";".join(p) for p in params if {"30", "37", "40", "47", "90", "97", "100", "107"} & set(p)}
+    unsafe = {"30", "37", "40", "47"} | {str(n) for n in range(90, 98)} | {str(n) for n in range(100, 108)}
+    near_background = {";".join(p) for p in params if unsafe & set(p)}
     assert not near_background, sorted(near_background)[:5]
+    # A colored background only under a scrollbar or other blocks, never under text.
+    on_color = re.findall(rb"\x1b\[([0-9;]*)m([^\x1b]*)", terminal.screen)
+    text_on_color = {(c.decode(), t.decode("utf-8", "replace")) for c, t in on_color
+                     if {b"41", b"42", b"43", b"44", b"45", b"46"} & set(c.split(b";")) and re.search(rb"\w", t)}
+    assert not text_on_color, sorted(text_on_color)[:5]
     cursor = re.findall(rb"abc\x1b\[0m\x1b\[([0-9;]*)m ", terminal.screen)
     assert any(b"7" in c.split(b";") for c in cursor), cursor   # the cursor is drawn: the default colors reversed
+    selected = re.findall(rb"\x1b\[([0-9;]*)mbc", terminal.screen)      # "a" carries the cursor, "bc" the selection
+    assert selected and b"7" in selected[-1].split(b";"), selected  # selected text: the default colors reversed
 
 
 def test_the_chosen_command_stands_out_in_the_menu(terminal):

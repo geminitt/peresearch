@@ -268,7 +268,7 @@ def test_the_terminal_interface_shows_tools_answer_and_sources(home, notes):
         await settle(app, pilot, lambda: not app.busy and app.last is not None)
     app = tui_run(make, steps)
     shown = app.shown
-    assert "> BPE merges pairs?" in shown and "● search_notes(" in shown and "● grep(" in shown and "⎿" in shown
+    assert "❯ BPE merges pairs?" in shown and "● search_notes(" in shown and "● grep(" in shown and "⎿" in shown
     assert "Your notes cover it [N1]." in shown and "**Sources**" in shown and "answer" in events
 
 
@@ -546,3 +546,32 @@ def test_the_budget_applies_to_a_modal_endpoint_only(monkeypatch):
     assert Budget.from_settings("http://localhost:8000/v1") is None
     b = Budget.from_settings("https://ws--peresearch-llm-server.modal.run/v1")
     assert b and b.rate == 1.95 and b.cap == 1.0 and b.scaledown == 300
+
+
+def test_the_interface_uses_only_colors_every_terminal_scheme_can_show(home, notes):
+    """Only the default colors and the six plain hues: black and white are some scheme's background, and the bright
+    colors are grays in Solarized. Nothing sits on a colored background (text on one is unreadable in some scheme);
+    emphasis is reversed instead. Textual's command palette (Ctrl+P, its own look and themes) is off."""
+    from textual.highlight import HighlightTheme
+
+    from peresearch.tui import Fence
+
+    plain = {"ansi_default", "transparent", "ansi_red", "ansi_green", "ansi_yellow", "ansi_blue", "ansi_magenta",
+             "ansi_cyan"}
+
+    async def steps(app, pilot):
+        await pilot.pause()
+        app.variables = app.get_css_variables()
+        app.selection = app.screen.get_component_rich_style("screen--selection")   # text selected with the mouse
+        await pilot.press("ctrl+p")
+        await pilot.pause()
+        app.screen_after = type(app.screen).__name__
+        app.fence_theme = Fence.highlight("x = `ls`", "bash", ansi=True, dark=app.current_theme.dark)
+    app = tui_run(lambda e: agent(home, notes)[0], steps)
+    colors = {k: v.split()[0] for k, v in app.variables.items() if isinstance(v, str) and v.startswith("ansi_")}
+    assert {k: v for k, v in colors.items() if v not in plain} == {}
+    assert {k: v for k, v in colors.items() if "background" in k and v not in ("ansi_default", "transparent")} == {}
+    assert app.screen_after == "Screen"
+    assert app.selection.reverse
+    spans = [str(s.style) for s in app.fence_theme.spans]
+    assert spans and not [s for s in spans if "bright" in s or "black" in s or "white" in s], spans
