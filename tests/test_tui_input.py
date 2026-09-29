@@ -26,7 +26,7 @@ termios = pytest.importorskip("termios")
 DATA = json.loads((Path(__file__).parent / "data" / "unikey_telex.json").read_text(encoding="utf-8"))
 
 APP = """
-import sys, time
+import json, sys, time
 from pathlib import Path
 from types import SimpleNamespace as NS
 from peresearch.tui import Chat
@@ -67,10 +67,10 @@ class Stub:
     def new_session(self): pass
 
 class Probe(Chat):
-    def on_input_submitted(self, event):
+    def on_prompt_submitted(self, event):
         with open(sys.argv[1], "a", encoding="utf-8") as f:
-            f.write(event.value + "\\n")
-        super().on_input_submitted(event)
+            f.write(json.dumps(event.value) + "\\n")        # one line per question, newlines kept
+        super().on_prompt_submitted(event)
 
 Probe(lambda e: Stub(e), index_on_start=False).run()
 """
@@ -113,7 +113,10 @@ class Terminal:
         while time.time() < end and not self.out.exists():
             self.read(0.1)
         self.read(0.2)
-        return self.out.read_text(encoding="utf-8").splitlines()[0] if self.out.exists() else None
+        return self.sent()[0] if self.out.exists() else None
+
+    def sent(self) -> list[str]:
+        return [json.loads(line) for line in self.out.read_text(encoding="utf-8").splitlines()]
 
     def close(self) -> None:
         self.proc.kill()
@@ -198,10 +201,18 @@ def test_editing_keys_keep_their_place_among_typed_text(terminal):
     for burst in ("abc\x15xyz\r", "ab\x1b[Dc\r", "one\rtwo\r", "chao\x08\x08ào\r"):   # ^H: Windows' backspace
         terminal.write(burst)
         terminal.read(1.5)
-    assert terminal.out.read_text(encoding="utf-8").splitlines() == ["xyz", "acb", "one", "two", "chào"]
+    assert terminal.sent() == ["xyz", "acb", "one", "two", "chào"]
 
 
 def test_a_bracketed_paste_keeps_its_place_among_typed_text(terminal):
     terminal.write("see \x1b[200~first line\nsecond line\x1b[201~ ok\r")
     terminal.read(1.5)
-    assert terminal.out.read_text(encoding="utf-8").splitlines() == ["see [Pasted text #1 +2 lines] ok"]
+    assert terminal.sent() == ["see [Pasted text #1 +2 lines] ok"]
+
+
+def test_ctrl_enter_starts_a_new_line_and_enter_sends(terminal):
+    """Windows Terminal 1.24 sends Ctrl+Enter as LF (\\n) and Enter as CR (\\r), in legacy and kitty mode alike
+    (measured 2026-09-29); Shift+Enter sends CR, like Enter."""
+    terminal.write("line one\nline two\r")
+    terminal.read(1.5)
+    assert terminal.sent() == ["line one\nline two"]

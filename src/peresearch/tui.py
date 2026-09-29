@@ -34,7 +34,8 @@ from textual.highlight import ANSIDarkHighlightTheme, highlight
 from textual.screen import ModalScreen
 from textual.strip import Strip
 from textual.theme import Theme
-from textual.widgets import Input, Markdown, OptionList, Static
+from textual.message import Message
+from textual.widgets import Markdown, OptionList, Static, TextArea
 from textual.widgets._markdown import MarkdownFence
 from textual.widgets.option_list import Option
 
@@ -102,37 +103,53 @@ def render(answer) -> str:
     return "\n".join(parts)
 
 
-class Prompt(Input):
-    """The input line; ↑/↓, Tab and Esc go to the app (history, command menu, interrupt).
+class Prompt(TextArea):
+    """The input box, as in Claude Code: Enter sends; Ctrl+Enter starts a new line (terminals send it as Ctrl+J,
+    and Shift+Enter as a plain Enter); the box grows with its text up to 8 lines, then scrolls. ↑/↓ move between
+    lines; from the first (last) line they go through earlier questions, and while the command menu is open they
+    pick in it. Tab and Esc go to the app (completion, interrupt).
 
-    Every key bound to an action (Backspace, arrows, Home/End, Ctrl+U, Enter…) runs here, in order with the typed
-    characters. Textual inserts characters at once but runs a key's action later, so a burst came out reordered: a
-    Vietnamese input method types the raw letters, then backspaces and the accented text in one burst ("chao", ⌫,
-    ⌫, "ào"), which came out as "chaà"; "abc ⌃U xyz" came out empty, and "one ⏎ two ⏎" as "onetwo"."""
+    Every key bound to an action runs here, in order with the typed characters. Textual inserts characters at once
+    but runs a key's action later, so a burst came out reordered: a Vietnamese input method types the raw letters,
+    then backspaces and the accented text in one burst ("chao", ⌫, ⌫, "ào"), which came out as "chaà"; "abc ⌃U
+    xyz" came out empty, and "one ⏎ two ⏎" as "onetwo"."""
 
-    BINDINGS = [Binding("up", "app.up", show=False), Binding("down", "app.down", show=False),
-                Binding("tab", "app.complete", show=False), Binding("escape", "app.escape", show=False),
-                Binding("pageup", "app.page(-1)", show=False), Binding("pagedown", "app.page(1)", show=False)]
+    class Submitted(Message):
+        """Enter: the text as it was, sent before the box empties."""
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.pasted: dict[str, str] = {}              # marker shown in the line -> the text it stands for
+        def __init__(self, prompt: "Prompt", value: str):
+            super().__init__()
+            self.prompt, self.value = prompt, value
+
+    OWN = {"enter": "submit", "ctrl+j": "newline", "ctrl+enter": "newline", "up": "up", "down": "down",
+           "tab": "app.complete", "escape": "app.escape", "pageup": "app.page(-1)", "pagedown": "app.page(1)"}
+    BINDINGS = [Binding(key, action, show=False) for key, action in OWN.items()]
+
+    def __init__(self, placeholder: str = "", id: str | None = None):
+        super().__init__(id=id, soft_wrap=True, show_line_numbers=False, tab_behavior="focus", placeholder=placeholder)
+        self.pasted: dict[str, str] = {}              # marker shown in the box -> the text it stands for
+
+    @property
+    def value(self) -> str:
+        return self.text
+
+    @value.setter
+    def value(self, text: str) -> None:
+        self.text = text
+        self.move_cursor(self.document.end)
 
     def _on_paste(self, event: events.Paste) -> None:
-        """A paste of several lines shows as a marker, as in Claude Code (Textual kept only its first line); the
-        marker is replaced by the whole text when the question is sent (`expand`)."""
+        """A paste of several lines shows as a marker, as in Claude Code; the marker is replaced by the whole text
+        when the question is sent (`expand`)."""
         text = event.text.replace("\r\n", "\n").replace("\r", "\n")
         lines = text.rstrip("\n").count("\n") + 1
+        event.stop()                                   # TextArea's handler lets it bubble; the app would paste it again
         if lines == 1:
-            return                                     # Input's own handler runs next (Textual calls each class's)
-        event.stop()
+            return                                     # TextArea's own handler runs next (Textual calls each class's)
         event.prevent_default()
         marker = f"[Pasted text #{len(self.pasted) + 1} +{lines} lines]"
         self.pasted[marker] = text
-        if self.selection.is_empty:
-            self.insert_text_at_cursor(marker)
-        else:
-            self.replace(marker, *self.selection)
+        self._replace_via_keyboard(marker, *self.selection)
 
     def expand(self, text: str) -> str:
         for marker, full in self.pasted.items():
@@ -140,18 +157,36 @@ class Prompt(Input):
         return text.strip()
 
     async def _on_key(self, event: events.Key) -> None:
-        bound = self._bindings.key_to_bindings.get(event.key)
-        if bound:
+        action = self.OWN.get(event.key)
+        if action is None:
+            bound = self._bindings.key_to_bindings.get(event.key)
+            action = bound[0].action if bound else None
+        if action:
             event.stop()
             event.prevent_default()
-            await self.run_action(bound[0].action)
+            await self.run_action(action)
             return
         await super()._on_key(event)
 
-    async def action_submit(self) -> None:
-        """Sends the text and empties the line at once, before any key typed after Enter is handled."""
-        await super().action_submit()
-        self.value = ""
+    def action_submit(self) -> None:
+        """Sends the text and empties the box at once, before any key typed after Enter is handled."""
+        self.post_message(self.Submitted(self, self.text))
+        self.clear()
+
+    def action_newline(self) -> None:
+        self._replace_via_keyboard("\n", *self.selection)
+
+    def action_up(self) -> None:
+        if self.app.menu_open() or self.cursor_location[0] == 0:
+            self.app.action_up()
+        else:
+            self.action_cursor_up()
+
+    def action_down(self) -> None:
+        if self.app.menu_open() or self.cursor_location[0] == self.document.line_count - 1:
+            self.app.action_down()
+        else:
+            self.action_cursor_down()
 
 
 class CodeColors(ANSIDarkHighlightTheme):
@@ -248,11 +283,12 @@ class Chat(App):
     .note { color: ansi_default; text-style: dim; margin: 1 0 0 0; }
     #status { height: 1; padding: 0 1; color: ansi_yellow; }
     #commands { height: auto; max-height: 8; display: none; border: round ansi_blue; background: ansi_default; }
-    #ask { border: round ansi_blue; background: ansi_default; color: ansi_default; }
-    /* Textual draws an ANSI-mode cursor black on white; black is the background in some schemes (Solarized Dark),
-       so the cursor vanished. The default colors reversed are what a terminal's own cursor looks like. */
-    #ask > .input--cursor { background: ansi_default; color: ansi_default; text-style: reverse; }
-    #ask > .input--selection { background: ansi_default; color: ansi_default; text-style: reverse; }
+    #ask { height: auto; min-height: 3; max-height: 10; border: round ansi_blue; padding: 0 1;
+           background: ansi_default; color: ansi_default; }
+    /* The cursor and the selection are the default colors reversed (TextArea's own ANSI rules), as a terminal's
+       cursor is: a black-on-white cursor vanished where black is the background (Solarized Dark). */
+    #ask > .text-area--cursor-line { background: ansi_default; }
+    #ask > .text-area--placeholder { color: ansi_default; text-style: dim; }
     Screen > .screen--selection { background: ansi_default; color: ansi_default; text-style: reverse; }
     #hints { height: 1; padding: 0 1; color: ansi_default; text-style: dim; }
     """
@@ -274,7 +310,8 @@ class Chat(App):
         yield self.status
         yield Menu(id="commands")
         yield Prompt(placeholder="❯ Ask about your files or the web", id="ask")
-        yield Static("/ commands · ↑↓ earlier questions · pgup/pgdn scroll · esc interrupt · ctrl+c quit", id="hints")
+        yield Static("/ commands · ctrl+enter new line · ↑↓ earlier questions · pgup/pgdn scroll · esc interrupt · "
+                     "ctrl+c quit", id="hints")
 
     def on_mount(self) -> None:
         self.register_theme(TERMINAL)
@@ -324,7 +361,7 @@ class Chat(App):
 
     # --- asking ---
 
-    def on_input_submitted(self, event: Input.Submitted) -> None:
+    def on_prompt_submitted(self, event: Prompt.Submitted) -> None:
         menu = self.query_one("#commands", OptionList)
         q = event.value.strip()                            # the prompt has already emptied itself
         if menu.display and menu.highlighted is not None and q.startswith("/"):
@@ -415,7 +452,7 @@ class Chat(App):
         if name == "/exit":
             self.exit()
         elif name == "/help":
-            self.add(Page("**Keys** — Enter ask · ↑↓ earlier questions · `/` commands (↑↓ pick, Tab/Enter take, "
+            self.add(Page("**Keys** — Enter ask · Ctrl+Enter new line · ↑↓ earlier questions · `/` commands (↑↓ pick, Tab/Enter take, "
                               "Esc close) · PgUp/PgDn scroll · Esc interrupt · Ctrl+C quit\n\n**Commands**\n"
                               + "\n".join(f"- `{c}` {d}" for c, d in COMMANDS.items())))
         elif name == "/new":
@@ -463,8 +500,8 @@ class Chat(App):
 
     # --- the command menu and the question history ---
 
-    def on_input_changed(self, event: Input.Changed) -> None:
-        v = event.value
+    def on_text_area_changed(self, event: TextArea.Changed) -> None:
+        v = event.text_area.text
         if v.startswith(("/add ", "/remove ")):
             return
         if v.startswith("/") and " " not in v:
@@ -478,6 +515,9 @@ class Chat(App):
                 menu.highlighted = 0
         else:
             self.hide_menu()
+
+    def menu_open(self) -> bool:
+        return self.query_one("#commands", OptionList).display
 
     def hide_menu(self) -> None:
         self.query_one("#commands", OptionList).display = False
@@ -547,4 +587,3 @@ class Chat(App):
     def set_prompt(self, text: str) -> None:
         prompt = self.query_one("#ask", Prompt)
         prompt.value = text
-        prompt.cursor_position = len(text)

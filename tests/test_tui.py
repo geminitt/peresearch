@@ -21,8 +21,8 @@ def test_the_terminal_interface_shows_tools_answer_and_sources(home, notes):
         return a
 
     async def steps(app, pilot):
-        from textual.widgets import Input
-        app.query_one("#ask", Input).value = "BPE merges pairs?"
+        from peresearch.tui import Prompt
+        app.query_one("#ask", Prompt).value = "BPE merges pairs?"
         await pilot.press("enter")
         await settle(app, pilot, lambda: not app.busy and app.last is not None)
     app = tui_run(make, steps)
@@ -34,7 +34,7 @@ def test_the_terminal_interface_shows_tools_answer_and_sources(home, notes):
 
 def test_the_conversation_fills_the_screen(home, notes):
     from textual.containers import VerticalScroll
-    from textual.widgets import Input
+    from peresearch.tui import Prompt
 
     from peresearch.tui import Chat
 
@@ -42,7 +42,7 @@ def test_the_conversation_fills_the_screen(home, notes):
         app = Chat(lambda on_event: agent(home, notes, Reply("x [N1]."))[0])
         async with app.run_test(size=(100, 40)) as pilot:
             await pilot.pause()
-            log, ask = app.query_one("#log", VerticalScroll), app.query_one("#ask", Input)
+            log, ask = app.query_one("#log", VerticalScroll), app.query_one("#ask", Prompt)
             return log.size.height, ask.region.bottom
     height, bottom = asyncio.run(run())
     assert height >= 30 and bottom == 39                   # the log takes the screen; input, then the key hints
@@ -92,8 +92,8 @@ def test_up_recalls_earlier_questions_and_new_forgets_them(home, notes):
         return a
 
     async def steps(app, pilot):
-        from textual.widgets import Input
-        prompt = app.query_one("#ask", Input)
+        from peresearch.tui import Prompt
+        prompt = app.query_one("#ask", Prompt)
         prompt.value = "BPE merges pairs?"
         await pilot.press("enter")
         await settle(app, pilot, lambda: not app.busy and app.last is not None)
@@ -126,8 +126,8 @@ def test_escape_interrupts_a_running_question(home, notes):
         return Agent(SlowLLM(*[Reply("", [ToolCall(f"c{i}", "grep", {"pattern": f"x{i}"})]) for i in range(10)]), tb)
 
     async def steps(app, pilot):
-        from textual.widgets import Input
-        app.query_one("#ask", Input).value = "BPE merges pairs?"
+        from peresearch.tui import Prompt
+        app.query_one("#ask", Prompt).value = "BPE merges pairs?"
         await pilot.press("enter")
         await settle(app, pilot, lambda: app.agent is not None)
         await pilot.press("escape")
@@ -138,7 +138,7 @@ def test_escape_interrupts_a_running_question(home, notes):
 
 
 def test_folders_are_added_with_tab_completion_indexed_and_removed_in_the_interface(home, notes, tmp_path):
-    from textual.widgets import Input
+    from peresearch.tui import Prompt
 
     from peresearch.workspace import Workspace
     extra = tmp_path / "course-notes"
@@ -150,7 +150,7 @@ def test_folders_are_added_with_tab_completion_indexed_and_removed_in_the_interf
     async def steps(app, pilot):
         await settle(app, pilot, lambda: not app.busy and "Index" in texts(app) or "added" in texts(app))
         assert "added" in texts(app)                                      # indexed on start: notes was new
-        prompt = app.query_one("#ask", Input)
+        prompt = app.query_one("#ask", Prompt)
         prompt.value = f"/add {tmp_path}/course-no"
         await pilot.press("tab")
         assert prompt.value == f"/add {extra}/"
@@ -206,8 +206,7 @@ def test_pasted_lines_reach_the_model_whole(home, notes):
     async def steps(app, pilot):
         await pilot.pause()
         prompt = app.query_one("#ask", Prompt)
-        prompt.value = "why does this fail: "
-        prompt.cursor_position = len(prompt.value)
+        prompt.value = "why does this fail: "                              # the cursor goes to the end
         prompt.post_message(events.Paste("Traceback (most recent call last):\n  File \"x.py\", line 1\nKeyError: 'a'\n"))
         await pilot.pause()
         app.shown_value = prompt.value
@@ -295,7 +294,7 @@ def test_an_answer_that_used_no_source_says_so():
 
 
 def test_the_interface_asks_before_reading_outside_the_declared_folders(home, notes, user_home):
-    from textual.widgets import Input
+    from peresearch.tui import Prompt
 
     from peresearch.tui import Permission
 
@@ -307,8 +306,8 @@ def test_the_interface_asks_before_reading_outside_the_declared_folders(home, no
         return a
 
     async def steps(app, pilot):
-        from textual.widgets import Input
-        prompt = app.query_one("#ask", Input)
+        from peresearch.tui import Prompt
+        prompt = app.query_one("#ask", Prompt)
         prompt.value = "what does the paper in Downloads say?"
         await pilot.press("enter")
         await settle(app, pilot, lambda: isinstance(app.screen, Permission))
@@ -325,7 +324,7 @@ def test_the_interface_asks_before_reading_outside_the_declared_folders(home, no
         app.focus_after = app.focused
     app = tui_run(make, steps)
     assert app.dialog and "N1" in app.first.sources and "Attention" in app.first.sources["N1"].text
-    assert app.last.sources == {} and isinstance(app.focus_after, Input)
+    assert app.last.sources == {} and isinstance(app.focus_after, Prompt)
 
 
 
@@ -337,3 +336,45 @@ def test_a_late_spinner_tick_after_the_interface_closed_is_harmless(home, notes)
     app = tui_run(lambda e: agent(home, notes)[0], steps)
     app.busy = True
     app.tick()                                                   # after unmounting: must not raise
+
+
+def test_the_prompt_takes_several_lines(home, notes):
+    """Enter sends, Ctrl+Enter (a terminal sends it as Ctrl+J) starts a new line; the box grows with its text up to
+    its limit; ↑ moves between lines and recalls an earlier question only from the first line."""
+    from peresearch.tui import Prompt
+
+    def make(on_event):
+        a, llm = agent(home, notes, Reply("One."), Reply("Two."))
+        make.llm = llm
+        return a
+
+    async def steps(app, pilot):
+        prompt = app.query_one("#ask", Prompt)
+        await pilot.press(*"first", "enter")
+        await settle(app, pilot, lambda: not app.busy and app.last is not None)
+        one_line = prompt.region.height
+        await pilot.press(*"line one", "ctrl+j", *"line two", "ctrl+j", *"line three")
+        await pilot.pause()
+        app.grown = (one_line, prompt.region.height)
+        await pilot.press("up")                                     # from the third line to the second
+        app.after_up = (prompt.value, prompt.cursor_location[0])
+        for _ in range(12):
+            await pilot.press("ctrl+j", "x")
+        await pilot.pause()
+        app.capped = prompt.region.height
+        prompt.value = "line one\nline two"
+        await pilot.press("up", "up")                               # up to the first line, then to the history
+        app.recalled = prompt.value
+        prompt.value = "a\nb"
+        app.last = None
+        await pilot.press("enter")
+        await settle(app, pilot, lambda: not app.busy and app.last is not None)
+        app.emptied = prompt.value
+    app = tui_run(make, steps)
+    assert app.grown[1] == app.grown[0] + 2                         # three lines of text, same border
+    assert app.after_up == ("line one\nline two\nline three", 1)
+    assert app.capped == app.grown[0] + 7                           # at most 8 lines, then it scrolls inside
+    assert app.recalled == "first"
+    sent = [m["content"] for m in make.llm.seen[-1][0] if m["role"] == "user"][-1]
+    assert sent.endswith("a\nb") and app.emptied == ""
+    assert "❯ a\nb" in app.shown
