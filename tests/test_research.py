@@ -13,7 +13,7 @@ from peresearch.tools import Toolbox
 from peresearch.zetokrag.index import Index
 from peresearch.zetokrag.search import Searcher
 from tests.conftest import FakeEmbedder, FakeReranker
-from tests.test_agent import ScriptedLLM
+from tests.helpers import ScriptedLLM
 
 EVAL = Path(__file__).parent.parent / "eval"
 

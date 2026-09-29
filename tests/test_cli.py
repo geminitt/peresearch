@@ -1,0 +1,30 @@
+"""The command line: setup, and asking on the terminal before reading outside the declared folders."""
+
+from peresearch import guard
+from peresearch.zetokrag.index import Index
+from tests.conftest import FakeEmbedder
+from tests.helpers import notes, user_home
+
+
+def test_setup_declares_folders_indexes_and_saves_the_keys_privately(home, notes, monkeypatch):
+    import stat
+
+    from peresearch import cli
+    from peresearch.workspace import Workspace
+    monkeypatch.setattr(cli, "Workspace", lambda: Workspace(Index(home, embedder=FakeEmbedder())))
+    answers = iter([str(notes), "", "http://localhost:8000/v1"])
+    secrets = iter(["", "tvly-" + "x" * 24, ""])
+    cli.cmd_setup(None, ask=lambda _: next(answers), secret=lambda _: next(secrets))
+    env = (home / "settings.env").read_text()
+    assert "PERESEARCH_LLM_URL=http://localhost:8000/v1" in env and "TAVILY_API_KEY=tvly-" in env
+    assert stat.S_IMODE((home / "settings.env").stat().st_mode) == 0o600
+    assert guard.roots() == [notes.resolve()] and Index(home, embedder=FakeEmbedder()).rows()
+
+
+def test_the_command_line_asks_too(home, notes, user_home, monkeypatch):
+    from peresearch.cli import ask_in_terminal
+
+    replies = iter(["s", ""])
+    monkeypatch.setattr("builtins.input", lambda prompt: next(replies))
+    assert ask_in_terminal("read", user_home / "Downloads" / "paper.md") == "session"
+    assert ask_in_terminal("read", user_home / "Downloads" / "paper.md") == "no"      # Enter means no
