@@ -102,7 +102,9 @@ def heading(project: str) -> str:
     url = settings.get("PERESEARCH_LLM_URL")
     model = url.split("//")[-1].split("/")[0] if url else "no model endpoint set"
     web = [n for n, k in (("Tavily", "TAVILY_API_KEY"), ("Exa", "EXA_API_KEY")) if settings.get(k)]
-    return (f"peresearch · project {project} · {len(guard.roots())} folders · model {model} · "
+    from peresearch.tools import outermost
+
+    return (f"peresearch · project {project} · {len(outermost(guard.roots()))} folders · model {model} · "
             f"web {' → '.join(web) if web else 'off (no search key)'}")
 
 

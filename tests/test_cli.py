@@ -28,3 +28,13 @@ def test_the_command_line_asks_too(home, notes, user_home, monkeypatch):
     monkeypatch.setattr("builtins.input", lambda prompt: next(replies))
     assert ask_in_terminal("read", user_home / "Downloads" / "paper.md") == "session"
     assert ask_in_terminal("read", user_home / "Downloads" / "paper.md") == "no"      # Enter means no
+
+
+def test_the_heading_counts_folders_inside_another_declared_one_once(home, tmp_path):
+    from peresearch import guard
+    from peresearch.cli import heading
+
+    (tmp_path / "projects" / "a").mkdir(parents=True)
+    (tmp_path / "class").mkdir()
+    guard.set_roots([tmp_path / "projects", tmp_path / "projects" / "a", tmp_path / "class"])
+    assert "· 2 folders ·" in heading("default")
