@@ -54,7 +54,8 @@ def test_slash_opens_the_command_menu_filters_it_and_runs_the_choice(home, notes
         menu = app.query_one("#commands", OptionList)
         await pilot.press("/")
         await pilot.pause()
-        assert menu.display and menu.option_count == 8
+        from peresearch.tui import COMMANDS
+        assert menu.display and menu.option_count == len(COMMANDS)
         await pilot.press("f", "o")
         await pilot.pause()
         assert menu.option_count == 1 and menu.get_option_at_index(0).id == "/folders"
@@ -441,3 +442,49 @@ def test_ctrl_c_copies_the_selection_and_ctrl_q_quits(home, notes):
     assert app.from_prompt == "copy me"
     assert "ctrl+q" in app.reminded
     assert not app.running_after_quit
+
+
+def test_the_interface_opens_fresh_and_resume_brings_back_a_conversation(home, notes):
+    from peresearch.tui import Prompt
+
+    earlier, _ = agent(home, notes, Reply("BPE merges pairs [N1]."))
+    earlier.ask("How does BPE work?")
+
+    def make(on_event):
+        a, llm = agent(home, notes, Reply("It came from compression [N1]."))
+        make.llm = llm
+        return a
+
+    async def steps(app, pilot):
+        await pilot.pause()
+        app.opened = app.shown if hasattr(app, "shown") else texts(app)
+        prompt = app.query_one("#ask", Prompt)
+        prompt.value = "/resume"
+        await pilot.press("enter")
+        await pilot.pause()
+        menu = app.query_one("#commands")
+        app.listed = [str(menu.get_option_at_index(i).prompt) for i in range(menu.option_count)]
+        await pilot.press("enter")                                    # the newest one
+        await pilot.pause()
+        app.resumed = texts(app)
+        prompt.value = "Where does it come from?"
+        await pilot.press("enter")
+        await settle(app, pilot, lambda: not app.busy and app.last is not None)
+    app = tui_run(make, steps)
+    assert "BPE" not in app.opened                                    # nothing from the earlier conversation on open
+    assert len(app.listed) == 1 and "How does BPE work?" in app.listed[0] and "1 question" in app.listed[0]
+    assert "How does BPE work?" in app.resumed and "BPE merges pairs" in app.resumed
+    sent = [m["content"] for m in make.llm.seen[0][0] if m["role"] == "user"]
+    assert sent[0] == "How does BPE work?"
+
+
+def test_resume_with_no_earlier_conversation_says_so(home, notes):
+    from peresearch.tui import Prompt
+
+    async def steps(app, pilot):
+        await pilot.pause()
+        app.query_one("#ask", Prompt).value = "/resume"
+        await pilot.press("enter")
+        await pilot.pause()
+    app = tui_run(lambda e: agent(home, notes)[0], steps)
+    assert "no earlier conversation" in app.shown

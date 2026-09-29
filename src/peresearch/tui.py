@@ -40,6 +40,7 @@ from textual.widgets._markdown import MarkdownFence
 from textual.widgets.option_list import Option
 
 from peresearch import guard
+from peresearch.agent import conversations, history_file, read_turns
 from peresearch.workspace import complete, summary
 
 COMMANDS = {
@@ -49,6 +50,7 @@ COMMANDS = {
     "/folders": "the folders peresearch may read",
     "/index": "bring the index up to date with the folders",
     "/new": "start a fresh conversation (earlier questions no longer sent as context)",
+    "/resume": "pick an earlier conversation of this project and continue it",
     "/sources": "every source of the last answer, in full",
     "/exit": "quit",
 }
@@ -301,11 +303,14 @@ class Chat(App):
     BINDINGS = [Binding("ctrl+q", "quit", "Quit", priority=True)]     # Ctrl+C copies (the owner's choice)
     ENABLE_COMMAND_PALETTE = False       # Textual's own palette (Ctrl+P): another look, and it switches themes
 
-    def __init__(self, make_agent, heading=lambda: "peresearch", workspace=None, index_on_start: bool = True):
+    def __init__(self, make_agent, heading=lambda: "peresearch", workspace=None, index_on_start: bool = True,
+                 project: str = "default"):
         super().__init__()
-        self.make_agent, self.heading, self.ws = make_agent, heading, workspace
+        self.make_agent, self.heading, self.ws, self.project = make_agent, heading, workspace, project
         self.index_on_start = index_on_start and workspace is not None
         self.agent, self.busy, self.last, self.pending_new = None, False, None, False
+        self.pending_resume = None                    # a conversation picked before the agent existed
+        self.menu_kind = ""                           # what the menu lists: "commands", "paths" or "conversations"
         self.asked, self.recall = [], None
         self.started, self.doing, self.tokens, self.frame = 0.0, "", 0, 0
         self.flash, self.flash_until = "", 0.0         # a short message on the status line when idle
@@ -371,6 +376,9 @@ class Chat(App):
     def on_prompt_submitted(self, event: Prompt.Submitted) -> None:
         menu = self.query_one("#commands", OptionList)
         q = event.value.strip()                            # the prompt has already emptied itself
+        if menu.display and menu.highlighted is not None and self.menu_kind == "conversations" and not q:
+            self.resume(menu.get_option_at_index(menu.highlighted).id.removeprefix("resume:"))
+            return
         if menu.display and menu.highlighted is not None and q.startswith("/"):
             chosen = menu.get_option_at_index(menu.highlighted).id
             if chosen.startswith("path:"):                  # a path picked from the Tab suggestions
@@ -408,7 +416,9 @@ class Chat(App):
                 self.agent = self.make_agent(event)
                 if hasattr(self.agent, "toolbox"):
                     self.agent.toolbox.ask = self.permission
-                if self.pending_new:
+                if self.pending_resume:
+                    self.agent.resume(self.pending_resume)
+                elif self.pending_new:
                     self.agent.new_session()
             answer = self.agent.ask(question)
             self.last = answer
@@ -471,9 +481,24 @@ class Chat(App):
                 return
             if self.agent is not None:
                 self.agent.new_session()
-            self.pending_new = self.agent is None
+            self.pending_new, self.pending_resume = self.agent is None, None
             self.query_one("#log", VerticalScroll).remove_children()
             self.note("New conversation: earlier questions are no longer sent as context.")
+        elif name == "/resume":
+            if self.busy:
+                self.note("wait for the current question to finish, or press esc")
+                return
+            past = conversations(history_file(self.project))
+            if not past:
+                self.note("no earlier conversation in this project")
+                return
+            menu = self.query_one("#commands", OptionList)
+            menu.clear_options()
+            menu.add_options([Option(f"{time.strftime('%Y-%m-%d %H:%M', time.localtime(c.last))}  "
+                                     f"{c.questions} question{'' if c.questions == 1 else 's'}  "
+                                     f"[dim]{escape(guard.sanitize(c.first)[:70])}[/dim]", id="resume:" + c.id)
+                              for c in past[:50]])
+            menu.display, menu.highlighted, self.menu_kind = True, 0, "conversations"
         elif name == "/sources":
             if not self.last or not self.last.sources:
                 self.note("no sources yet")
@@ -514,13 +539,15 @@ class Chat(App):
         v = event.text_area.text
         if v.startswith(("/add ", "/remove ")):
             return
+        if not v and self.menu_kind == "conversations":   # the prompt emptying itself after "/resume"
+            return
         if v.startswith("/") and " " not in v:
             matches = [c for c in COMMANDS if c.startswith(v)]
             menu = self.query_one("#commands", OptionList)
             menu.clear_options()
             width = max(map(len, COMMANDS))                  # descriptions in one column
             menu.add_options([Option(f"{c:<{width}}  [dim]{d}[/dim]", id=c) for c, d in COMMANDS.items() if c in matches])
-            menu.display = bool(matches)
+            menu.display, self.menu_kind = bool(matches), "commands"
             if matches:
                 menu.highlighted = 0
         else:
@@ -531,11 +558,32 @@ class Chat(App):
 
     def hide_menu(self) -> None:
         self.query_one("#commands", OptionList).display = False
+        self.menu_kind = ""
+
+    def resume(self, conversation: str) -> None:
+        """Show an earlier conversation and make it the context of the next question."""
+        self.hide_menu()
+        if self.agent is not None:
+            turns = self.agent.resume(conversation)
+        else:
+            turns = [t for t in read_turns(history_file(self.project)) if t["conversation"] == conversation]
+            self.pending_resume, self.pending_new = conversation, False
+        log = self.query_one("#log", VerticalScroll)
+        log.remove_children()
+        when = time.strftime("%Y-%m-%d %H:%M", time.localtime(turns[0].get("time", 0))) if turns else "?"
+        self.note(f"Resumed the conversation of {when} ({len(turns)} question{'' if len(turns) == 1 else 's'}); "
+                  "the next question continues it.")
+        for t in turns:
+            self.add(Static(f"❯ {guard.sanitize(t['question'])}", classes="question", markup=False))
+            sources = "".join(f"\n- `{k}` {guard.sanitize(str(v))}" for k, v in (t.get("sources") or {}).items())
+            self.add(Page(guard.sanitize(t["answer"]) + (f"\n\n**Sources**{sources}" if sources else "")))
 
     def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
         prompt = self.query_one("#ask", Prompt)
         self.hide_menu()
-        if event.option.id.startswith("path:"):
+        if event.option.id.startswith("resume:"):
+            self.resume(event.option.id.removeprefix("resume:"))
+        elif event.option.id.startswith("path:"):
             self.set_prompt(prompt.value.split(" ")[0] + " " + event.option.id[5:])
         elif event.option.id in ("/add", "/remove"):
             self.set_prompt(event.option.id + " ")
@@ -567,6 +615,9 @@ class Chat(App):
         value = self.query_one("#ask", Prompt).value
         if menu.display and menu.highlighted is not None:
             chosen = menu.get_option_at_index(menu.highlighted).id
+            if chosen.startswith("resume:"):
+                self.resume(chosen.removeprefix("resume:"))
+                return
             self.set_prompt((value.split(" ")[0] + " " + chosen[5:]) if chosen.startswith("path:") else chosen + " ")
             self.hide_menu()
         elif value.startswith(("/add ", "/remove ")):
@@ -580,7 +631,7 @@ class Chat(App):
             elif matches:
                 menu.clear_options()
                 menu.add_options([Option(m, id="path:" + m) for m in matches[:50]])
-                menu.display, menu.highlighted = True, 0
+                menu.display, menu.highlighted, self.menu_kind = True, 0, "paths"
 
     def say(self, text: str, seconds: float = 2.5) -> None:
         """A short message on the status line, shown while nothing runs."""

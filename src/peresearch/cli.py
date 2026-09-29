@@ -113,7 +113,7 @@ def cmd_chat(args):
 
     ws = Workspace()
     Chat(lambda on_event: make_agent(args.project, on_event, ws.index), lambda: heading(args.project),
-         workspace=ws).run()
+         workspace=ws, project=args.project).run()
 
 
 KEYS = [("PERESEARCH_LLM_URL", "model endpoint (…/v1), e.g. http://localhost:8000/v1 or the URL `modal deploy` prints", False),

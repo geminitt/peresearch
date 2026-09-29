@@ -11,14 +11,18 @@ One agent, one loop, written out rather than taken from a framework:
 4. The answer cites sources by id ([N1] for a file, [W2] for the web). A rule-based check then verifies every
    cited id was retrieved and every quoted passage appears in a cited source; what fails is reported, not
    hidden.
-Past questions and answers of the same project are kept in $PERESEARCH_HOME/sessions/<project>.jsonl; the
-most recent ones that fit a character budget go back to the model as context (older ones are left out).
+Questions and answers are kept per project in $PERESEARCH_HOME/sessions/<project>.jsonl, each with the id of its
+conversation. Every agent starts a new conversation; the most recent turns of the current conversation that fit a
+character budget go back to the model as context. `conversations()` lists a project's conversations and
+`Agent.resume()` continues one.
 """
 
 import json
 import re
+import secrets
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from peresearch import guard
 from peresearch.llm import Interrupted
@@ -129,6 +133,57 @@ def _wrap(name: str, result: str) -> str:
     return f"<tool_output tool=\"{name}\" trust=\"untrusted data\">\n{result}\n</tool_output>{flag}"
 
 
+@dataclass
+class Conversation:
+    id: str
+    started: float
+    last: float
+    first: str                  # its first question
+    questions: int
+
+
+def history_file(project: str) -> Path:
+    return guard.home() / "sessions" / f"{re.sub(r'[^A-Za-z0-9_.-]', '_', project)}.jsonl"
+
+
+def read_turns(path: Path) -> list[dict]:
+    """Every question and answer, each with its conversation id. Lines written before ids existed get one from the
+    /new markers of that time; a line cut short by a crash is skipped rather than failing every later question."""
+    if not path.exists():
+        return []
+    turns, before_ids = [], 0
+    for line in path.read_text().splitlines():
+        try:
+            t = json.loads(line)
+        except ValueError:
+            continue
+        if not isinstance(t, dict):
+            continue
+        if t.get("new"):
+            before_ids += 1
+        elif isinstance(t.get("question"), str) and isinstance(t.get("answer"), str):
+            t.setdefault("conversation", f"before-ids-{before_ids}")
+            turns.append(t)
+    return turns
+
+
+def conversations(path: Path) -> list[Conversation]:
+    """A project's conversations, the most recently active first."""
+    found: dict[str, Conversation] = {}
+    for t in read_turns(path):
+        when = t.get("time", 0.0)
+        c = found.get(t["conversation"])
+        if c is None:
+            found[t["conversation"]] = Conversation(t["conversation"], when, when, t["question"], 1)
+        else:
+            c.last, c.questions = max(c.last, when), c.questions + 1
+    return sorted(found.values(), key=lambda c: c.last, reverse=True)
+
+
+def _new_id() -> str:
+    return time.strftime("%Y%m%d-%H%M%S") + "-" + secrets.token_hex(3)
+
+
 class Agent:
     def __init__(self, llm, toolbox: Toolbox, project: str = "default", limits: Limits | None = None, on_event=None,
                  record: bool = True):
@@ -137,18 +192,16 @@ class Agent:
         self.limits = limits or Limits()
         self.on_event = on_event or (lambda kind, detail: None)
         self.cancelled = False
-        self.history_path = guard.home() / "sessions" / f"{re.sub(r'[^A-Za-z0-9_.-]', '_', project)}.jsonl"
+        self.history_path = history_file(project)
+        self.conversation = _new_id()                  # every agent (every opening of the interface) starts afresh
 
     # --- history ---
 
     def history(self) -> list[dict]:
-        if not self.record or not self.history_path.exists():
+        """The current conversation's latest turns that fit the budget, as chat messages."""
+        if not self.record:
             return []
-        turns = []
-        for line in self.history_path.read_text().splitlines():
-            if line.strip():
-                t = json.loads(line)
-                turns = [] if t.get("new") else turns + [t]      # a /new marker starts the history afresh
+        turns = [t for t in read_turns(self.history_path) if t["conversation"] == self.conversation]
         kept, used = [], 0
         for t in reversed(turns):                      # most recent first, until the budget is spent
             size = len(t["question"]) + len(t["answer"])
@@ -168,10 +221,13 @@ class Agent:
         return len(self.history()) // 2
 
     def new_session(self) -> None:
-        """Later questions start without the earlier ones as context (the file keeps them)."""
-        self.history_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(self.history_path, "a") as f:
-            f.write(json.dumps({"time": time.time(), "new": True}) + "\n")
+        """Later questions start a new conversation, without the earlier ones as context (the file keeps them)."""
+        self.conversation = _new_id()
+
+    def resume(self, conversation: str) -> list[dict]:
+        """Continue an earlier conversation: its turns become the context again. Returns them, oldest first."""
+        self.conversation = conversation
+        return [t for t in read_turns(self.history_path) if t["conversation"] == conversation]
 
     def cancel(self) -> None:
         """Stop the current question at once: a model call in flight is dropped (its connection closed)."""
@@ -180,7 +236,8 @@ class Agent:
     def _remember(self, question: str, answer: Answer) -> None:
         self.history_path.parent.mkdir(parents=True, exist_ok=True)
         with open(self.history_path, "a") as f:
-            f.write(json.dumps({"time": time.time(), "question": question, "answer": answer.text,
+            f.write(json.dumps({"time": time.time(), "conversation": self.conversation, "question": question,
+                                "answer": answer.text,
                                 "sources": {k: s.where for k, s in answer.sources.items()}}, ensure_ascii=False) + "\n")
 
     # --- the loop ---

@@ -169,3 +169,47 @@ def test_an_answer_cut_at_the_token_limit_says_so(home, notes):
     ans = a.ask("How does BPE work?")
     assert ans.stopped == "length"
     assert "cut at the model's token limit" in render(ans)
+
+
+def test_every_agent_starts_a_fresh_conversation_that_can_be_resumed(home, notes):
+    """Opening the interface starts a new conversation (earlier ones are not sent as context); an earlier one can
+    be picked up again, and its questions then come back as context."""
+    from peresearch.agent import conversations
+
+    first, _ = agent(home, notes, Reply("BPE merges pairs [N1]."), Reply("It has a second stage [N1]."))
+    first.ask("How does BPE work?")
+    first.ask("And SuperBPE?")
+    second, llm = agent(home, notes, Reply("Pho is a soup [N1]."), Reply("Yes [N1]."))
+    second.ask("What is pho?")
+    assert all("BPE" not in m["content"] for m in llm.seen[0][0] if m["role"] != "system")   # a fresh start
+    past = conversations(home / "sessions" / "default.jsonl")
+    assert [(c.questions, c.first) for c in past] == [(1, "What is pho?"), (2, "How does BPE work?")]  # newest first
+    third, llm3 = agent(home, notes, Reply("More on SuperBPE [N1]."))
+    turns = third.resume(past[1].id)
+    assert [t["question"] for t in turns] == ["How does BPE work?", "And SuperBPE?"]
+    third.ask("Where does it come from?")
+    sent = [m["content"] for m in llm3.seen[0][0] if m["role"] == "user"]
+    assert sent[0] == "How does BPE work?" and "What is pho?" not in sent
+    assert [c.questions for c in conversations(home / "sessions" / "default.jsonl")] == [3, 1]   # it went on
+
+
+def test_history_written_before_conversation_ids_and_a_torn_line_are_read(home, notes):
+    """Lines from before conversation ids are split at the old /new markers; a line cut by a crash is skipped
+    instead of failing every later question."""
+    from peresearch.agent import conversations
+
+    path = home / "sessions" / "default.jsonl"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join([
+        '{"time": 1, "question": "old one", "answer": "a", "sources": {}}',
+        '{"time": 2, "question": "old two", "answer": "b", "sources": {}}',
+        '{"time": 3, "new": true}',
+        '{"time": 4, "question": "old three", "answer": "c", "sources": {}}',
+        '{"time": 5, "question": "cut by a cra']) + "\n")
+    past = conversations(path)
+    assert [(c.first, c.questions) for c in past] == [("old three", 1), ("old one", 2)]
+    a, llm = agent(home, notes, Reply("ok [N1]"))
+    a.resume(past[1].id)
+    a.ask("continue")
+    sent = [m["content"] for m in llm.seen[0][0] if m["role"] == "user"]
+    assert sent[:2] == ["old one", "old two"]
