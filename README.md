@@ -23,7 +23,7 @@ searches the web, and cites every claim.**
 |---|---|
 | **ZetokRAG** (zero-token RAG) | Finds evidence in your own files without calling an LLM: BM25 (on diacritic-free words only when the query is typed without them) plus Qwen3-Embedding-0.6B, min-max score fusion, reranking of the top 30 with bge-reranker-v2-m3, and a calibrated "enough / partial / nothing" verdict. Excerpts are quoted verbatim with their source. |
 | **Agent** | One loop, written out rather than taken from a framework, running on your machine; only the model (Qwen3.6-35B-A3B, vLLM) runs on [Modal](https://modal.com). Your files are searched before the model speaks; then it may grep, list and read them, search the web (Tavily, then Exa once Tavily's free credits run out) and read pages a search returned. Limits on steps, searches, pages and time. Answers separate "already in your files", "new from the web" and the synthesis; a rule-based check verifies every cited source id and every quote. |
-| **Interface** | `peresearch chat`: a full-screen terminal interface (Textual); `peresearch ask` for one question. |
+| **Interface** | `peresearch chat`: a full-screen terminal interface (Textual) laid out like Claude Code's — the tools the agent calls appear as it works, a status line shows what it is doing, `/` opens a command menu (`/new`, `/sources`, `/folders`, `/help`), ↑/↓ recall earlier questions, Esc interrupts. `peresearch ask` for one question. |
 | **Guard** | Only declared folders are read, credentials are never indexed, and everything that leaves the machine passes one filter. |
 
 ---

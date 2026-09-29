@@ -103,8 +103,14 @@ def cmd_ask(args):
 def cmd_chat(args):
     from peresearch.tui import Chat
 
-    heading = f"peresearch · project {args.project} · {len(guard.roots())} declared folders"
-    Chat(lambda on_event: make_agent(args.project, on_event), heading).run()
+    from peresearch import settings
+
+    url = settings.get("PERESEARCH_LLM_URL")
+    model = url.split("//")[-1].split("/")[0] if url else "no model endpoint set"
+    web = [n for n, k in (("Tavily", "TAVILY_API_KEY"), ("Exa", "EXA_API_KEY")) if settings.get(k)]
+    heading = (f"peresearch · project {args.project} · {len(guard.roots())} folders · model {model} · "
+               f"web {' → '.join(web) if web else 'off (no search key)'}")
+    Chat(lambda on_event: make_agent(args.project, on_event), heading, folders=guard.roots()).run()
 
 
 def main(argv=None):

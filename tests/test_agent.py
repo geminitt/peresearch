@@ -222,30 +222,51 @@ def test_a_cold_model_is_waited_for_then_other_errors_surface():
         llm.chat([{"role": "user", "content": "x"}])
 
 
-def test_the_terminal_interface_asks_and_shows_the_answer(home, notes):
-    from textual.widgets import Input, Markdown
-
+def tui_run(make, steps, size=(100, 40)):
+    """Drive the interface with the test pilot; `steps(app, pilot)` is an async function; returns the app."""
     from peresearch.tui import Chat
 
+    async def run():
+        app = Chat(make, folders=["/tmp/notes"])
+        async with app.run_test(size=size) as pilot:
+            await steps(app, pilot)
+            app.shown = texts(app)          # read while the widgets are still mounted
+        return app
+    return asyncio.run(run())
+
+
+async def settle(app, pilot, until, tries=200):
+    for _ in range(tries):
+        await pilot.pause(0.02)
+        if until():
+            return
+
+
+def texts(app):
+    from textual.widgets import Markdown, Static
+    out = []
+    for w in app.query("#log > *"):
+        out.append(w.source if isinstance(w, Markdown) else str(w.render()))
+    return "\n".join(out)
+
+
+def test_the_terminal_interface_shows_tools_answer_and_sources(home, notes):
     events = []
 
     def make(on_event):
-        a, _ = agent(home, notes, Reply("Your notes cover it [N1]."))
+        a, _ = agent(home, notes, Reply("", [ToolCall("c1", "grep", {"pattern": "SuperBPE"})]),
+                     Reply("Your notes cover it [N1]."))
         a.on_event = lambda k, d: (events.append(k), on_event(k, d))
         return a
 
-    async def run():
-        app = Chat(make)
-        async with app.run_test() as pilot:
-            app.query_one("#ask", Input).value = "How does BPE work?"
-            await pilot.press("enter")
-            for _ in range(100):
-                await pilot.pause(0.05)
-                if app.query(Markdown):
-                    break
-            md = app.query(Markdown).first()
-            return md.source if hasattr(md, "source") else md._markdown
-    shown = asyncio.run(run())
+    async def steps(app, pilot):
+        from textual.widgets import Input
+        app.query_one("#ask", Input).value = "BPE merges pairs?"
+        await pilot.press("enter")
+        await settle(app, pilot, lambda: not app.busy and app.last is not None)
+    app = tui_run(make, steps)
+    shown = app.shown
+    assert "> BPE merges pairs?" in shown and "● search_notes(" in shown and "● grep(" in shown and "⎿" in shown
     assert "Your notes cover it [N1]." in shown and "**Sources**" in shown and "answer" in events
 
 
@@ -308,4 +329,74 @@ def test_the_conversation_fills_the_screen(home, notes):
             log, ask = app.query_one("#log", VerticalScroll), app.query_one("#ask", Input)
             return log.size.height, ask.region.bottom
     height, bottom = asyncio.run(run())
-    assert height >= 30 and bottom == 40                             # the log takes the screen, input at the bottom
+    assert height >= 30 and bottom == 39                   # the log takes the screen; input, then the key hints
+
+
+def test_slash_opens_the_command_menu_filters_it_and_runs_the_choice(home, notes):
+    async def steps(app, pilot):
+        from textual.widgets import OptionList
+        menu = app.query_one("#commands", OptionList)
+        await pilot.press("/")
+        await pilot.pause()
+        assert menu.display and menu.option_count == 5
+        await pilot.press("f", "o")
+        await pilot.pause()
+        assert menu.option_count == 1 and menu.get_option_at_index(0).id == "/folders"
+        await pilot.press("enter")
+        await pilot.pause()
+        assert not menu.display
+    app = tui_run(lambda e: agent(home, notes)[0], steps)
+    assert "/tmp/notes" in app.shown
+
+
+def test_up_recalls_earlier_questions_and_new_forgets_them(home, notes):
+    replies = [Reply("first [N1]."), Reply("second [N1].")]
+
+    def make(on_event):
+        a, llm = agent(home, notes, *replies)
+        make.llm = llm
+        return a
+
+    async def steps(app, pilot):
+        from textual.widgets import Input
+        prompt = app.query_one("#ask", Input)
+        prompt.value = "BPE merges pairs?"
+        await pilot.press("enter")
+        await settle(app, pilot, lambda: not app.busy and app.last is not None)
+        await pilot.press("up")
+        assert prompt.value == "BPE merges pairs?"
+        prompt.value = "/new"
+        await pilot.press("enter")
+        await pilot.pause()
+        prompt.value = "SuperBPE merges?"
+        app.last = None
+        await pilot.press("enter")
+        await settle(app, pilot, lambda: not app.busy and app.last is not None)
+    tui_run(make, steps)
+    second = make.llm.seen[-1][0]
+    assert all(m["content"] != "BPE merges pairs?" for m in second if m["role"] == "user")   # history was reset
+
+
+def test_escape_interrupts_a_running_question(home, notes):
+    import threading
+    gate = threading.Event()
+
+    class SlowLLM(ScriptedLLM):
+        def chat(self, messages, tools=None, thinking=None):
+            gate.wait(2)
+            return super().chat(messages, tools, thinking)
+
+    def make(on_event):
+        tb = toolbox(home, notes)
+        return Agent(SlowLLM(*[Reply("", [ToolCall(f"c{i}", "grep", {"pattern": f"x{i}"})]) for i in range(10)]), tb)
+
+    async def steps(app, pilot):
+        from textual.widgets import Input
+        app.query_one("#ask", Input).value = "BPE merges pairs?"
+        await pilot.press("enter")
+        await settle(app, pilot, lambda: app.agent is not None)
+        await pilot.press("escape")
+        gate.set()
+        await settle(app, pilot, lambda: not app.busy and app.last is not None)
+    app = tui_run(make, steps)
+    assert app.last.stopped == "cancelled" and app.last.steps <= 2
