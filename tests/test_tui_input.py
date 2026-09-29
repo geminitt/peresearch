@@ -4,7 +4,9 @@
   with their recorded timing. An input method erases the raw letters and types the accented ones in one burst;
   Textual's own Input spelled that sentence wrong in every run, on Windows Terminal and here.
 - Colors: everything the TUI draws uses the terminal's default colors and 16-color palette, so the terminal's
-  color scheme applies; an RGB or 256-color code would ignore it."""
+  color scheme applies; an RGB or 256-color code would ignore it. Black and white (palette 0, 7, 8, 15) are not
+  used either: many schemes make one of them the background (Solarized Dark's black is its background, which
+  made a black-on-white cursor invisible)."""
 import json
 import os
 import re
@@ -138,9 +140,16 @@ def test_every_color_comes_from_the_terminal_scheme(terminal):
     terminal.read(3, until=b"quotes not found")
     terminal.write("/h")
     terminal.read(0.5)
+    terminal.write("\x7f\x7fabc")                         # the cursor after typed text, through a blink or two
+    terminal.read(1.5)
     shown = re.sub(r"\s+", " ", re.sub(r"\x1b\[[0-9;?<>=:$]*[a-zA-Z~]", "", terminal.screen.decode("utf-8", "replace")))
     for part in ("Heading", "def f", "a quote", "item", "search_notes", "Sources", "quotes not found", "/help"):
         assert part in shown, part                        # every kind of element was drawn
     codes = re.findall(rb"\x1b\[([0-9;:]*)m", terminal.screen)
     fixed = {c.decode() for c in codes if re.search(rb"(^|;)(38|48)[;:](2|5)[;:]", c)}
     assert codes and not fixed, sorted(fixed)[:5]
+    params = [c.decode().split(";") for c in codes]
+    near_background = {";".join(p) for p in params if {"30", "37", "40", "47", "90", "97", "100", "107"} & set(p)}
+    assert not near_background, sorted(near_background)[:5]
+    cursor = re.findall(rb"abc\x1b\[0m\x1b\[([0-9;]*)m ", terminal.screen)
+    assert any(b"7" in c.split(b";") for c in cursor), cursor   # the cursor is drawn: the default colors reversed

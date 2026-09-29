@@ -118,6 +118,9 @@ class Chat(App):
     #status { height: 1; padding: 0 1; color: ansi_yellow; }
     #commands { height: auto; max-height: 8; display: none; border: round ansi_blue; background: ansi_default; }
     #ask { border: round ansi_blue; background: ansi_default; color: ansi_default; }
+    /* Textual draws an ANSI-mode cursor black on white; black is the background in some schemes (Solarized Dark),
+       so the cursor vanished. The default colors reversed are what a terminal's own cursor looks like. */
+    #ask > .input--cursor { background: ansi_default; color: ansi_default; text-style: reverse; }
     #hints { height: 1; padding: 0 1; color: ansi_default; text-style: dim; }
     """
     BINDINGS = [Binding("ctrl+c", "quit", "Quit", priority=True)]
