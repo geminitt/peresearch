@@ -9,7 +9,7 @@ from peresearch.llm import LLM, Reply, ToolCall
 from peresearch.tools import Source
 from peresearch.web import Web
 from tests.test_guard import CANARIES
-from tests.helpers import notes, toolbox, agent
+from tests.helpers import agent, notes, streamed, toolbox
 
 
 def test_a_greeting_is_answered_without_any_tool(home, notes):
@@ -71,8 +71,7 @@ def test_no_secret_reaches_the_model(home, notes):
 
     def create(**kw):
         sent.append(json.dumps(kw["messages"]))
-        return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content="done [N1]", tool_calls=None))],
-                               usage=None)
+        return streamed(content="done [N1]")
     llm = LLM(client=SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create))), model="m")
     tb = toolbox(home, notes)
     tb.read("keys.md")                                                    # even a file read in full
@@ -139,3 +138,24 @@ def test_past_answers_are_cut_and_the_current_question_marked(home, notes):
     assert past and len(past[0]) <= 810 and past[0].endswith("[…]")
     user = [m["content"] for m in msgs if m["role"] == "user"]
     assert user[0] == "BPE merges pairs?" and user[-1].startswith("Current question") and user[-1].endswith("And SuperBPE?")
+
+
+def test_escape_stops_the_question_while_the_model_is_answering(home, notes):
+    import threading
+    import time
+
+    from peresearch.llm import LLM
+    from tests.test_llm import BlockingClient
+
+    client = BlockingClient()
+    a = Agent(LLM(client=client, model="m"), toolbox(home, notes))
+    result = {}
+    worker = threading.Thread(target=lambda: result.update(answer=a.ask("a long question")))
+    worker.start()
+    time.sleep(0.3)
+    t0 = time.time()
+    a.cancel()
+    worker.join(5)
+    assert not worker.is_alive() and time.time() - t0 < 1.5
+    assert result["answer"].stopped == "cancelled"
+    assert client.closed.wait(1)                          # closed by its reader at the next chunk

@@ -112,29 +112,36 @@ def test_up_recalls_earlier_questions_and_new_forgets_them(home, notes):
     assert all(m["content"] != "BPE merges pairs?" for m in second if m["role"] == "user")   # history was reset
 
 
-def test_escape_interrupts_a_running_question(home, notes):
-    import threading
-    gate = threading.Event()
+def test_escape_interrupts_a_running_question_at_once(home, notes):
+    """Esc while the model is still answering: the question ends within a second, not when the answer arrives."""
+    import time
+
+    from peresearch.llm import Interrupted
 
     class SlowLLM(ScriptedLLM):
-        def chat(self, messages, tools=None, thinking=None):
-            gate.wait(2)
+        def chat(self, messages, tools=None, thinking=None, stop=None):
+            end = time.time() + 30                               # a long answer on a slow model
+            while time.time() < end:
+                if stop and stop():
+                    raise Interrupted("stopped")
+                time.sleep(0.05)
             return super().chat(messages, tools, thinking)
 
     def make(on_event):
-        tb = toolbox(home, notes)
-        return Agent(SlowLLM(*[Reply("", [ToolCall(f"c{i}", "grep", {"pattern": f"x{i}"})]) for i in range(10)]), tb)
+        return Agent(SlowLLM(Reply("never")), toolbox(home, notes))
 
     async def steps(app, pilot):
         from peresearch.tui import Prompt
         app.query_one("#ask", Prompt).value = "BPE merges pairs?"
         await pilot.press("enter")
         await settle(app, pilot, lambda: app.agent is not None)
+        await pilot.pause(0.3)
+        app.pressed = time.time()
         await pilot.press("escape")
-        gate.set()
         await settle(app, pilot, lambda: not app.busy and app.last is not None)
+        app.took = time.time() - app.pressed
     app = tui_run(make, steps)
-    assert app.last.stopped == "cancelled" and app.last.steps <= 2
+    assert app.last.stopped == "cancelled" and app.took < 1.5 and "interrupted" in app.shown
 
 
 def test_folders_are_added_with_tab_completion_indexed_and_removed_in_the_interface(home, notes, tmp_path):

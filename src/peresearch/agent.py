@@ -21,6 +21,7 @@ import time
 from dataclasses import dataclass, field
 
 from peresearch import guard
+from peresearch.llm import Interrupted
 from peresearch.tools import Source, Toolbox
 
 SYSTEM = """You are peresearch, a personal research assistant. You can look through the user's own files (their
@@ -173,7 +174,7 @@ class Agent:
             f.write(json.dumps({"time": time.time(), "new": True}) + "\n")
 
     def cancel(self) -> None:
-        """Stop the current question at the next step (a model call already sent is waited for)."""
+        """Stop the current question at once: a model call in flight is dropped (its connection closed)."""
         self.cancelled = True
 
     def _remember(self, question: str, answer: Answer) -> None:
@@ -205,7 +206,11 @@ class Agent:
                 stopped = over
                 messages.append({"role": "user", "content": "Limit reached: answer now with the sources you have."})
             self.on_event("think", f"model call {steps + 1}")
-            reply = self.llm.chat(messages, None if over else tb.schemas())
+            try:
+                reply = self.llm.chat(messages, None if over else tb.schemas(), stop=lambda: self.cancelled)
+            except Interrupted:
+                stopped, text = "cancelled", "_(interrupted)_"
+                break
             steps += 1
             prompt, completion = prompt + reply.prompt_tokens, completion + reply.completion_tokens
             self.on_event("tokens", str(prompt + completion))
@@ -214,7 +219,11 @@ class Agent:
                 if not text.strip():        # e.g. the whole answer left inside unclosed reasoning: ask once more
                     self.on_event("think", "empty answer; asking again without reasoning")
                     messages.append({"role": "user", "content": "Write the final answer now, following the answer rules."})
-                    again = self.llm.chat(messages, None, thinking=False)
+                    try:
+                        again = self.llm.chat(messages, None, thinking=False, stop=lambda: self.cancelled)
+                    except Interrupted:
+                        stopped, text = "cancelled", "_(interrupted)_"
+                        break
                     steps += 1
                     prompt, completion = prompt + again.prompt_tokens, completion + again.completion_tokens
                     text = again.text

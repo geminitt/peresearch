@@ -10,7 +10,7 @@ sizes (a 6 GB laptop GPU) differ. Checks, each reported PASS or FAIL:
   environment  the CUDA the image's compiler targets matches the CUDA torch was built for
   download     a Hugging Face download works with the image's settings (what `download` does on Modal)
   serve        vLLM starts through deploy/vllm_server.py (the Modal start path) and answers within the timeout
-  sampling     chat requests sampled as the agent samples (temperature, top-p) are answered without error
+  sampling     chat requests sent as the agent sends them (its temperature and top-p, streamed) are answered
   tool call    at least one of three such requests with a tool comes back as a tool call (a small model
                sampled at temperature 0.6 does not call the tool every time)
 vLLM's whole log is kept in runs/replica/, with the lines about kernels compiled at run time summarized.
@@ -102,7 +102,10 @@ print("downloaded", os.path.getsize(p), "bytes")
 
 
 def tool_call(port: int) -> str:
-    body = {"model": "llm", "max_tokens": 512, "temperature": 0.6, "top_p": 0.95,   # the agent's sampling (llm.py)
+    """One request as the agent sends it: its sampling, and streamed (llm.py streams every reply so that Esc can
+    stop the model), so the check goes through vLLM's streaming tool-call parser."""
+    body = {"model": "llm", "max_tokens": 512, "temperature": 0.6, "top_p": 0.95, "stream": True,
+            "stream_options": {"include_usage": True},
             "messages": [
         {"role": "user", "content": "List the files in the folder notes/. Use the tool."}],
         "tools": [{"type": "function", "function": {
@@ -111,10 +114,19 @@ def tool_call(port: int) -> str:
         "chat_template_kwargs": {"enable_thinking": False}}
     req = urllib.request.Request(f"http://127.0.0.1:{port}/v1/chat/completions", json.dumps(body).encode(),
                                  {"Content-Type": "application/json"})
+    calls = {}
     with urllib.request.urlopen(req, timeout=300) as r:
-        msg = json.load(r)["choices"][0]["message"]
-    calls = msg.get("tool_calls") or []
-    return calls[0]["function"]["name"] + " " + calls[0]["function"]["arguments"] if calls else ""
+        for line in r:
+            line = line.decode().strip()
+            if not line.startswith("data: ") or line == "data: [DONE]":
+                continue
+            for choice in json.loads(line[6:]).get("choices") or []:
+                for piece in choice.get("delta", {}).get("tool_calls") or []:
+                    call = calls.setdefault(piece.get("index", 0), {"name": "", "arguments": ""})
+                    call["name"] += (piece.get("function") or {}).get("name") or ""
+                    call["arguments"] += (piece.get("function") or {}).get("arguments") or ""
+    first = calls.get(min(calls)) if calls else None
+    return f"{first['name']} {first['arguments']}" if first else ""
 
 
 def main(args: list[str]) -> int:

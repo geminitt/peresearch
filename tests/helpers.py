@@ -23,13 +23,30 @@ PAGE = ("<html><head><title>BPE</title></head><body><nav>menu home login</nav><a
         "<p>SuperBPE lets merges cross whitespace in a second stage.</p></article><footer>cookies</footer></body></html>")
 
 
+def streamed(content="", reasoning="", tool_calls=(), usage=None, piece=5):
+    """The chunks a streaming chat completion would send: text and reasoning cut into pieces of `piece`
+    characters, each tool call as a name chunk then its arguments cut the same way, then the usage."""
+    from types import SimpleNamespace as NS
+
+    def chunk(**delta):
+        return NS(choices=[NS(delta=NS(**delta))], usage=None)
+    chunks = [chunk(reasoning_content=reasoning[i:i + piece]) for i in range(0, len(reasoning), piece)]
+    chunks += [chunk(content=content[i:i + piece]) for i in range(0, len(content), piece)]
+    for n, (name, args) in enumerate(tool_calls):
+        chunks.append(chunk(tool_calls=[NS(index=n, id=f"c{n}", function=NS(name=name, arguments=""))]))
+        chunks += [chunk(tool_calls=[NS(index=n, id=None, function=NS(name=None, arguments=args[i:i + piece]))])
+                   for i in range(0, len(args), piece)]
+    chunks.append(NS(choices=[], usage=usage))
+    return chunks
+
+
 class ScriptedLLM:
     """Replies in order; records every message list it was sent."""
 
     def __init__(self, *replies):
         self.replies, self.seen = list(replies), []
 
-    def chat(self, messages, tools=None, thinking=None):
+    def chat(self, messages, tools=None, thinking=None, stop=None):
         self.seen.append((json.loads(json.dumps(messages)), tools))
         self.thinking = getattr(self, "thinking", []) + [thinking]
         return self.replies.pop(0) if self.replies else Reply("fallback answer [N1]")
