@@ -480,3 +480,45 @@ def test_vietnamese_input_method_bursts_type_correctly(home, notes):
         app.typed = app.query_one("#ask", Prompt).value
     app = tui_run(lambda e: agent(home, notes)[0], steps)
     assert app.typed == "chào"                               # Textual alone gave "chao": ⌫ ran after the letters
+
+
+def test_the_daily_budget_counts_container_time_and_stops_the_model(home):
+    from peresearch.llm import Budget, BudgetExceeded
+    now = [1_800_000_000.0]
+    b = Budget(home / "usage.jsonl", usd_per_hour=3.6, cap_usd=1.0, scaledown=300, clock=lambda: now[0])
+    t0 = now[0]
+    b.record(t0, t0 + 60)             # container up 60 s + 300 s idle = 360 s
+    b.record(t0 + 100, t0 + 160)      # overlaps: only extends to 460 s
+    b.record(t0 + 2000, t0 + 2040)    # a second wake-up: 340 s more
+    assert abs(b.spent() - 800 / 3600 * 3.6) < 1e-9 and b.spent() < 1.0
+    b.check()
+    b.record(t0 + 3000, t0 + 3300)    # 600 s more: 1400 s × $3.6/h = $1.40
+    with pytest.raises(BudgetExceeded):
+        b.check()
+    now[0] += 86400                   # a new day starts from zero
+    b.check()
+
+
+def test_a_capped_client_does_not_call_the_model(home):
+    from peresearch.llm import Budget, BudgetExceeded
+    calls = []
+    b = Budget(home / "usage.jsonl", usd_per_hour=3600, cap_usd=0.5, scaledown=0)
+
+    def create(**kw):
+        calls.append(1)
+        return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content="ok", tool_calls=None))], usage=None)
+    llm = LLM(client=SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create))), model="m", budget=b)
+    b.record(0, 0)
+    import time as _t
+    b.record(_t.time(), _t.time() + 1)                # one second at $3600/h = $1 > $0.5
+    with pytest.raises(BudgetExceeded):
+        llm.chat([{"role": "user", "content": "x"}])
+    assert calls == []
+
+
+def test_the_budget_applies_to_a_modal_endpoint_only(monkeypatch):
+    from peresearch.llm import Budget
+    monkeypatch.delenv("PERESEARCH_GPU_USD_PER_HOUR", raising=False)
+    assert Budget.from_settings("http://localhost:8000/v1") is None
+    b = Budget.from_settings("https://ws--peresearch-llm-server.modal.run/v1")
+    assert b and b.rate == 1.95 and b.cap == 1.0 and b.scaledown == 300
