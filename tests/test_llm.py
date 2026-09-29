@@ -236,3 +236,22 @@ def test_a_local_server_that_is_not_running_fails_fast():
     with pytest.raises(Exception) as err:
         LLM(url=f"http://127.0.0.1:{port}/v1", model="m", on_wait=waits.append).chat([{"role": "user", "content": "x"}])
     assert type(err.value).__name__ == "APIConnectionError" and time.time() - t0 < 6 and len(waits) == 1
+
+
+def test_a_model_slow_to_start_answering_is_announced():
+    """A Modal container waking up keeps the first words back for minutes: say so instead of "Thinking" all along,
+    and go back once the answer starts."""
+    class SlowStart:
+        def __init__(self):
+            self.chat = SimpleNamespace(completions=SimpleNamespace(create=self.create))
+
+        def create(self, **kw):
+            def chunks():
+                time.sleep(0.6)
+                yield from streamed(content="Hello.")
+            return chunks()
+    waits = []
+    r = LLM(client=SlowStart(), model="m", slow_start=0.2, on_wait=waits.append).chat(
+        [{"role": "user", "content": "x"}], stop=lambda: False)
+    assert r.text == "Hello."
+    assert len(waits) == 2 and "not started answering" in waits[0] and waits[1] == "Thinking"

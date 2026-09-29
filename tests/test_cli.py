@@ -55,3 +55,19 @@ def test_ask_explains_a_model_that_does_not_answer(home, monkeypatch, capsys):
     code = cli.cmd_ask(SimpleNamespace(project="default", question="hello"))
     err = capsys.readouterr().err
     assert code == 1 and "does not answer" in err and "Traceback" not in err
+
+
+def test_the_heading_shows_todays_model_cost_for_a_paid_endpoint(home, monkeypatch):
+    import time as _t
+
+    from peresearch import guard
+    from peresearch.cli import heading
+    from peresearch.llm import Budget
+
+    monkeypatch.setenv("PERESEARCH_LLM_URL", "https://ws--peresearch-llm-server.modal.run/v1")
+    guard.set_roots([])
+    b = Budget.from_settings("https://ws--peresearch-llm-server.modal.run/v1")
+    b.record(_t.time() - 60, _t.time() - 30)                      # 30 s + 300 s idle at $1.95/h ≈ $0.18
+    assert "today ≤ $0.18 of $1.00" in heading("default")
+    monkeypatch.setenv("PERESEARCH_LLM_URL", "http://localhost:8000/v1")
+    assert "today" not in heading("default")                      # a local server costs nothing

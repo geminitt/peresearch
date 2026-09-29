@@ -138,12 +138,15 @@ class Budget:
             f.write(json.dumps({"span": [start, end]}) + "\n")
 
 
-def _read_stream(stream, stop) -> dict:
+def _read_stream(stream, stop, on_first=None) -> dict:
     """A streamed chat completion put back together: text, reasoning, tool calls (their pieces joined by index) and
     token counts. `stop()` is checked between chunks; the stream is always closed by this, the reading thread."""
     text, reasoning, calls, usage, finish = [], [], {}, None, ""
     try:
         for chunk in stream:
+            if on_first is not None:
+                on_first()
+                on_first = None
             if stop is not None and stop():
                 raise Interrupted("stopped by the user")
             usage = getattr(chunk, "usage", None) or usage
@@ -192,7 +195,8 @@ class LLM:
 
     def __init__(self, url: str | None = None, model: str | None = None, key: str | None = None, client=None,
                  max_tokens: int = 4096, temperature: float = 0.6, top_p: float = 0.95, retries: int = 5,
-                 wait: float = 10.0, on_wait=None, thinking: bool | None = None, budget: Budget | None = None):
+                 wait: float = 10.0, on_wait=None, thinking: bool | None = None, budget: Budget | None = None,
+                 slow_start: float = 5.0):
         """`thinking` switches a Qwen model's reasoning on or off (vLLM's chat_template_kwargs); None keeps the
         server's default. PERESEARCH_LLM_THINKING=on/off sets it from the settings."""
         if thinking is None and settings.get("PERESEARCH_LLM_THINKING") in ("on", "off"):
@@ -214,6 +218,7 @@ class LLM:
         self.client, self.model = client, model or settings.get("PERESEARCH_LLM_MODEL")
         self.max_tokens, self.temperature, self.top_p = max_tokens, temperature, top_p
         self.retries, self.wait, self.on_wait = retries, wait, on_wait or (lambda msg: None)
+        self.slow_start = slow_start                   # seconds without a first chunk before saying so
 
     def _create(self, stop, **kw) -> dict:
         """One streamed request, put back together by `_read_stream`. With `stop`, the stream is read in a helper
@@ -224,18 +229,27 @@ class LLM:
             kw["stream_options"] = {"include_usage": True}
         if stop is None:
             return _read_stream(self.client.chat.completions.create(**kw), None)
-        done, out = threading.Event(), {}
+        done, first, out = threading.Event(), threading.Event(), {}
 
         def run():
             try:
-                out["reply"] = _read_stream(self.client.chat.completions.create(**kw), stop)
+                out["reply"] = _read_stream(self.client.chat.completions.create(**kw), stop, first.set)
             except BaseException as e:            # handed to the caller below
                 out["error"] = e
             done.set()
         threading.Thread(target=run, daemon=True).start()
+        start, announced = time.time(), False
         while not done.wait(0.1):
             if stop():
                 raise Interrupted("stopped by the user")
+            if not announced and not first.is_set() and time.time() - start > self.slow_start:
+                self.on_wait("the model has not started answering yet (a Modal container can take minutes to wake up)")
+                announced = True
+            elif announced and first.is_set():
+                self.on_wait("Thinking")
+                announced = None                       # said once, both ways
+        if announced:                                  # the whole answer came before the loop saw its start
+            self.on_wait("Thinking")
         if "error" in out:
             raise out["error"]
         return out["reply"]

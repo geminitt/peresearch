@@ -108,9 +108,12 @@ def heading(project: str) -> str:
     url = settings.get("PERESEARCH_LLM_URL")
     model = url.split("//")[-1].split("/")[0] if url else "no model endpoint set"
     web = [n for n, k in (("Tavily", "TAVILY_API_KEY"), ("Exa", "EXA_API_KEY")) if settings.get(k)]
+    from peresearch.llm import Budget
     from peresearch.tools import outermost
 
-    return (f"peresearch · project {project} · {len(outermost(guard.roots()))} folders · model {model} · "
+    budget = Budget.from_settings(url) if url else None      # only an endpoint billed by the second has one
+    cost = f" · today ≤ ${budget.spent():.2f} of ${budget.cap:.2f}" if budget else ""
+    return (f"peresearch · project {project} · {len(outermost(guard.roots()))} folders · model {model}{cost} · "
             f"web {' → '.join(web) if web else 'off (no search key)'}")
 
 
