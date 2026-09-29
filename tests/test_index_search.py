@@ -209,3 +209,17 @@ def test_an_index_written_before_the_single_vector_file_is_read_and_migrated(hom
     (notes / "new.md").write_text("# Mới\n\nMột ghi chú mới.\n")
     fresh.update([notes])
     assert (home / "dense.npz").exists() and not (home / "dense.npy").exists()
+
+
+def test_the_models_use_the_cpu_when_the_gpu_is_busy(monkeypatch):
+    torch = pytest.importorskip("torch")
+    from peresearch.zetokrag import models
+
+    monkeypatch.delenv("PERESEARCH_DEVICE", raising=False)
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+    monkeypatch.setattr(torch.cuda, "mem_get_info", lambda: (1 * 2**30, 6 * 2**30))   # a vLLM server holds 5 GB
+    assert models._device() == "cpu"
+    monkeypatch.setattr(torch.cuda, "mem_get_info", lambda: (5 * 2**30, 6 * 2**30))
+    assert models._device() == "cuda"
+    monkeypatch.setenv("PERESEARCH_DEVICE", "cpu")
+    assert models._device() == "cpu"

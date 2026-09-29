@@ -5,6 +5,8 @@ ZetokRAG embeds with Qwen3-Embedding-0.6B, chosen over BGE-M3 by a rule fixed be
 compare against them. Texts are cut at 512 tokens for every model alike.
 """
 
+import os
+
 import numpy as np
 
 EMBEDDERS = {
@@ -17,12 +19,19 @@ EMBEDDERS = {
 }
 RERANKER = {"repo": "BAAI/bge-reranker-v2-m3", "revision": "953dc6f6f85a1b2dbfca4c34a2796e7dde08d41e"}
 MAX_TOKENS = 512
+MIN_FREE_GIB = 2.0   # less free GPU memory than this (e.g. a local vLLM server holds it): the CPU is used instead
 
 
 def _device() -> str:
+    """cuda when a GPU has room for the model, else cpu; PERESEARCH_DEVICE=cpu|cuda forces a choice."""
     import torch
 
-    return "cuda" if torch.cuda.is_available() else "cpu"
+    if os.environ.get("PERESEARCH_DEVICE") in ("cpu", "cuda"):
+        return os.environ["PERESEARCH_DEVICE"]
+    if not torch.cuda.is_available():
+        return "cpu"
+    free, _ = torch.cuda.mem_get_info()
+    return "cuda" if free / 2**30 >= MIN_FREE_GIB else "cpu"
 
 
 class Embedder:
@@ -33,8 +42,9 @@ class Embedder:
         from sentence_transformers import SentenceTransformer
 
         self.name, self.spec, self.batch_size = name, EMBEDDERS[name], batch_size
-        dtype = torch.float16 if _device() == "cuda" else torch.float32
-        self.model = SentenceTransformer(self.spec["repo"], revision=self.spec["revision"], device=_device(),
+        device = _device()
+        dtype = torch.float16 if device == "cuda" else torch.float32
+        self.model = SentenceTransformer(self.spec["repo"], revision=self.spec["revision"], device=device,
                                          model_kwargs={"torch_dtype": dtype})
         self.model.max_seq_length = MAX_TOKENS
 
@@ -58,10 +68,11 @@ class Reranker:
         import torch
         from sentence_transformers import CrossEncoder
 
-        dtype = torch.float16 if _device() == "cuda" else torch.float32
+        device = _device()
+        dtype = torch.float16 if device == "cuda" else torch.float32
         self.batch_size = batch_size
         self.model = CrossEncoder(RERANKER["repo"], revision=RERANKER["revision"], max_length=MAX_TOKENS,
-                                  device=_device(), model_kwargs={"torch_dtype": dtype})
+                                  device=device, model_kwargs={"torch_dtype": dtype})
 
     def scores(self, query: str, texts: list[str]) -> np.ndarray:
         if not texts:

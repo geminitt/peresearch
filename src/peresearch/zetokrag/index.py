@@ -58,7 +58,9 @@ class Index:
     def __init__(self, home: Path | None = None, embedder=None):
         self.home = Path(home or guard.home())
         self.home.mkdir(parents=True, exist_ok=True)
-        self.db = sqlite3.connect(self.home / "index.sqlite")
+        # The TUI updates and searches from worker threads, one at a time (never both at once), so the connection
+        # may move between threads; SQLite itself is compiled thread-safe.
+        self.db = sqlite3.connect(self.home / "index.sqlite", check_same_thread=False)
         self.db.executescript(SCHEMA)
         self._embedder = embedder
         self._bm25 = self._bm25_version = None
