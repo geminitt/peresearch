@@ -230,7 +230,9 @@ class Chat(App):
     def on_agent_event(self, kind: str, detail: str) -> None:
         if kind == "tool":
             self.add(Static(f"● {guard.sanitize(detail)}", classes="tool"))
-            self.doing = "Searching" if detail.startswith(("search", "grep", "glob", "web")) else "Reading"
+            self.doing = ("Searching" if detail.startswith(("search", "grep", "glob", "web")) else
+                          "Looking through folders" if detail.startswith("tree") else
+                          "Noting what is missing" if detail.startswith("gaps") else "Reading")
         elif kind == "result":
             self.add(Static(f"  ⎿  {guard.sanitize(detail)}", classes="result"))
         elif kind == "tokens":

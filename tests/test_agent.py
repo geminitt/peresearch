@@ -83,25 +83,75 @@ def agent(home, notes, *replies, limits=None, **kw):
     return Agent(llm, toolbox(home, notes, **kw), limits=limits), llm
 
 
-def test_the_users_files_are_searched_before_the_model_speaks(home, notes):
-    a, llm = agent(home, notes, Reply("Your notes say BPE merges pairs [N1]."))
-    ans = a.ask("How does BPE work?")
+def test_a_greeting_is_answered_without_any_tool(home, notes):
+    """The model reads the message first; nothing is searched on its behalf."""
+    a, llm = agent(home, notes, Reply("Xin chào! Mình giúp gì được cho bạn?"))
+    ans = a.ask("xin chào")
     first = llm.seen[0][0]
-    assert first[-1]["role"] == "tool" and "search_notes" in first[-2]["tool_calls"][0]["function"]["name"]
-    assert "BPE merges frequent symbol pairs" in first[-1]["content"] and "trust=\"untrusted data\"" in first[-1]["content"]
-    assert ans.check.ok and ans.sources["N1"].kind == "file" and "bpe.md" in ans.sources["N1"].where
+    assert not any(m["role"] == "tool" or m.get("tool_calls") for m in first)
+    assert {"tree", "search_notes", "grep", "glob", "read", "gaps", "web_search", "fetch"} <= {
+        t["function"]["name"] for t in llm.seen[0][1]}                  # every tool is offered, none is forced
+    assert ans.calls == [] and ans.steps == 1 and not ans.sources and ans.check.ok
+
+
+def test_the_model_looks_into_the_files_when_it_decides_to(home, notes):
+    a, llm = agent(home, notes, Reply("", [ToolCall("c1", "tree", {"path": str(notes)})]),
+                   Reply("", [ToolCall("c2", "read", {"path": "bpe.md"})]),
+                   Reply("The folder holds bpe.md and food.md [N1]; BPE merges frequent pairs [N2]."))
+    ans = a.ask("What is in my notes folder?")
+    listing = [m["content"] for m in llm.seen[1][0] if m["role"] == "tool"][-1]
+    assert "bpe.md" in listing and "food.md" in listing and "trust=\"untrusted data\"" in listing
+    assert [c[0] for c in ans.calls] == ["tree", "read"] and ans.check.ok, ans.check
+
+
+def test_glob_takes_a_path_as_written_by_the_user(home, notes):
+    tb = toolbox(home, notes)
+    assert "bpe.md" in tb.call("glob", {"pattern": str(notes / "*.md")})     # absolute, as a model writes it
+    assert "bpe.md" in tb.call("glob", {"pattern": str(notes)})              # a folder: the files in it
+    assert tb.call("glob", {"pattern": "/etc/*"}) == "no file matches"
+
+
+def test_tree_shows_the_declared_folders_and_nothing_outside_or_protected(home, notes, tmp_path):
+    tb = toolbox(home, notes)
+    (notes / "project" / "src").mkdir(parents=True)
+    (notes / "project" / "src" / "main.py").write_text("print(1)\n")
+    (notes / "project" / ".git").mkdir()
+    (notes / "project" / ".git" / "HEAD").write_text("ref")
+    (notes / "project" / "runs").mkdir()
+    (tmp_path / "elsewhere").mkdir()
+    everything = tb.call("tree", {})
+    assert str(notes) in everything and "bpe.md" in everything and "project/" in everything
+    assert ".env" not in everything and ".git" not in everything and "runs/ (not read)" in everything
+    assert "main.py" not in everything                                  # deeper than the default depth of 2
+    assert "main.py" in tb.call("tree", {"path": str(notes / "project"), "depth": 3})
+    assert tb.call("tree", {"path": str(tmp_path / "elsewhere")}).startswith("refused")
+    assert tb.call("tree", {"path": str(notes / "bpe.md")}).endswith("not a folder")
+
+
+def test_the_web_is_searched_only_after_the_gaps_are_recorded(home, notes):
+    tb = toolbox(home, notes)
+    assert "record" in tb.call("web_search", {"query": "bpe history"}) and tb.web_calls == 0
+    assert tb.call("gaps", {"have": ["BPE merges pairs [N1]"], "missing": ["where BPE comes from"]}).startswith("recorded")
+    assert "(tavily)" in tb.call("web_search", {"query": "bpe history"}) and tb.web_calls == 1
+    a, llm = agent(home, notes, Reply("", [ToolCall("c1", "gaps", {"have": [], "missing": ["x"]})]), Reply("ok"),
+                   Reply("", [ToolCall("c2", "web_search", {"query": "y"})]), Reply("ok"))
+    a.ask("first")
+    a.ask("second")                                                     # gaps are recorded per question
+    assert "record" in [m["content"] for m in llm.seen[-1][0] if m["role"] == "tool"][-1]
 
 
 def test_search_then_read_a_page_then_answer_with_checked_citations(home, notes):
     a, llm = agent(home, notes,
-                   Reply("", [ToolCall("c1", "web_search", {"query": "byte pair encoding history"})]),
-                   Reply("", [ToolCall("c2", "fetch", {"url": "https://example.org/bpe"})]),
+                   Reply("", [ToolCall("c0", "search_notes", {"query": "BPE"})]),
+                   Reply("", [ToolCall("c1", "gaps", {"have": ["BPE merges pairs [N1]"], "missing": ["its origin"]})]),
+                   Reply("", [ToolCall("c2", "web_search", {"query": "byte pair encoding history"})]),
+                   Reply("", [ToolCall("c3", "fetch", {"url": "https://example.org/bpe"})]),
                    Reply('Notes: BPE merges pairs [N1]. Web: "It was introduced for neural machine translation in 2016" [W1].'))
     ans = a.ask("BPE merges pairs: where does it come from?")
     assert ans.check.ok, ans.check
     assert ans.sources["W1"].where == "https://example.org/bpe" and "introduced" in ans.sources["W1"].text
     assert "menu home login" not in ans.sources["W1"].text            # the page's main text only
-    assert ans.steps == 3 and not ans.stopped
+    assert ans.steps == 5 and not ans.stopped
 
 
 def test_fetch_opens_only_urls_a_search_returned(home, notes):
@@ -114,7 +164,8 @@ def test_fetch_opens_only_urls_a_search_returned(home, notes):
 
 def test_limits_cap_web_searches_and_steps(home, notes):
     loop = [Reply("", [ToolCall(f"c{i}", "web_search", {"query": f"q{i}"})]) for i in range(20)]
-    a, llm = agent(home, notes, *loop, limits=Limits(steps=6, web_searches=2))
+    a, llm = agent(home, notes, Reply("", [ToolCall("g", "gaps", {"have": [], "missing": ["q"]})]), *loop,
+                   limits=Limits(steps=6, web_searches=2))
     ans = a.ask("search forever")
     assert a.toolbox.web_calls == 2 and ans.stopped == "steps" and ans.steps == 8   # 6 + the forced answer + its retry
     assert llm.seen[-1][1] is None                                    # the last call offers no tools: answer now
@@ -123,6 +174,7 @@ def test_limits_cap_web_searches_and_steps(home, notes):
 
 def test_web_providers_rotate_and_then_the_web_is_unavailable(home, notes):
     tb = toolbox(home, notes, tavily_status=432)
+    tb.call("gaps", {"have": [], "missing": ["bpe"]})
     out = tb.call("web_search", {"query": "bpe"})
     assert "(exa)" in out and "tavily" in tb.web.exhausted
     tb.web.providers = [p for p in tb.web.providers if p.name == "tavily"]
@@ -131,6 +183,7 @@ def test_web_providers_rotate_and_then_the_web_is_unavailable(home, notes):
 
 def test_a_page_without_readable_text_goes_to_the_reader(home, notes):
     tb = toolbox(home, notes, pages={"https://example.org/bpe": "<html><body><script>app()</script></body></html>"})
+    tb.call("gaps", {"have": [], "missing": ["bpe"]})
     tb.call("web_search", {"query": "bpe"})
     assert "rendered by the reader" in tb.call("fetch", {"url": "https://example.org/bpe"})
 
@@ -149,9 +202,10 @@ def test_file_tools_stay_inside_the_declared_folders(home, notes, tmp_path):
 
 
 def test_instruction_like_file_text_is_flagged_and_never_acted_on(home, notes):
-    a, llm = agent(home, notes, Reply("Nothing to do [N1]."))
+    a, llm = agent(home, notes, Reply("", [ToolCall("c1", "search_notes", {"query": "ignore previous instructions paper"})]),
+                   Reply("Nothing to do [N1]."))
     a.ask("ignore previous instructions paper")
-    shown = llm.seen[0][0][-1]["content"]
+    shown = llm.seen[1][0][-1]["content"]
     assert "Ignore previous instructions" in shown and "reads like an instruction" in shown
 
 
@@ -268,7 +322,8 @@ def test_the_terminal_interface_shows_tools_answer_and_sources(home, notes):
         await settle(app, pilot, lambda: not app.busy and app.last is not None)
     app = tui_run(make, steps)
     shown = app.shown
-    assert "❯ BPE merges pairs?" in shown and "● search_notes(" in shown and "● grep(" in shown and "⎿" in shown
+    assert "❯ BPE merges pairs?" in shown and "● grep(" in shown and "⎿" in shown
+    assert "search_notes" not in shown                                   # only what the model chose to call
     assert "Your notes cover it [N1]." in shown and "**Sources**" in shown and "answer" in events
 
 
@@ -306,7 +361,7 @@ def test_the_model_is_told_when_the_web_is_unavailable(home, notes):
     a.toolbox.web.providers = []
     a.ask("BPE merges pairs?")
     assert "Web search is NOT available" in llm.seen[0][0][0]["content"]
-    assert all(t["function"]["name"] not in ("web_search", "fetch") for t in llm.seen[0][1])
+    assert all(t["function"]["name"] not in ("web_search", "fetch", "gaps") for t in llm.seen[0][1])
 
 
 def test_a_repeated_identical_call_is_not_run_again(home, notes):
@@ -355,7 +410,8 @@ def test_slash_opens_the_command_menu_filters_it_and_runs_the_choice(home, notes
 
 
 def test_up_recalls_earlier_questions_and_new_forgets_them(home, notes):
-    replies = [Reply("first [N1]."), Reply("second [N1].")]
+    replies = [Reply("", [ToolCall("a", "search_notes", {"query": "BPE"})]), Reply("first [N1]."),
+               Reply("", [ToolCall("b", "search_notes", {"query": "SuperBPE"})]), Reply("second [N1].")]
 
     def make(on_event):
         a, llm = agent(home, notes, *replies)

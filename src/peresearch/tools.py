@@ -1,8 +1,10 @@
-"""What the agent can do: search and read the declared folders, search the web and read pages it found.
+"""What the agent can do: look through and read the declared folders, search the web and read pages it found.
 
 Every tool is read-only. File tools see only the declared folders (`guard.allowed`: symlinks resolved, protected
 names refused) and redact anything credential-like before the model sees it. `fetch` only opens URLs that a
 web search returned in this session, so the model cannot send data out by encoding it into a URL of its own.
+`web_search` is refused until the model has recorded with `gaps` what the user's files already cover and what is
+missing, so the web is searched for what the user does not have.
 Each result carries source ids (N1, N2… for files, W1, W2… for the web) that answers must cite.
 """
 
@@ -17,6 +19,9 @@ from peresearch.zetokrag import parse
 
 MAX_OUT = 6000          # characters of one tool result shown to the model
 MAX_READ_LINES = 200
+TREE_MAX_DEPTH = 4
+TREE_PER_FOLDER = 40
+TREE_HIDDEN = {"__pycache__", "node_modules", "site-packages"}     # tooling, never the user's own material
 
 
 @dataclass
@@ -89,8 +94,58 @@ class Toolbox:
         self.roots = [Path(r) for r in (guard.roots() if roots is None else roots)]
         self.sources = Sources()
         self.web_calls = 0
+        self.recorded_gaps = None        # set by gaps(); the agent clears it for every question
 
     # --- the tools ---
+
+    def tree(self, path: str | None = None, depth: int = 2) -> str:
+        """The folders and files under the declared folders (or one folder inside them), `depth` levels down.
+        Hidden entries, tooling folders and protected files are left out; folders never read (data, runs…) are
+        named but not opened."""
+        starts = [_resolve(path, self.roots)] if path else self.roots
+        if not starts:
+            return "no folders are declared"
+        depth = max(1, min(int(depth), TREE_MAX_DEPTH))
+        lines = []
+        for start in starts:
+            if not start.is_dir():
+                return f"{start}: not a folder"
+            lines.append(f"{start}/")
+            self._tree(start, 1, depth, lines)
+        text = "\n".join(lines)
+        s = self.sources.add("file", f"{', '.join(map(str, starts))} (listing)", "folder listing", text)
+        return f"[{s.id}] listing of {', '.join(map(str, starts))}\n{_clip(text)}"
+
+    def _tree(self, folder: Path, level: int, depth: int, lines: list[str]) -> None:
+        try:
+            entries = sorted(os.scandir(folder), key=lambda e: (not e.is_dir(follow_symlinks=False), e.name.lower()))
+        except OSError:
+            return
+        shown = [e for e in entries if not (e.name.startswith(".") or e.name in TREE_HIDDEN or e.is_symlink()
+                                            or guard.denied(Path(e.path)))]
+        indent = "  " * level
+        for e in shown[:TREE_PER_FOLDER]:
+            if e.is_dir(follow_symlinks=False):
+                if e.name in guard.SKIP_DIRS:
+                    lines.append(f"{indent}{e.name}/ (not read)")
+                elif level >= depth:
+                    lines.append(f"{indent}{e.name}/ …")
+                else:
+                    lines.append(f"{indent}{e.name}/")
+                    self._tree(Path(e.path), level + 1, depth, lines)
+            elif guard.allowed(Path(e.path), self.roots):
+                lines.append(f"{indent}{e.name}")
+        if len(shown) > TREE_PER_FOLDER:
+            lines.append(f"{indent}… {len(shown) - TREE_PER_FOLDER} more")
+
+    def gaps(self, have: list[str] | str = (), missing: list[str] | str = ()) -> str:
+        """What the user's files already cover and what is missing or not enough: the web is searched for the
+        second part."""
+        have = [have] if isinstance(have, str) else list(have or [])
+        missing = [missing] if isinstance(missing, str) else list(missing or [])
+        self.recorded_gaps = {"have": have, "missing": missing}
+        return (f"recorded: {len(have)} point(s) the user's files cover, {len(missing)} missing or not enough; "
+                "web_search may now look for what is missing")
 
     def search_notes(self, query: str, k: int = 5) -> str:
         hits, verdict, stale = self.searcher.find(query, k=k)
@@ -127,7 +182,17 @@ class Toolbox:
 
     def glob(self, pattern: str, max_results: int = 100) -> str:
         found = []
-        for p in _files(self.roots, pattern):
+        roots, pattern = self.roots, pattern.strip()
+        if pattern.startswith(("/", "~")):                  # a path as the user wrote it: match inside that root
+            full = Path(pattern).expanduser()
+            if full.is_dir():
+                full = full / "*"                           # a folder: the files directly in it
+            base = next((b for b in full.parents if b.is_dir() and any(b == r or r in b.parents for r in self.roots)),
+                        None)
+            if base is None:
+                return "no file matches"
+            roots, pattern = [base], full.relative_to(base).as_posix()
+        for p in _files(roots, pattern):
             found.append(str(p))
             if len(found) >= max_results:
                 break
@@ -153,6 +218,9 @@ class Toolbox:
         return f"[{s.id}] {where}\n{_clip(s.text)}"
 
     def web_search(self, query: str, n: int = 5) -> str:
+        if self.recorded_gaps is None:
+            raise guard.Refused("first record with gaps(have, missing) what the user's files already cover and what "
+                                "is missing; then search the web for what is missing")
         self.web_calls += 1
         provider, results = self.web.search(query, n)
         lines = [f"({provider})"]
@@ -173,6 +241,10 @@ class Toolbox:
     # --- for the model ---
 
     SPECS = {
+        "tree": ("Show the folders and files the user has: every declared folder, or one folder inside them, a few "
+                 "levels deep. Use it to see what a project or folder contains.",
+                 {"path": ("string", "a folder, e.g. ~/projects/x; default: every declared folder"),
+                  "depth": ("integer", "levels to show, default 2, at most 4")}, []),
         "search_notes": ("Search the user's own files (notes, projects, course material) by meaning and keywords. "
                          "Returns excerpts with source ids and a verdict: enough / partial / none.",
                          {"query": ("string", "what to look for"), "k": ("integer", "number of excerpts, default 5")},
@@ -181,13 +253,17 @@ class Toolbox:
                  "numbers, error messages.",
                  {"pattern": ("string", "regular expression"),
                   "glob": ("string", "file pattern such as **/*.md, default all files")}, ["pattern"]),
-        "glob": ("List the user's files whose path matches a pattern, e.g. **/*.ipynb or notes/**.",
+        "glob": ("List the user's files whose path matches a pattern, e.g. **/*.ipynb, notes/** or "
+                 "~/projects/x/*.py. To see folders, use tree.",
                  {"pattern": ("string", "glob pattern")}, ["pattern"]),
         "read": ("Read part of one of the user's files: lines for text files, pages for PDFs, cells for notebooks.",
                  {"path": ("string", "path from a previous result"), "start": ("integer", "first line/page/cell"),
                   "end": ("integer", "last line/page/cell")}, ["path"]),
-        "web_search": ("Search the web. Use after the user's own files, for what they do not cover or to check "
-                       "that it is current.",
+        "gaps": ("Record, before searching the web, what the user's own files already cover and what is missing "
+                 "or not enough. web_search is refused until this is called.",
+                 {"have": ("array", "points the user's files cover (with source ids), may be empty"),
+                  "missing": ("array", "what is missing or not enough, to look for on the web")}, ["have", "missing"]),
+        "web_search": ("Search the web for what gaps recorded as missing, or to check that something is current.",
                        {"query": ("string", "search query, no personal or secret data"),
                         "n": ("integer", "number of results, default 5")}, ["query"]),
         "fetch": ("Read the main text of a web page returned by web_search.",
@@ -197,12 +273,13 @@ class Toolbox:
     def schemas(self, web: bool = True) -> list[dict]:
         out = []
         for name, (desc, props, required) in self.SPECS.items():
-            if name in ("web_search", "fetch") and not (web and self.web and self.web.providers):
+            if name in ("gaps", "web_search", "fetch") and not (web and self.web and self.web.providers):
                 continue
             out.append({"type": "function", "function": {
                 "name": name, "description": desc,
-                "parameters": {"type": "object", "required": required,
-                               "properties": {k: {"type": t, "description": d} for k, (t, d) in props.items()}}}})
+                "parameters": {"type": "object", "required": required, "properties": {
+                    k: {"type": t, "description": d, **({"items": {"type": "string"}} if t == "array" else {})}
+                    for k, (t, d) in props.items()}}}})
         return out
 
     def call(self, name: str, args: dict) -> str:
