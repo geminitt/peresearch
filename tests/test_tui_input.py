@@ -2,9 +2,12 @@
 
 - Vietnamese typing: the TUI is fed the bytes UniKey actually made a terminal send (tests/data/unikey_telex.json),
   with their recorded timing. An input method erases the raw letters and types the accented ones in one burst;
-  Textual's own Input spelled that sentence wrong in every run, on Windows Terminal and here."""
+  Textual's own Input spelled that sentence wrong in every run, on Windows Terminal and here.
+- Colors: everything the TUI draws uses the terminal's default colors and 16-color palette, so the terminal's
+  color scheme applies; an RGB or 256-color code would ignore it."""
 import json
 import os
+import re
 import select
 import struct
 import subprocess
@@ -126,3 +129,18 @@ def test_a_unikey_telex_sentence_types_as_in_a_shell(terminal):
     terminal.read(0.3)
     assert terminal.submitted() == DATA["expected"]
 
+
+def test_every_color_comes_from_the_terminal_scheme(terminal):
+    terminal.write("/")                                   # the command menu
+    terminal.read(0.5)
+    terminal.write("\x7fwhat is bpe")
+    terminal.submitted()                                  # a tool line, its result, the status line, then the answer
+    terminal.read(3, until=b"quotes not found")
+    terminal.write("/h")
+    terminal.read(0.5)
+    shown = re.sub(r"\s+", " ", re.sub(r"\x1b\[[0-9;?<>=:$]*[a-zA-Z~]", "", terminal.screen.decode("utf-8", "replace")))
+    for part in ("Heading", "def f", "a quote", "item", "search_notes", "Sources", "quotes not found", "/help"):
+        assert part in shown, part                        # every kind of element was drawn
+    codes = re.findall(rb"\x1b\[([0-9;:]*)m", terminal.screen)
+    fixed = {c.decode() for c in codes if re.search(rb"(^|;)(38|48)[;:](2|5)[;:]", c)}
+    assert codes and not fixed, sorted(fixed)[:5]

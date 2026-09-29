@@ -9,6 +9,8 @@
   after a click on it.
 - Folders are managed here too: /add <folder> (Tab completes the path), /remove, /folders, /index. On start, the
   index is brought up to date with the declared folders (only new or changed files are read).
+Colors are the terminal's own: the default foreground and background and its 16-color palette, never RGB, so
+the terminal's color scheme (light or dark) decides how everything looks; muted text is dimmed, not blended.
 The agent runs in a worker thread. Everything that came from a file, a page or the model is stripped of terminal
 control sequences before it is shown.
 """
@@ -19,6 +21,7 @@ from textual import events, work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import VerticalScroll
+from textual.theme import Theme
 from textual.widgets import Input, Markdown, OptionList, Static
 from textual.widgets.option_list import Option
 
@@ -35,7 +38,30 @@ COMMANDS = {
     "/sources": "every source of the last answer, in full",
     "/exit": "quit",
 }
-SPINNER = "✻✢✳∗✳✢"
+SPINNER = "∗✢✻✢"
+# The terminal's palette only. Everything that would need a shade of the background (panels, cursors, selections)
+# is the default colors, reversed or dimmed, so the same theme reads on a light and on a dark scheme.
+TERMINAL = Theme(
+    name="terminal", ansi=True, dark=True,
+    primary="ansi_blue", secondary="ansi_cyan", accent="ansi_blue", warning="ansi_yellow", error="ansi_red",
+    success="ansi_green", foreground="ansi_default", background="ansi_default", surface="ansi_default",
+    panel="ansi_default", boost="ansi_default",
+    variables={
+        "ansi-background": "ansi_default", "ansi-foreground": "ansi_default",
+        "border": "ansi_blue", "border-blurred": "ansi_blue",
+        "input-cursor-background": "ansi_default", "input-cursor-foreground": "ansi_default",
+        "input-cursor-text-style": "reverse",
+        "input-selection-background": "ansi_blue", "input-selection-foreground": "ansi_default",
+        "screen-selection-background": "ansi_blue", "screen-selection-foreground": "ansi_default",
+        "block-cursor-background": "ansi_blue", "block-cursor-foreground": "ansi_default",
+        "block-cursor-blurred-background": "ansi_default", "block-cursor-blurred-foreground": "ansi_default",
+        "block-hover-background": "ansi_default",
+        "scrollbar": "ansi_blue", "scrollbar-hover": "ansi_cyan", "scrollbar-active": "ansi_cyan",
+        "scrollbar-background": "ansi_default", "scrollbar-background-hover": "ansi_default",
+        "scrollbar-background-active": "ansi_default", "scrollbar-corner-color": "ansi_default",
+        "footer-background": "ansi_default", "footer-key-foreground": "ansi_blue",
+    },
+)
 
 
 def render(answer) -> str:
@@ -82,16 +108,17 @@ class Prompt(Input):
 class Chat(App):
     CSS = """
     Screen { layout: vertical; }
-    #heading { height: auto; padding: 0 1; border: round $accent; color: $text; }
-    #log { height: 1fr; padding: 0 1; }
-    .question { margin: 1 0 0 0; background: $boost; color: $text; text-style: bold; padding: 0 1; }
-    .tool { color: $accent; margin: 1 0 0 0; }
-    .result { color: $text-muted; }
-    .note { color: $text-muted; margin: 1 0 0 0; }
-    #status { height: 1; padding: 0 1; color: $warning; }
-    #commands { height: auto; max-height: 8; display: none; border: round $accent; }
-    #ask { border: round $accent; }
-    #hints { height: 1; padding: 0 1; color: $text-muted; }
+    Screen { background: ansi_default; color: ansi_default; }
+    #heading { height: auto; padding: 0 1; border: round ansi_blue; }
+    #log { height: 1fr; padding: 0 1; background: ansi_default; }
+    .question { margin: 1 0 0 0; color: ansi_default; text-style: bold; padding: 0 1; }
+    .tool { color: ansi_green; margin: 1 0 0 0; }
+    .result { color: ansi_default; text-style: dim; }
+    .note { color: ansi_default; text-style: dim; margin: 1 0 0 0; }
+    #status { height: 1; padding: 0 1; color: ansi_yellow; }
+    #commands { height: auto; max-height: 8; display: none; border: round ansi_blue; background: ansi_default; }
+    #ask { border: round ansi_blue; background: ansi_default; color: ansi_default; }
+    #hints { height: 1; padding: 0 1; color: ansi_default; text-style: dim; }
     """
     BINDINGS = [Binding("ctrl+c", "quit", "Quit", priority=True)]
 
@@ -112,6 +139,8 @@ class Chat(App):
         yield Static("/ commands · ↑↓ earlier questions · pgup/pgdn scroll · esc interrupt · ctrl+c quit", id="hints")
 
     def on_mount(self) -> None:
+        self.register_theme(TERMINAL)
+        self.theme = "terminal"
         self.query_one("#ask", Prompt).focus()
         self.set_interval(0.1, self.tick)
         if self.index_on_start:
