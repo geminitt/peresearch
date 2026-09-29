@@ -293,3 +293,19 @@ def test_a_repeated_identical_call_is_not_run_again(home, notes):
     a.ask("BPE merges pairs?")
     tool_msgs = [m["content"] for m in llm.seen[-1][0] if m["role"] == "tool"]
     assert "bpe.md" in tool_msgs[-2] and "already called with the same arguments" in tool_msgs[-1]
+
+
+def test_the_conversation_fills_the_screen(home, notes):
+    from textual.containers import VerticalScroll
+    from textual.widgets import Input
+
+    from peresearch.tui import Chat
+
+    async def run():
+        app = Chat(lambda on_event: agent(home, notes, Reply("x [N1]."))[0])
+        async with app.run_test(size=(100, 40)) as pilot:
+            await pilot.pause()
+            log, ask = app.query_one("#log", VerticalScroll), app.query_one("#ask", Input)
+            return log.size.height, ask.region.bottom
+    height, bottom = asyncio.run(run())
+    assert height >= 30 and bottom == 40                             # the log takes the screen, input at the bottom

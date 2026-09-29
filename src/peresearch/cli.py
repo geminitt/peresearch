@@ -6,7 +6,7 @@
     peresearch index                            (re)index the declared folders, on this machine
     peresearch find "query"                     search your files only; no model call, nothing leaves
     peresearch ask "question"                   one question to the agent: your files first, then the web
-    peresearch chat                             the terminal interface (TUI) for a conversation
+    peresearch chat                             the full-screen terminal interface (TUI) for a conversation
 """
 
 import argparse
@@ -104,7 +104,7 @@ def cmd_chat(args):
     from peresearch.tui import Chat
 
     heading = f"peresearch · project {args.project} · {len(guard.roots())} declared folders"
-    Chat(lambda on_event: make_agent(args.project, on_event), heading).run(inline=not args.full)
+    Chat(lambda on_event: make_agent(args.project, on_event), heading).run()
 
 
 def main(argv=None):
@@ -126,7 +126,6 @@ def main(argv=None):
     p.set_defaults(fn=cmd_ask)
     p = sub.add_parser("chat")
     p.add_argument("--project", default="default", help="conversation history to use and extend")
-    p.add_argument("--full", action="store_true", help="full-screen instead of inline in the terminal")
     p.set_defaults(fn=cmd_chat)
     args = ap.parse_args(argv)
     args.fn(args)

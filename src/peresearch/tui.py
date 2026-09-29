@@ -1,4 +1,5 @@
-"""The terminal interface: ask, watch the agent work, read the cited answer. Built on Textual.
+"""The terminal interface, full screen like an editor: ask, watch the agent work, read the cited answer. Built
+on Textual.
 
 The agent runs in a worker thread; its events (tool calls, waiting for a cold model) show in the status line.
 Every piece of text that came from a file, a web page or the model is stripped of terminal control sequences
