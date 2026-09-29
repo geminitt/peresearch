@@ -105,6 +105,6 @@ class Searcher:
 
     def neighbours(self, cid: int, path: str, section: str) -> list[str]:
         """The chunks just before and after, if they belong to the same file and section."""
-        rows = self.index.db.execute("SELECT id, section, text FROM chunks WHERE path=? AND id IN (?, ?)",
-                                     (path, cid - 1, cid + 1)).fetchall()
+        rows = self.index.read("SELECT id, section, text FROM chunks WHERE path=? AND id IN (?, ?)",
+                                     (path, cid - 1, cid + 1))
         return [r[2] for r in sorted(rows) if r[1] == section]

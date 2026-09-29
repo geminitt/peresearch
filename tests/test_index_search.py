@@ -208,3 +208,44 @@ def test_the_models_use_the_cpu_when_the_gpu_is_busy(monkeypatch):
     assert models._device() == "cuda"
     monkeypatch.setenv("PERESEARCH_DEVICE", "cpu")
     assert models._device() == "cpu"
+
+
+def test_searching_while_the_same_index_is_updated_in_another_thread(home, notes):
+    """The interface now answers questions while it brings the index up to date: one Index, one SQLite
+    connection, two threads (one updating, one searching). No error, and the result is right afterwards."""
+    import threading
+
+    idx, s = make(home, notes)
+    idx.update([notes])
+    errors, rounds = [], {"search": 0}
+    done = threading.Event()
+
+    def search():
+        while not done.is_set():
+            try:
+                hits, _, _ = s.find("gradient descent", k=3)
+                rounds["search"] += 1
+            except Exception as e:                                    # any failure is the bug
+                errors.append(repr(e))
+                return
+
+    def churn():
+        try:
+            for i in range(15):
+                (notes / f"extra{i}.md").write_text(f"# Extra {i}\n\nNote number {i} about optimisers and gradient descent.\n")
+                if i % 3 == 2:
+                    (notes / f"extra{i - 2}.md").unlink()
+                idx.update([notes])
+        except Exception as e:
+            errors.append(repr(e))
+        finally:
+            done.set()
+    readers = [threading.Thread(target=search) for _ in range(2)]
+    writer = threading.Thread(target=churn)
+    for t in readers + [writer]:
+        t.start()
+    for t in readers + [writer]:
+        t.join(120)
+    assert errors == [] and rounds["search"] > 5, (errors, rounds)
+    hits, _, _ = s.find("Note number 14 about optimisers", k=3)
+    assert hits and hits[0].path.endswith("extra14.md")

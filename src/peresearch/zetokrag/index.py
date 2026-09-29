@@ -11,6 +11,7 @@ the report names the file, not the content.
 import hashlib
 import os
 import sqlite3
+import threading
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -58,13 +59,18 @@ class Index:
     def __init__(self, home: Path | None = None, embedder=None):
         self.home = Path(home or guard.home())
         self.home.mkdir(parents=True, exist_ok=True)
-        # The TUI updates and searches from worker threads, one at a time (never both at once), so the connection
-        # may move between threads; SQLite itself is compiled thread-safe.
+        # The TUI searches (a question) and updates (a folder check) from worker threads, possibly at once. One
+        # sqlite3 connection used by two threads at once fails ("bad parameter or other API misuse"), so searches
+        # read through `db` one at a time (under _lock) and an update writes through a connection of its own:
+        # readers then see only committed data, as another process would.
         self.db = sqlite3.connect(self.home / "index.sqlite", check_same_thread=False)
         self.db.executescript(SCHEMA)
+        self._writer = None
+        self._write_lock = threading.Lock()            # one update at a time
         self._embedder = embedder
         self._bm25 = self._bm25_version = None
         self._dense32 = None
+        self._lock = threading.RLock()                 # the BM25 cache: reset by an update while a search reads it
 
     # --- storage ---
 
@@ -100,26 +106,34 @@ class Index:
             self._dense32 = (stamp, ids, vecs.astype(np.float32))
         return self._dense32[1], self._dense32[2]
 
+    def read(self, sql: str, params=()) -> list[tuple]:
+        """A query on the reading connection, one thread at a time."""
+        with self._lock:
+            return self.db.execute(sql, params).fetchall()
+
     def rows(self, ids=None) -> list[tuple]:
         q = "SELECT id, path, section, unit, start, end, text, sha FROM chunks"
         if ids is None:
-            return self.db.execute(q + " ORDER BY id").fetchall()
-        got = {r[0]: r for r in self.db.execute(q + f" WHERE id IN ({','.join('?' * len(ids))})", list(map(int, ids)))}
+            return self.read(q + " ORDER BY id")
+        got = {r[0]: r for r in self.read(q + f" WHERE id IN ({','.join('?' * len(ids))})", list(map(int, ids)))}
         return [got[int(i)] for i in ids if int(i) in got]
 
     def bm25(self, folded: bool):
         """(ids, BM25) over all chunks, plain or diacritic-folded; built on first use after an update, whether this
         process made it or another one (SQLite's data_version changes when another connection commits)."""
-        version = self.db.execute("PRAGMA data_version").fetchone()[0]
-        if self._bm25 is None or self._bm25_version != version:
-            self._bm25, self._bm25_version = {}, version
-        if folded not in self._bm25:
-            from peresearch.zetokrag.core import BM25
+        with self._lock:
+            version = self.db.execute("PRAGMA data_version").fetchone()[0]      # changes when the writer commits
+            cache = self._bm25
+            if cache is None or self._bm25_version != version:
+                cache, self._bm25_version = {}, version
+                self._bm25 = cache
+            if folded not in cache:
+                from peresearch.zetokrag.core import BM25
 
-            rows = self.db.execute("SELECT id, section, text FROM chunks ORDER BY id").fetchall()
-            self._bm25[folded] = (np.array([r[0] for r in rows], dtype=np.int64),
-                                  BM25([embed_text(r[1], r[2]) for r in rows], folded=folded) if rows else None)
-        return self._bm25[folded]
+                rows = self.db.execute("SELECT id, section, text FROM chunks ORDER BY id").fetchall()
+                cache[folded] = (np.array([r[0] for r in rows], dtype=np.int64),
+                                 BM25([embed_text(r[1], r[2]) for r in rows], folded=folded) if rows else None)
+            return cache[folded]
 
     # --- update ---
 
@@ -148,9 +162,15 @@ class Index:
                         yield p
 
     def update(self, roots: list[Path] | None = None) -> Report:
+        with self._write_lock:
+            if self._writer is None:
+                self._writer = sqlite3.connect(self.home / "index.sqlite", check_same_thread=False)
+            return self._update(self._writer, roots)
+
+    def _update(self, db, roots) -> Report:
         roots = [Path(r) for r in (guard.roots() if roots is None else roots)]
         report = Report()
-        known = {r[0]: r for r in self.db.execute("SELECT path, size, mtime, sha, status FROM files")}
+        known = {r[0]: r for r in db.execute("SELECT path, size, mtime, sha, status FROM files")}
         seen = set()
         for path in self._files(roots, report):
             key = str(path)
@@ -162,16 +182,16 @@ class Index:
                 continue
             digest = sha256(path)
             if old and old[3] == digest:
-                self.db.execute("UPDATE files SET size=?, mtime=? WHERE path=?", (st.st_size, st.st_mtime, key))
+                db.execute("UPDATE files SET size=?, mtime=? WHERE path=?", (st.st_size, st.st_mtime, key))
                 report.unchanged += 1
                 continue
             doc = parse.read(path)
             safe = lambda section, text: not (guard.find_secrets(text) or guard.find_secrets(section))
             chunks, withheld = chunk.chunk(doc, keep=safe) if doc.status == "ok" else ([], 0)
-            self.db.execute("DELETE FROM chunks WHERE path=?", (key,))
-            self.db.executemany("INSERT INTO chunks (path, section, unit, start, end, text, sha) VALUES (?,?,?,?,?,?,?)",
+            db.execute("DELETE FROM chunks WHERE path=?", (key,))
+            db.executemany("INSERT INTO chunks (path, section, unit, start, end, text, sha) VALUES (?,?,?,?,?,?,?)",
                                 [(key, c.section, c.unit, c.start, c.end, c.text, digest) for c in chunks])
-            self.db.execute("INSERT OR REPLACE INTO files VALUES (?,?,?,?,?,?,?)",
+            db.execute("INSERT OR REPLACE INTO files VALUES (?,?,?,?,?,?,?)",
                             (key, st.st_size, st.st_mtime, digest, doc.status, doc.note, withheld))
             if doc.status != "ok":
                 report.problems.setdefault(doc.status, []).append(key)
@@ -180,23 +200,24 @@ class Index:
             report.changed += bool(old)
             report.added += not old
         for key in set(known) - seen:
-            self.db.execute("DELETE FROM chunks WHERE path=?", (key,))
-            self.db.execute("DELETE FROM files WHERE path=?", (key,))
+            db.execute("DELETE FROM chunks WHERE path=?", (key,))
+            db.execute("DELETE FROM files WHERE path=?", (key,))
             report.removed += 1
-        self._sync_dense()      # vectors first, then the chunks become visible to other processes
-        self.db.commit()
-        self._bm25 = None
-        report.chunks = self.db.execute("SELECT COUNT(*) FROM chunks").fetchone()[0]
+        self._sync_dense(db)      # vectors first, then the chunks become visible to other processes
+        db.commit()
+        with self._lock:
+            self._bm25 = None
+        report.chunks = db.execute("SELECT COUNT(*) FROM chunks").fetchone()[0]
         guard.audit("index", added=report.added, changed=report.changed, removed=report.removed,
                     chunks=report.chunks, withheld=sum(report.withheld.values()))
         return report
 
-    def _sync_dense(self) -> None:
+    def _sync_dense(self, db) -> None:
         """Embed chunks that have no vector yet and drop vectors of deleted chunks, as this update's uncommitted
         transaction sees them. Readers meanwhile see the old chunks: the few just deleted lose their vectors a
         moment early, which the search tolerates."""
         old_ids, old_vecs = self.dense()
-        rows = self.db.execute("SELECT id, section, text FROM chunks ORDER BY id").fetchall()
+        rows = db.execute("SELECT id, section, text FROM chunks ORDER BY id").fetchall()
         ids = np.array([r[0] for r in rows], dtype=np.int64)
         keep = np.isin(old_ids, ids)
         old_ids, old_vecs = old_ids[keep], old_vecs[keep] if len(old_vecs) else old_vecs
