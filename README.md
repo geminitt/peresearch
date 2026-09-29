@@ -84,25 +84,26 @@ one query takes 0.26–0.89 s (median, by corpus), mostly the reranker. Details:
 ## Usage
 
 ```bash
-pixi run peresearch add ~/notes ~/projects/x/docs   # declare the folders peresearch may read
-pixi run peresearch index                           # index them on this machine (local GPU)
-pixi run peresearch find "hybrid retrieval"         # search your files: no model call, nothing leaves
-pixi run peresearch chat                            # the agent, in the terminal
-pixi run peresearch ask "how does SuperBPE differ from BPE?"
+pixi run peresearch setup      # once: pick the folders peresearch may read, index them, save the model and search keys
+pixi run peresearch chat       # the agent in the terminal; it brings the index up to date when it opens
 ```
 
-The agent reads its settings from the environment or `~/.local/share/peresearch/settings.env` (`chmod 600`;
-never indexed): `PERESEARCH_LLM_URL`, `PERESEARCH_LLM_KEY`, and optionally `TAVILY_API_KEY`, `EXA_API_KEY`,
-`JINA_API_KEY` — see [`src/peresearch/settings.py`](src/peresearch/settings.py). Without a search key the agent
-works from your files alone and says so.
+In `chat`, `/` opens the command menu: `/add <folder>` (Tab completes the path) and `/remove` change the folders
+and reindex, `/folders` lists them, `/index` updates the index, `/new` starts a fresh conversation, `/sources`
+shows the last answer's sources in full. The same exists as commands: `peresearch add | remove | folders | index`,
+`peresearch find "…"` (your files only, no model call) and `peresearch ask "…"` (one question).
+
+Settings live in `~/.local/share/peresearch/settings.env` (written by `setup`, `chmod 600`, never indexed):
+`PERESEARCH_LLM_URL`, `PERESEARCH_LLM_KEY`, and optionally `TAVILY_API_KEY`, `EXA_API_KEY`, `JINA_API_KEY` — see
+[`src/peresearch/settings.py`](src/peresearch/settings.py). Without a search key the agent works from your files
+alone and says so. The local models run on the GPU when it has room and on the CPU otherwise.
 
 **The model.** [`deploy/modal_vllm.py`](deploy/modal_vllm.py) serves Qwen3.6-35B-A3B-FP8 on one L40S: private
 (a Modal proxy token is the API key), one container at most, stopped after five idle minutes. Its flags are
 tested first on the laptop with Qwen3.5-0.8B:
 
 ```bash
-pixi run -e serve python deploy/local_vllm.py                               # http://localhost:8000/v1
-PERESEARCH_LLM_URL=http://localhost:8000/v1 pixi run peresearch chat
+pixi run chat-local                                    # the laptop model server + chat; the server stops when you quit
 modal run deploy/modal_vllm.py::download && modal deploy deploy/modal_vllm.py   # then on Modal
 ```
 

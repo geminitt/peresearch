@@ -1,19 +1,22 @@
 """peresearch command line.
 
-    peresearch add ~/notes ~/projects/x/docs    declare folders peresearch may read
+    peresearch setup                            first run: choose folders, index them, save the model and search keys
+    peresearch chat                             the full-screen terminal interface (TUI); updates the index first
+    peresearch ask "question"                   one question to the agent: your files first, then the web
+    peresearch find "query"                     search your files only; no model call, nothing leaves
+    peresearch add ~/notes ~/projects/x/docs    declare folders peresearch may read (also /add in the TUI)
     peresearch remove ~/notes                   stop reading a folder (its chunks leave the index)
     peresearch folders                          list the declared folders
     peresearch index                            (re)index the declared folders, on this machine
-    peresearch find "query"                     search your files only; no model call, nothing leaves
-    peresearch ask "question"                   one question to the agent: your files first, then the web
-    peresearch chat                             the full-screen terminal interface (TUI) for a conversation
 """
 
 import argparse
+import getpass
+import os
 import sys
-from pathlib import Path
 
-from peresearch import guard
+from peresearch import guard, settings
+from peresearch.workspace import Workspace, summary
 
 
 def _print(text: str = "") -> None:
@@ -21,20 +24,20 @@ def _print(text: str = "") -> None:
 
 
 def cmd_add(args):
-    new = [Path(p).expanduser().resolve() for p in args.paths]
-    for p in new:
-        if not p.is_dir():
-            sys.exit(f"not a folder: {p}")
-        if guard.denied(p):
-            sys.exit(f"refused: {p} matches a protected pattern (keys, tokens, credentials)")
-    guard.set_roots(guard.roots() + new)
-    _print("folders: " + ", ".join(map(str, guard.roots())))
+    ws = Workspace()
+    for p in args.paths:
+        try:
+            ws.add(p)
+        except ValueError as e:
+            sys.exit(str(e))
+    _print("folders: " + ", ".join(map(str, ws.folders())) + "\nrun `peresearch index` (or open `peresearch chat`)")
 
 
 def cmd_remove(args):
-    drop = {Path(p).expanduser().resolve() for p in args.paths}
-    guard.set_roots([r for r in guard.roots() if r not in drop])
-    _print("folders: " + (", ".join(map(str, guard.roots())) or "(none)") + "\nrun `peresearch index` to drop their chunks")
+    ws = Workspace()
+    for p in args.paths:
+        ws.remove(p)
+    _print("folders: " + (", ".join(map(str, ws.folders())) or "(none)") + "\nrun `peresearch index` to drop their chunks")
 
 
 def cmd_folders(args):
@@ -42,23 +45,9 @@ def cmd_folders(args):
 
 
 def cmd_index(args):
-    from peresearch.zetokrag.index import Index
-
     if not guard.roots():
         sys.exit("no folders declared; use `peresearch add`")
-    r = Index().update()
-    _print(f"{r.added} added · {r.changed} changed · {r.unchanged} unchanged · {r.removed} removed · "
-           f"{r.chunks} chunks · {r.denied} protected paths skipped")
-    for status, paths in sorted(r.problems.items()):
-        label = {"needs_ocr": "need OCR (no text layer)", "too_large": "too large", "binary": "binary",
-                 "error": "could not be read", "large_folder": "folders skipped as datasets"}.get(status, status)
-        _print(f"{len(paths)} {label}:")
-        for p in paths[:20]:
-            _print(f"  {p}")
-    if r.withheld:
-        _print(f"{sum(r.withheld.values())} chunks withheld because they look like credentials:")
-        for p, n in list(r.withheld.items())[:20]:
-            _print(f"  {p} ({n})")
+    _print(summary(Workspace().update()))
 
 
 def cmd_find(args):
@@ -76,7 +65,7 @@ def cmd_find(args):
         _print(f"\n{stale} excerpts dropped: their files changed; run `peresearch index`")
 
 
-def make_agent(project: str = "default", on_event=None):
+def make_agent(project: str = "default", on_event=None, index=None):
     """The agent with its real parts: the local index, the web providers that have keys, the model endpoint."""
     from peresearch.agent import Agent
     from peresearch.llm import LLM
@@ -87,7 +76,7 @@ def make_agent(project: str = "default", on_event=None):
 
     on_event = on_event or (lambda kind, detail: None)
     llm = LLM(on_wait=lambda msg: on_event("wait", msg))
-    return Agent(llm, Toolbox(Searcher(Index()), Web()), project=project, on_event=on_event)
+    return Agent(llm, Toolbox(Searcher(index or Index()), Web()), project=project, on_event=on_event)
 
 
 def cmd_ask(args):
@@ -100,22 +89,63 @@ def cmd_ask(args):
     _print(render(answer))
 
 
-def cmd_chat(args):
-    from peresearch.tui import Chat
-
-    from peresearch import settings
-
+def heading(project: str) -> str:
     url = settings.get("PERESEARCH_LLM_URL")
     model = url.split("//")[-1].split("/")[0] if url else "no model endpoint set"
     web = [n for n, k in (("Tavily", "TAVILY_API_KEY"), ("Exa", "EXA_API_KEY")) if settings.get(k)]
-    heading = (f"peresearch · project {args.project} · {len(guard.roots())} folders · model {model} · "
-               f"web {' → '.join(web) if web else 'off (no search key)'}")
-    Chat(lambda on_event: make_agent(args.project, on_event), heading, folders=guard.roots()).run()
+    return (f"peresearch · project {project} · {len(guard.roots())} folders · model {model} · "
+            f"web {' → '.join(web) if web else 'off (no search key)'}")
+
+
+def cmd_chat(args):
+    from peresearch.tui import Chat
+
+    ws = Workspace()
+    Chat(lambda on_event: make_agent(args.project, on_event, ws.index), lambda: heading(args.project),
+         workspace=ws).run()
+
+
+KEYS = [("PERESEARCH_LLM_URL", "model endpoint (…/v1), e.g. http://localhost:8000/v1 or the URL `modal deploy` prints", False),
+        ("PERESEARCH_LLM_KEY", "model key (a Modal proxy token wk-….ws-…; empty for a local server)", True),
+        ("TAVILY_API_KEY", "Tavily key (free; empty to skip)", True),
+        ("EXA_API_KEY", "Exa key (free credits; empty to skip)", True)]
+
+
+def cmd_setup(args, ask=input, secret=getpass.getpass):
+    """Choose folders, index them, and store the settings (settings.env, readable by you only)."""
+    ws = Workspace()
+    _print("Folders peresearch may read: " + (", ".join(map(str, ws.folders())) or "none yet"))
+    while True:
+        path = ask("Add a folder (empty to go on): ").strip()
+        if not path:
+            break
+        try:
+            _print(f"  added {ws.add(path)}")
+        except ValueError as e:
+            _print(f"  {e}")
+    if ws.folders():
+        _print("Indexing (only new or changed files)…")
+        _print(summary(ws.update()))
+    path = guard.home() / "settings.env"
+    current = settings.saved()
+    _print(f"\nSettings go to {path}. Enter keeps the current value.")
+    for name, label, hidden in KEYS:
+        shown = "(set)" if current.get(name) and hidden else current.get(name, "")
+        value = (secret if hidden else ask)(f"{label} [{shown}]: ").strip()
+        if value:
+            current[name] = value
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as f:
+        f.write("".join(f"{k}={v}\n" for k, v in current.items()))
+    os.chmod(path, 0o600)
+    _print("Saved. Start with `peresearch chat`.")
 
 
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="peresearch", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
+    sub.add_parser("setup").set_defaults(fn=cmd_setup)
     for name, fn in [("add", cmd_add), ("remove", cmd_remove)]:
         p = sub.add_parser(name)
         p.add_argument("paths", nargs="+")

@@ -46,6 +46,10 @@ How to answer:
 
 NO_WEB = ("\n\nWeb search is NOT available in this session (no provider configured, or all are out of credits). "
           "Do not claim anything came from the web; say in part 2 that the web was not available.")
+# Earlier turns go back to the model as real turns, but each answer is cut to HISTORY_ANSWER_CHARS and the current
+# question is marked as the one to answer, so a model does not re-answer (or copy) an earlier turn.
+HISTORY_ANSWER_CHARS = 800
+MARK_CURRENT = True
 _CITE = re.compile(r"\[((?:[NW]\d+)(?:\s*,\s*[NW]\d+)*)\]")
 _QUOTE = re.compile(r"[\"“]([^\"”\[\]\n]{12,300})[\"”]")     # one line, no citation inside it
 _INJECTION = re.compile(r"(?i)\b(ignore (all |any )?(previous|prior|above) (instructions|prompts?)|system prompt|"
@@ -149,7 +153,10 @@ class Agent:
             used += size
         out = []
         for t in reversed(kept):
-            out += [{"role": "user", "content": t["question"]}, {"role": "assistant", "content": t["answer"]}]
+            a = t["answer"]
+            if HISTORY_ANSWER_CHARS and len(a) > HISTORY_ANSWER_CHARS:
+                a = a[:HISTORY_ANSWER_CHARS] + " […]"
+            out += [{"role": "user", "content": t["question"]}, {"role": "assistant", "content": a}]
         return out
 
     def turns(self) -> int:
@@ -179,7 +186,10 @@ class Agent:
         tb.sources = type(tb.sources)()
         tb.web_calls, fetches = 0, 0
         system = SYSTEM + ("" if any(t["function"]["name"] == "web_search" for t in tb.schemas()) else NO_WEB)
-        messages = [{"role": "system", "content": system}, *self.history(), {"role": "user", "content": question}]
+        past = self.history()
+        asked = (f"Current question (answer this one; the turns above are earlier context):\n{question}"
+                 if past and MARK_CURRENT else question)
+        messages = [{"role": "system", "content": system}, *past, {"role": "user", "content": asked}]
         self.on_event("tool", f"search_notes({json.dumps(question, ensure_ascii=False)})")
         first = tb.call("search_notes", {"query": question})
         self.on_event("result", _summary(first))

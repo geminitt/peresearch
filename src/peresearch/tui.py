@@ -5,6 +5,8 @@
 - A status line while the agent works: a spinner, what it is doing, elapsed seconds and tokens so far.
 - The prompt at the bottom: Enter asks, ↑/↓ recall earlier questions, `/` opens the command menu (↑/↓ to pick,
   Tab or Enter to take it, Esc to close), Esc during a question interrupts it at the next step.
+- Folders are managed here too: /add <folder> (Tab completes the path), /remove, /folders, /index. On start, the
+  index is brought up to date with the declared folders (only new or changed files are read).
 The agent runs in a worker thread. Everything that came from a file, a page or the model is stripped of terminal
 control sequences before it is shown.
 """
@@ -19,12 +21,16 @@ from textual.widgets import Input, Markdown, OptionList, Static
 from textual.widgets.option_list import Option
 
 from peresearch import guard
+from peresearch.workspace import complete, summary
 
 COMMANDS = {
     "/help": "keys and commands",
+    "/add": "<folder> let peresearch read a folder (Tab completes the path), then index it",
+    "/remove": "<folder> stop reading a folder",
+    "/folders": "the folders peresearch may read",
+    "/index": "bring the index up to date with the folders",
     "/new": "start a fresh conversation (earlier questions no longer sent as context)",
     "/sources": "every source of the last answer, in full",
-    "/folders": "the folders peresearch may read",
     "/exit": "quit",
 }
 SPINNER = "✻✢✳∗✳✢"
@@ -74,15 +80,16 @@ class Chat(App):
     """
     BINDINGS = [Binding("ctrl+c", "quit", "Quit", priority=True)]
 
-    def __init__(self, make_agent, title: str = "peresearch", folders=None):
+    def __init__(self, make_agent, heading=lambda: "peresearch", workspace=None, index_on_start: bool = True):
         super().__init__()
-        self.make_agent, self.heading, self.folders = make_agent, title, folders or []
+        self.make_agent, self.heading, self.ws = make_agent, heading, workspace
+        self.index_on_start = index_on_start and workspace is not None
         self.agent, self.busy, self.last, self.pending_new = None, False, None, False
         self.asked, self.recall = [], None
         self.started, self.doing, self.tokens, self.frame = 0.0, "", 0, 0
 
     def compose(self) -> ComposeResult:
-        yield Static(f"✻ {self.heading}", id="heading")
+        yield Static(f"✻ {self.heading()}", id="heading")
         yield VerticalScroll(id="log")
         yield Static("", id="status")
         yield OptionList(id="commands")
@@ -92,6 +99,11 @@ class Chat(App):
     def on_mount(self) -> None:
         self.query_one("#ask", Prompt).focus()
         self.set_interval(0.1, self.tick)
+        if self.index_on_start:
+            if self.ws.folders():
+                self.reindex("Checking your folders for changes")
+            else:
+                self.note("No folders yet: /add <folder> lets peresearch read one.")
 
     # --- the conversation ---
 
@@ -132,8 +144,16 @@ class Chat(App):
         menu = self.query_one("#commands", OptionList)
         if menu.display and menu.highlighted is not None and event.value.strip().startswith("/"):
             chosen = menu.get_option_at_index(menu.highlighted).id
+            if chosen.startswith("path:"):                  # a path picked from the Tab suggestions
+                self.set_prompt(event.value.split(" ")[0] + " " + chosen[5:])
+                self.hide_menu()
+                return
             if event.value.strip().split(" ")[0] != chosen:
                 event.input.value = chosen
+                if chosen in ("/add", "/remove"):          # these need a folder: wait for it
+                    self.set_prompt(chosen + " ")
+                    self.hide_menu()
+                    return
         q = event.input.value.strip()
         event.input.value = ""
         self.hide_menu()
@@ -147,7 +167,7 @@ class Chat(App):
             return
         self.asked.append(q)
         self.recall = None
-        self.busy, self.started, self.doing, self.tokens = True, time.time(), "Starting", 0
+        self.start("Starting")
         self.add(Static(f"> {guard.sanitize(q)}", classes="question"))
         self.run_agent(q)
 
@@ -171,6 +191,24 @@ class Chat(App):
 
     def done(self) -> None:
         self.busy = False
+        self.query_one("#heading", Static).update(f"✻ {self.heading()}")
+
+    @work(thread=True, exclusive=True)
+    def reindex(self, doing: str) -> None:
+        self.call_from_thread(self.start, doing)
+        try:
+            r = self.ws.update()
+            quiet = not (r.added or r.changed or r.removed or r.withheld)
+            text = f"Index up to date: {r.chunks:,} chunks from {r.added + r.changed + r.unchanged} files." if quiet \
+                else summary(r, limit=5)
+            self.call_from_thread(self.note, text)
+        except Exception as e:
+            self.call_from_thread(self.note, f"indexing failed: {type(e).__name__}: {e}"[:300])
+        finally:
+            self.call_from_thread(self.done)
+
+    def start(self, doing: str) -> None:
+        self.busy, self.started, self.doing, self.tokens = True, time.time(), doing, 0
 
     # --- commands ---
 
@@ -199,7 +237,29 @@ class Chat(App):
                                           + guard.sanitize(s.text[:600]).replace("\n", "\n> ")
                                           for s in self.last.sources.values())))
         elif name == "/folders":
-            self.note("\n".join(map(str, self.folders)) or "no folders declared (peresearch add <folder>)")
+            folders = self.ws.folders() if self.ws else []
+            self.note("\n".join(map(str, folders)) or "no folders declared: /add <folder>")
+        elif name in ("/add", "/remove", "/index"):
+            if self.ws is None:
+                self.note("folders cannot be changed here")
+                return
+            if self.busy:
+                self.note("wait for the current work to finish, or press esc")
+                return
+            arg = text[len(name):].strip()
+            if name == "/index":
+                self.reindex("Indexing")
+            elif not arg:
+                self.note(f"usage: {name} <folder>")
+            elif name == "/add":
+                try:
+                    self.note(f"Added {self.ws.add(arg)}")
+                    self.reindex("Indexing the new folder")
+                except ValueError as e:
+                    self.note(str(e))
+            else:
+                self.note(f"Removed {arg}" if self.ws.remove(arg) else f"{arg} was not a declared folder")
+                self.reindex("Dropping its chunks from the index")
         else:
             self.note(f"unknown command {name}; / for the list")
 
@@ -207,6 +267,8 @@ class Chat(App):
 
     def on_input_changed(self, event: Input.Changed) -> None:
         v = event.value
+        if v.startswith(("/add ", "/remove ")):
+            return
         if v.startswith("/") and " " not in v:
             matches = [c for c in COMMANDS if c.startswith(v)]
             menu = self.query_one("#commands", OptionList)
@@ -223,9 +285,14 @@ class Chat(App):
 
     def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
         prompt = self.query_one("#ask", Prompt)
-        prompt.value = ""
         self.hide_menu()
-        self.command(event.option.id)
+        if event.option.id.startswith("path:"):
+            self.set_prompt(prompt.value.split(" ")[0] + " " + event.option.id[5:])
+        elif event.option.id in ("/add", "/remove"):
+            self.set_prompt(event.option.id + " ")
+        else:
+            prompt.value = ""
+            self.command(event.option.id)
         prompt.focus()
 
     def action_up(self) -> None:
@@ -248,9 +315,23 @@ class Chat(App):
 
     def action_complete(self) -> None:
         menu = self.query_one("#commands", OptionList)
+        value = self.query_one("#ask", Prompt).value
         if menu.display and menu.highlighted is not None:
-            self.set_prompt(menu.get_option_at_index(menu.highlighted).id + " ")
+            chosen = menu.get_option_at_index(menu.highlighted).id
+            self.set_prompt((value.split(" ")[0] + " " + chosen[5:]) if chosen.startswith("path:") else chosen + " ")
             self.hide_menu()
+        elif value.startswith(("/add ", "/remove ")):
+            cmd, _, partial = value.partition(" ")
+            if cmd == "/remove":
+                matches = [str(f) + "/" for f in (self.ws.folders() if self.ws else []) if str(f).startswith(partial)]
+            else:
+                matches = complete(partial)
+            if len(matches) == 1:
+                self.set_prompt(f"{cmd} {matches[0]}")
+            elif matches:
+                menu.clear_options()
+                menu.add_options([Option(m, id="path:" + m) for m in matches[:50]])
+                menu.display, menu.highlighted = True, 0
 
     def action_escape(self) -> None:
         menu = self.query_one("#commands", OptionList)

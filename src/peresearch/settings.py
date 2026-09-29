@@ -19,7 +19,7 @@ from peresearch import guard
 DEFAULTS = {"PERESEARCH_LLM_MODEL": "llm"}
 
 
-def _file() -> dict[str, str]:
+def saved() -> dict[str, str]:
     path = guard.home() / "settings.env"
     if not path.exists():
         return {}
@@ -33,4 +33,4 @@ def _file() -> dict[str, str]:
 
 
 def get(name: str) -> str:
-    return os.environ.get(name) or _file().get(name) or DEFAULTS.get(name, "")
+    return os.environ.get(name) or saved().get(name) or DEFAULTS.get(name, "")

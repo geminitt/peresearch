@@ -40,3 +40,4 @@ serve = ["serve"]
 
 [tasks]
 test = "pytest -q"
+chat-local = "python deploy/chat_local.py"      # the laptop model server + the TUI, server stopped on quit

@@ -222,12 +222,14 @@ def test_a_cold_model_is_waited_for_then_other_errors_surface():
         llm.chat([{"role": "user", "content": "x"}])
 
 
-def tui_run(make, steps, size=(100, 40)):
+def tui_run(make, steps, size=(100, 40), **kw):
     """Drive the interface with the test pilot; `steps(app, pilot)` is an async function; returns the app."""
     from peresearch.tui import Chat
 
+    kw.setdefault("index_on_start", False)
+
     async def run():
-        app = Chat(make, folders=["/tmp/notes"])
+        app = Chat(make, **kw)
         async with app.run_test(size=size) as pilot:
             await steps(app, pilot)
             app.shown = texts(app)          # read while the widgets are still mounted
@@ -338,15 +340,18 @@ def test_slash_opens_the_command_menu_filters_it_and_runs_the_choice(home, notes
         menu = app.query_one("#commands", OptionList)
         await pilot.press("/")
         await pilot.pause()
-        assert menu.display and menu.option_count == 5
+        assert menu.display and menu.option_count == 8
         await pilot.press("f", "o")
         await pilot.pause()
         assert menu.option_count == 1 and menu.get_option_at_index(0).id == "/folders"
         await pilot.press("enter")
         await pilot.pause()
         assert not menu.display
-    app = tui_run(lambda e: agent(home, notes)[0], steps)
-    assert "/tmp/notes" in app.shown
+    from peresearch.workspace import Workspace
+    ws = Workspace(Index(home, embedder=FakeEmbedder()))
+    ws.add(str(notes))
+    app = tui_run(lambda e: agent(home, notes)[0], steps, workspace=ws)
+    assert str(notes) in app.shown
 
 
 def test_up_recalls_earlier_questions_and_new_forgets_them(home, notes):
@@ -372,7 +377,8 @@ def test_up_recalls_earlier_questions_and_new_forgets_them(home, notes):
         app.last = None
         await pilot.press("enter")
         await settle(app, pilot, lambda: not app.busy and app.last is not None)
-    tui_run(make, steps)
+    app = tui_run(make, steps)
+    assert app.last.sources, "the second question, run in another thread, must still search the files"
     second = make.llm.seen[-1][0]
     assert all(m["content"] != "BPE merges pairs?" for m in second if m["role"] == "user")   # history was reset
 
@@ -400,3 +406,58 @@ def test_escape_interrupts_a_running_question(home, notes):
         await settle(app, pilot, lambda: not app.busy and app.last is not None)
     app = tui_run(make, steps)
     assert app.last.stopped == "cancelled" and app.last.steps <= 2
+
+
+def test_folders_are_added_with_tab_completion_indexed_and_removed_in_the_interface(home, notes, tmp_path):
+    from textual.widgets import Input
+
+    from peresearch.workspace import Workspace
+    extra = tmp_path / "course-notes"
+    extra.mkdir()
+    (extra / "attention.md").write_text("# Attention\n\nScaled dot-product attention divides by the square root of d.\n")
+    ws = Workspace(Index(home, embedder=FakeEmbedder()))
+    ws.add(str(notes))
+
+    async def steps(app, pilot):
+        await settle(app, pilot, lambda: not app.busy and "Index" in texts(app) or "added" in texts(app))
+        assert "added" in texts(app)                                      # indexed on start: notes was new
+        prompt = app.query_one("#ask", Input)
+        prompt.value = f"/add {tmp_path}/course-no"
+        await pilot.press("tab")
+        assert prompt.value == f"/add {extra}/"
+        await pilot.press("enter")
+        await settle(app, pilot, lambda: not app.busy and str(extra) in texts(app) and "1 added" in texts(app))
+        assert "2 folders" in str(app.query_one("#heading").render())
+        prompt.value = f"/remove {extra}"
+        await pilot.press("enter")
+        await settle(app, pilot, lambda: not app.busy and "1 removed" in texts(app))
+    tui_run(lambda e: agent(home, notes)[0], steps, workspace=ws, index_on_start=True,
+            heading=lambda: f"peresearch · {len(ws.folders())} folders")
+    assert ws.folders() == [notes.resolve()]
+    assert any("attention.md" in r[1] for r in ws.index.rows()) is False       # its chunks left the index
+
+
+def test_setup_declares_folders_indexes_and_saves_the_keys_privately(home, notes, monkeypatch):
+    import stat
+
+    from peresearch import cli
+    from peresearch.workspace import Workspace
+    monkeypatch.setattr(cli, "Workspace", lambda: Workspace(Index(home, embedder=FakeEmbedder())))
+    answers = iter([str(notes), "", "http://localhost:8000/v1"])
+    secrets = iter(["", "tvly-" + "x" * 24, ""])
+    cli.cmd_setup(None, ask=lambda _: next(answers), secret=lambda _: next(secrets))
+    env = (home / "settings.env").read_text()
+    assert "PERESEARCH_LLM_URL=http://localhost:8000/v1" in env and "TAVILY_API_KEY=tvly-" in env
+    assert stat.S_IMODE((home / "settings.env").stat().st_mode) == 0o600
+    assert guard.roots() == [notes.resolve()] and Index(home, embedder=FakeEmbedder()).rows()
+
+
+def test_past_answers_are_cut_and_the_current_question_marked(home, notes):
+    a, llm = agent(home, notes, Reply("A" * 2000 + " [N1]"), Reply("second [N1]"))
+    a.ask("BPE merges pairs?")
+    a.ask("And SuperBPE?")
+    msgs = llm.seen[1][0]
+    past = [m["content"] for m in msgs if m["role"] == "assistant" and m["content"]]
+    assert past and len(past[0]) <= 810 and past[0].endswith("[…]")
+    user = [m["content"] for m in msgs if m["role"] == "user"]
+    assert user[0] == "BPE merges pairs?" and user[-1].startswith("Current question") and user[-1].endswith("And SuperBPE?")
