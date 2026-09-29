@@ -50,7 +50,9 @@ def scripts(tmp_path, monkeypatch):
     import speed
 
     from peresearch.zetokrag import models
-    monkeypatch.setattr(models, "Embedder", Embedder)
+    torch = pytest.importorskip("torch")
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)   # fake models: the laptop's GPU is not touched,
+    monkeypatch.setattr(models, "Embedder", Embedder)                 # and a chat holding it does not fail the run
     monkeypatch.setattr(models, "Reranker", Reranker)
     monkeypatch.setattr(retrieval, "load", fake_load)
     monkeypatch.setattr(speed, "load", fake_load)
