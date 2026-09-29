@@ -153,3 +153,17 @@ def test_every_color_comes_from_the_terminal_scheme(terminal):
     assert not near_background, sorted(near_background)[:5]
     cursor = re.findall(rb"abc\x1b\[0m\x1b\[([0-9;]*)m ", terminal.screen)
     assert any(b"7" in c.split(b";") for c in cursor), cursor   # the cursor is drawn: the default colors reversed
+
+
+def test_the_chosen_command_stands_out_in_the_menu(terminal):
+    """The menu never has the focus (typing stays on the prompt), so its highlight is the blurred one; it must
+    still show which command Enter or Tab would take."""
+    def style_of(name: bytes) -> set[bytes]:
+        found = re.findall(rb"\x1b\[([0-9;]*)m" + re.escape(name) + rb"\b", terminal.screen)
+        return set(found[-1].split(b";")) if found else set()
+    terminal.write("/")
+    terminal.read(0.8)
+    assert b"7" in style_of(b"/help") and b"7" not in style_of(b"/add")
+    terminal.write("\x1b[B")                              # ↓ moves the choice
+    terminal.read(0.8)
+    assert b"7" in style_of(b"/add") and b"7" not in style_of(b"/help")

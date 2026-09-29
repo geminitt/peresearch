@@ -20,7 +20,9 @@ import time
 from textual import events, work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
+from rich.style import Style as RichStyle
 from textual.containers import VerticalScroll
+from textual.strip import Strip
 from textual.theme import Theme
 from textual.widgets import Input, Markdown, OptionList, Static
 from textual.widgets.option_list import Option
@@ -53,7 +55,7 @@ TERMINAL = Theme(
         "input-cursor-text-style": "reverse",
         "input-selection-background": "ansi_blue", "input-selection-foreground": "ansi_default",
         "screen-selection-background": "ansi_blue", "screen-selection-foreground": "ansi_default",
-        "block-cursor-background": "ansi_blue", "block-cursor-foreground": "ansi_default",
+        "block-cursor-background": "ansi_default", "block-cursor-foreground": "ansi_default",
         "block-cursor-blurred-background": "ansi_default", "block-cursor-blurred-foreground": "ansi_default",
         "block-hover-background": "ansi_default",
         "scrollbar": "ansi_blue", "scrollbar-hover": "ansi_cyan", "scrollbar-active": "ansi_cyan",
@@ -105,6 +107,24 @@ class Prompt(Input):
         await super()._on_key(event)
 
 
+class Menu(OptionList):
+    """The command menu. It never has the focus (typing stays on the prompt), and Textual draws a list row from a
+    style that drops `reverse`, so with the terminal's colors its chosen row looked like every other. The chosen row
+    is reversed here, the row under the mouse bold."""
+
+    def render_line(self, y: int) -> Strip:
+        strip = super().render_line(y)
+        try:
+            index, _ = self._lines[self.scroll_offset.y + y]
+        except IndexError:
+            return strip
+        if index == self.highlighted:
+            return strip.apply_style(RichStyle(reverse=True))
+        if index == self._mouse_hovering_over:
+            return strip.apply_style(RichStyle(bold=True))
+        return strip
+
+
 class Chat(App):
     CSS = """
     Screen { layout: vertical; }
@@ -137,8 +157,8 @@ class Chat(App):
         yield Static(f"✻ {self.heading()}", id="heading")
         yield VerticalScroll(id="log", can_focus=False)
         yield Static("", id="status")
-        yield OptionList(id="commands")
-        yield Prompt(placeholder="> Ask about your files or the web", id="ask")
+        yield Menu(id="commands")
+        yield Prompt(placeholder="❯ Ask about your files or the web", id="ask")
         yield Static("/ commands · ↑↓ earlier questions · pgup/pgdn scroll · esc interrupt · ctrl+c quit", id="hints")
 
     def on_mount(self) -> None:
@@ -215,7 +235,7 @@ class Chat(App):
         self.asked.append(q)
         self.recall = None
         self.start("Starting")
-        self.add(Static(f"> {guard.sanitize(q)}", classes="question"))
+        self.add(Static(f"❯ {guard.sanitize(q)}", classes="question"))
         self.run_agent(q)
 
     @work(thread=True, exclusive=True)
