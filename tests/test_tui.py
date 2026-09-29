@@ -651,3 +651,30 @@ def test_open_outside_never_runs_a_file(monkeypatch, tmp_path):
     assert runs[2] == ["explorer.exe", "/select,C:\\\\x\\\\run me.bat"]
     for bad in ("javascript:alert(1)", "file:///etc/passwd", str(tmp_path / "missing.md")):
         assert tui.open_outside(bad) and len(runs) == 3                # refused, nothing run
+
+
+def test_a_question_asked_while_the_folders_are_checked_is_answered(home, notes):
+    """On opening, the index is checked in the background; a question asked meanwhile used to be refused with
+    "still working on the previous question" (there was none), since both shared one busy flag."""
+    import time as _t
+    from types import SimpleNamespace
+
+    class SlowWorkspace:
+        def folders(self):
+            return [notes]
+
+        def update(self):
+            _t.sleep(1.0)
+            return SimpleNamespace(added=0, changed=0, removed=0, withheld=0, unchanged=3, chunks=7)
+
+    async def steps(app, pilot):
+        from peresearch.tui import Prompt
+        await pilot.pause(0.1)                                       # the check has started
+        app.query_one("#ask", Prompt).value = "How does BPE work?"
+        await pilot.press("enter")
+        await settle(app, pilot, lambda: app.last is not None and "Index up to date" in texts(app), tries=300)
+    app = tui_run(lambda e: agent(home, notes, Reply("BPE merges pairs [N1]."))[0], steps,
+                  workspace=SlowWorkspace(), index_on_start=True)
+    assert "still working" not in app.shown
+    assert app.last is not None and app.last.text == "BPE merges pairs [N1]."
+    assert "Index up to date: 7 chunks" in app.shown                   # and the check still finished

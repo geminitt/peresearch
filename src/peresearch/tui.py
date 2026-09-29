@@ -409,6 +409,7 @@ class Chat(App):
         self.menu_kind = ""                           # what the menu lists: "commands", "paths" or "conversations"
         self.asked, self.recall = [], None
         self.started, self.doing, self.tokens, self.frame = 0.0, "", 0, 0
+        self.indexing = ""                             # what the index update is doing, apart from a question
         self.flash, self.flash_until = "", 0.0         # a short message on the status line when idle
 
     def compose(self) -> ComposeResult:
@@ -444,11 +445,14 @@ class Chat(App):
 
     def tick(self) -> None:
         status = self.status
-        if not self.busy:
+        if not self.busy and not self.indexing:
             status.update(self.flash if time.time() < self.flash_until else "")
             return
         self.frame += 1
         spin = SPINNER[self.frame % len(SPINNER)]
+        if not self.busy:                              # only the index update runs
+            status.update(f"{spin} {guard.sanitize(self.indexing)}… (you can ask meanwhile)")
+            return
         extra = f" · {self.tokens:,} tokens" if self.tokens else ""
         status.update(f"{spin} {guard.sanitize(self.doing)}… ({time.time() - self.started:.0f}s{extra} · esc to interrupt)")
 
@@ -506,7 +510,7 @@ class Chat(App):
         self.add(Static(f"❯ {guard.sanitize(shown)}", classes="question", markup=False))
         self.run_agent(sent)
 
-    @work(thread=True, exclusive=True)
+    @work(thread=True, exclusive=True, group="agent")
     def run_agent(self, question: str) -> None:
         def event(kind, detail):
             self.call_from_thread(self.on_agent_event, kind, detail)
@@ -593,9 +597,11 @@ class Chat(App):
         self.busy = False
         self.query_one("#heading", Static).update(f"✻ {self.heading()}")
 
-    @work(thread=True, exclusive=True)
+    @work(thread=True, exclusive=True, group="index")      # a group of its own: a question does not cancel it
     def reindex(self, doing: str) -> None:
-        self.call_from_thread(self.start, doing)
+        """Brings the index up to date in the background; questions can be asked meanwhile (search copes with an
+        index being updated), and the status line shows the question first."""
+        self.call_from_thread(setattr, self, "indexing", doing)
         try:
             r = self.ws.update()
             quiet = not (r.added or r.changed or r.removed or r.withheld)
@@ -605,7 +611,11 @@ class Chat(App):
         except Exception as e:
             self.call_from_thread(self.note, f"indexing failed: {type(e).__name__}: {e}"[:300])
         finally:
-            self.call_from_thread(self.done)
+            self.call_from_thread(self.indexed)
+
+    def indexed(self) -> None:
+        self.indexing = ""
+        self.query_one("#heading", Static).update(f"✻ {self.heading()}")
 
     def start(self, doing: str) -> None:
         self.busy, self.started, self.doing, self.tokens = True, time.time(), doing, 0
@@ -667,8 +677,8 @@ class Chat(App):
             if self.ws is None:
                 self.note("folders cannot be changed here")
                 return
-            if self.busy:
-                self.note("wait for the current work to finish, or press esc")
+            if self.busy or self.indexing:
+                self.note("wait for the current work to finish (a question: esc interrupts it)")
                 return
             arg = text[len(name):].strip()
             if name == "/index":
