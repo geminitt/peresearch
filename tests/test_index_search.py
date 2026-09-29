@@ -249,3 +249,16 @@ def test_searching_while_the_same_index_is_updated_in_another_thread(home, notes
     assert errors == [] and rounds["search"] > 5, (errors, rounds)
     hits, _, _ = s.find("Note number 14 about optimisers", k=3)
     assert hits and hits[0].path.endswith("extra14.md")
+
+
+def test_a_file_that_vanishes_while_it_is_checked_is_treated_as_gone(home, notes, monkeypatch):
+    """The search checks a hit's file is unchanged: it asked whether the file exists, then read it, and a file
+    deleted in between raised FileNotFoundError out of the whole question (caught by the threaded stress test)."""
+    idx, s = make(home, notes)
+    idx.update([notes])
+
+    def vanished(path):
+        raise FileNotFoundError(2, "No such file or directory")
+    monkeypatch.setattr(search, "sha256", vanished)                  # exists() said yes, then the file went
+    hits, _, stale = s.find("gradient descent", k=3)
+    assert hits == [] and stale >= 1

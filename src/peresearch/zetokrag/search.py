@@ -89,8 +89,10 @@ class Searcher:
             cid, path, section, unit, start, end, text, sha = row
             if path not in files:
                 p = Path(path)
-                files[path] = None if not p.exists() else (sha256(p), p.read_text(errors="replace")
-                                                           if unit == "line" else None)
+                try:
+                    files[path] = (sha256(p), p.read_text(errors="replace") if unit == "line" else None)
+                except OSError:                     # deleted or unreadable since indexing, even mid-check
+                    files[path] = None
             current = files[path]
             changed = current is None or current[0] != sha
             present = current is not None and current[1] is not None and all(
