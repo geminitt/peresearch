@@ -23,9 +23,10 @@ PAGE = ("<html><head><title>BPE</title></head><body><nav>menu home login</nav><a
         "<p>SuperBPE lets merges cross whitespace in a second stage.</p></article><footer>cookies</footer></body></html>")
 
 
-def streamed(content="", reasoning="", tool_calls=(), usage=None, piece=5):
+def streamed(content="", reasoning="", tool_calls=(), usage=None, piece=5, finish=None):
     """The chunks a streaming chat completion would send: text and reasoning cut into pieces of `piece`
-    characters, each tool call as a name chunk then its arguments cut the same way, then the usage."""
+    characters, each tool call as a name chunk then its arguments cut the same way, a chunk with the finish reason
+    (by default "tool_calls" when there are calls, else "stop"), then the usage."""
     from types import SimpleNamespace as NS
 
     def chunk(**delta):
@@ -36,6 +37,8 @@ def streamed(content="", reasoning="", tool_calls=(), usage=None, piece=5):
         chunks.append(chunk(tool_calls=[NS(index=n, id=f"c{n}", function=NS(name=name, arguments=""))]))
         chunks += [chunk(tool_calls=[NS(index=n, id=None, function=NS(name=None, arguments=args[i:i + piece]))])
                    for i in range(0, len(args), piece)]
+    chunks.append(NS(choices=[NS(delta=NS(), finish_reason=finish or ("tool_calls" if tool_calls else "stop"))],
+                     usage=None))
     chunks.append(NS(choices=[], usage=usage))
     return chunks
 

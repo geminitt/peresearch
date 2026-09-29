@@ -34,6 +34,7 @@ class Reply:
     reasoning: str = ""
     prompt_tokens: int = 0
     completion_tokens: int = 0
+    finish: str = ""               # the server's finish_reason: "stop", "tool_calls", "length" (cut at max_tokens)…
 
 
 _QWEN_XML = re.compile(r"<tool_call>\s*<function=([\w\-.]+)>(.*?)</function>\s*</tool_call>", re.S)
@@ -71,6 +72,11 @@ def strip_text_calls(text: str) -> str:
 
 class Interrupted(Exception):
     """The caller's stop() asked to stop; the request in flight was dropped."""
+
+
+class StreamCut(Exception):
+    """A streamed reply ended without a finish reason: the connection was cut mid-answer (the OpenAI client raises
+    nothing then, and the partial text would pass for a complete answer). Retried like a dropped connection."""
 
 
 class BudgetExceeded(Exception):
@@ -135,13 +141,14 @@ class Budget:
 def _read_stream(stream, stop) -> dict:
     """A streamed chat completion put back together: text, reasoning, tool calls (their pieces joined by index) and
     token counts. `stop()` is checked between chunks; the stream is always closed by this, the reading thread."""
-    text, reasoning, calls, usage = [], [], {}, None
+    text, reasoning, calls, usage, finish = [], [], {}, None, ""
     try:
         for chunk in stream:
             if stop is not None and stop():
                 raise Interrupted("stopped by the user")
             usage = getattr(chunk, "usage", None) or usage
             for choice in getattr(chunk, "choices", None) or []:
+                finish = getattr(choice, "finish_reason", None) or finish
                 delta = choice.delta
                 if getattr(delta, "content", None):
                     text.append(delta.content)
@@ -159,10 +166,12 @@ def _read_stream(stream, stop) -> dict:
         close = getattr(stream, "close", None)
         if close:
             close()
+    if not finish:
+        raise StreamCut("the reply stream ended without a finish reason: the connection was cut mid-answer")
     return {"text": "".join(text), "reasoning": "".join(reasoning),
             "calls": [dict(c, id=c["id"] or f"call-{i}") for i, c in sorted(calls.items())],
             "prompt_tokens": getattr(usage, "prompt_tokens", 0) or 0,
-            "completion_tokens": getattr(usage, "completion_tokens", 0) or 0}
+            "completion_tokens": getattr(usage, "completion_tokens", 0) or 0, "finish": finish}
 
 
 def _outbound(message: dict) -> dict:
@@ -179,7 +188,7 @@ def _outbound(message: dict) -> dict:
 class LLM:
     """chat(messages, tools) -> Reply. `client` replaces the OpenAI client in tests."""
 
-    RETRYABLE = ("APIConnectionError", "APITimeoutError", "InternalServerError", "RateLimitError")
+    RETRYABLE = ("APIConnectionError", "APITimeoutError", "InternalServerError", "RateLimitError", "StreamCut")
 
     def __init__(self, url: str | None = None, model: str | None = None, key: str | None = None, client=None,
                  max_tokens: int = 4096, temperature: float = 0.6, top_p: float = 0.95, retries: int = 5,
@@ -270,4 +279,4 @@ class LLM:
         if not calls:                       # recovered from the text or the reasoning (vllm#39056)
             calls = parse_text_calls(text) or parse_text_calls(reasoning)
             text = strip_text_calls(text)
-        return Reply(text, calls, reasoning, r["prompt_tokens"], r["completion_tokens"])
+        return Reply(text, calls, reasoning, r["prompt_tokens"], r["completion_tokens"], r["finish"])

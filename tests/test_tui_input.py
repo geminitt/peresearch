@@ -161,7 +161,7 @@ def test_every_color_comes_from_the_terminal_scheme(terminal):
     assert terminal.read(5, until=b"allowed: once")
     shown = re.sub(r"\s+", " ", re.sub(r"\x1b\[[0-9;?<>=:$]*[a-zA-Z~]", "", terminal.screen.decode("utf-8", "replace")))
     for part in ("Heading", "def f", "a quote", "item", "search_notes", "Sources", "quotes not found", "/help",
-                 "wants to read", "No (esc)"):
+                 "wants to read", "esc stops the question"):
         assert part in shown, part                        # every kind of element was drawn
     codes = re.findall(rb"\x1b\[([0-9;:]*)m", terminal.screen)
     fixed = {c.decode() for c in codes if re.search(rb"(^|;)(38|48)[;:](2|5)[;:]", c)}

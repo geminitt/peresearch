@@ -27,7 +27,7 @@ def test_a_streamed_answer_is_put_back_together():
     r = LLM(client=client_of(create), model="m").chat([{"role": "user", "content": "x"}])
     assert (r.text, r.reasoning) == ("Looking.", "first the notes")
     assert [(c.name, c.args) for c in r.calls] == [("grep", {"pattern": "SuperBPE"}), ("read", {"path": "a.md", "start": 3})]
-    assert (r.prompt_tokens, r.completion_tokens) == (120, 34)
+    assert (r.prompt_tokens, r.completion_tokens) == (120, 34) and r.finish == "tool_calls"
     assert sent[0]["stream"] is True and sent[0]["stream_options"] == {"include_usage": True}
 
 
@@ -169,3 +169,56 @@ def test_an_interrupt_also_ends_the_wait_between_retries():
     with pytest.raises(Interrupted):
         llm.chat([{"role": "user", "content": "x"}], stop=lambda: time.time() - t0 > 0.3)
     assert time.time() - t0 < 1.5
+
+
+@pytest.fixture
+def flaky_server():
+    """An OpenAI-compatible server on localhost whose first `drops` answers are cut off mid-stream (a container
+    that dies while answering); the next ones stream to the end. The real OpenAI client talks to it."""
+    import http.server
+    import json
+    import socket
+
+    state = {"drops": 1, "requests": 0}
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_POST(self):
+            self.rfile.read(int(self.headers["Content-Length"]))
+            state["requests"] += 1
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.end_headers()
+
+            def send(delta, finish=None):
+                chunk = {"id": "x", "object": "chat.completion.chunk", "created": 0, "model": "m",
+                         "choices": [{"index": 0, "delta": delta, "finish_reason": finish}]}
+                self.wfile.write(f"data: {json.dumps(chunk)}\n\n".encode())
+                self.wfile.flush()
+            send({"content": "Hel"})
+            if state["requests"] <= state["drops"]:
+                self.connection.shutdown(socket.SHUT_RDWR)
+                return
+            send({"content": "lo."}, finish="stop")
+            self.wfile.write(b"data: [DONE]\n\n")
+
+        def log_message(self, *args):
+            pass
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    yield f"http://127.0.0.1:{server.server_address[1]}/v1", state
+    server.shutdown()
+
+
+def test_an_answer_cut_off_mid_stream_is_asked_again_not_taken_as_complete(flaky_server):
+    """The OpenAI client raises nothing when a stream ends early; only the missing finish reason tells."""
+    url, state = flaky_server
+    reply = LLM(url=url, model="m", wait=0).chat([{"role": "user", "content": "x"}])
+    assert reply.text == "Hello." and reply.finish == "stop" and state["requests"] == 2
+
+
+def test_an_answer_cut_off_every_time_is_an_error(flaky_server):
+    url, state = flaky_server
+    state["drops"] = 99
+    with pytest.raises(Exception, match="ended without a finish reason"):
+        LLM(url=url, model="m", wait=0, retries=3).chat([{"role": "user", "content": "x"}])
+    assert state["requests"] == 3

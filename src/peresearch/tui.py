@@ -95,10 +95,12 @@ def render(answer) -> str:
                      + "; ".join(f"“{guard.sanitize(q)[:80]}”" for q in c.unsupported_quotes))
     if c.uncited:
         parts.append("\n> **Check:** the answer cites no source")
-    if not answer.sources:
+    if not answer.sources and answer.stopped != "cancelled":
         parts.append("\n_Answered without any source: from the model's own knowledge._")
     if answer.stopped:
-        parts.append(f"\n> stopped: {answer.stopped}")
+        why = {"steps": "the step limit was reached", "time": "the time limit was reached",
+               "cancelled": "interrupted", "length": "the answer was cut at the model's token limit"}
+        parts.append(f"\n> stopped: {why.get(answer.stopped, answer.stopped)}")
     parts.append(f"\n<sub>{answer.steps} model calls · {answer.prompt_tokens + answer.completion_tokens:,} tokens</sub>")
     return "\n".join(parts)
 
@@ -231,15 +233,17 @@ class Menu(OptionList):
 
 
 class Permission(ModalScreen[str]):
-    """May the agent read a path outside the declared folders? Dismissed with "once", "session" or "no"."""
+    """May the agent read a path outside the declared folders? Dismissed with "once", "session", "no" (the model
+    is told and goes on) or "stop" (Esc: refuse and stop the question, as Esc does everywhere else)."""
 
     CSS = """
     Permission { align: center bottom; }
     #permission { width: 100%; height: auto; margin: 0 0 3 0; padding: 0 1; border: round ansi_yellow;
                   background: ansi_default; }
     #choices { height: auto; border: none; padding: 0; background: ansi_default; }
+    #permission > .hint { color: ansi_default; text-style: dim; }
     """
-    BINDINGS = [Binding("escape", "deny", show=False)]
+    BINDINGS = [Binding("escape", "stop", show=False)]
     VERBS = {"read": "read", "tree": "list", "glob": "list the files in", "grep": "search in"}
 
     def __init__(self, tool: str, path: Path):
@@ -254,7 +258,8 @@ class Permission(ModalScreen[str]):
             yield Menu(Option("Yes, this once", id="once"),
                        Option(f"Yes, and everything in {escape(guard.sanitize(str(folder)))} for this session",
                               id="session"),
-                       Option("No (esc)", id="no"), id="choices")
+                       Option("No", id="no"), id="choices")
+            yield Static("esc stops the question", classes="hint")
 
     def on_mount(self) -> None:
         menu = self.query_one("#choices", Menu)
@@ -265,8 +270,8 @@ class Permission(ModalScreen[str]):
         event.stop()
         self.dismiss(event.option.id)
 
-    def action_deny(self) -> None:
-        self.dismiss("no")
+    def action_stop(self) -> None:
+        self.dismiss("stop")
 
 
 class Chat(App):
@@ -422,6 +427,9 @@ class Chat(App):
         while not answered.wait(0.1):
             if not self.is_running:                     # quit while the dialog was open
                 return "no"
+        if answer.get("choice") == "stop":              # Esc on the dialog: refuse, and stop the whole question
+            self.agent.cancel()
+            return "no"
         return answer.get("choice") or "no"
 
     def done(self) -> None:

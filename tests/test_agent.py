@@ -159,3 +159,13 @@ def test_escape_stops_the_question_while_the_model_is_answering(home, notes):
     assert not worker.is_alive() and time.time() - t0 < 1.5
     assert result["answer"].stopped == "cancelled"
     assert client.closed.wait(1)                          # closed by its reader at the next chunk
+
+
+def test_an_answer_cut_at_the_token_limit_says_so(home, notes):
+    """A reply that ran out of tokens (finish_reason "length") must not pass for a complete answer."""
+    from peresearch.tui import render
+
+    a, _ = agent(home, notes, Reply("BPE merges the most frequent pair, then", finish="length"))
+    ans = a.ask("How does BPE work?")
+    assert ans.stopped == "length"
+    assert "cut at the model's token limit" in render(ans)

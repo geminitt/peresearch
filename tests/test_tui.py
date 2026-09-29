@@ -301,38 +301,58 @@ def test_an_answer_that_used_no_source_says_so():
 
 
 def test_the_interface_asks_before_reading_outside_the_declared_folders(home, notes, user_home):
-    from peresearch.tui import Prompt
-
-    from peresearch.tui import Permission
+    """Yes lets the read happen; No refuses it and the model goes on; Esc refuses it and stops the question (it
+    used to mean only No, so Esc on the dialog did not stop anything — seen on the local vLLM)."""
+    from peresearch.tui import Permission, Prompt
 
     def make(on_event):
-        a, _ = agent(home, notes, Reply("", [ToolCall("c1", "read", {"path": "~/Downloads/paper.md"})]),
-                     Reply("Your paper says attention is all you need [N1]."),
-                     Reply("", [ToolCall("c2", "read", {"path": "~/Downloads/sub/more.md"})]),
-                     Reply("I was not allowed to read it."))
+        a, llm = agent(home, notes, Reply("", [ToolCall("c1", "read", {"path": "~/Downloads/paper.md"})]),
+                       Reply("Your paper says attention is all you need [N1]."),
+                       Reply("", [ToolCall("c2", "read", {"path": "~/Downloads/sub/more.md"})]),
+                       Reply("I was not allowed to read it."),
+                       Reply("", [ToolCall("c3", "read", {"path": "~/Downloads/sub/more.md"})]),
+                       Reply("never reached"))
+        make.llm = llm
         return a
 
-    async def steps(app, pilot):
-        from peresearch.tui import Prompt
+    async def ask(app, pilot, question):
         prompt = app.query_one("#ask", Prompt)
-        prompt.value = "what does the paper in Downloads say?"
+        app.last = None
+        prompt.value = question
         await pilot.press("enter")
         await settle(app, pilot, lambda: isinstance(app.screen, Permission))
-        app.dialog = isinstance(app.screen, Permission) and "paper.md" in str(app.screen.path)
+        return isinstance(app.screen, Permission)
+
+    async def steps(app, pilot):
+        app.dialog = await ask(app, pilot, "what does the paper in Downloads say?") and "paper.md" in str(app.screen.path)
         await pilot.press("enter")                                          # "Yes, this once"
         await settle(app, pilot, lambda: not app.busy and app.last is not None)
         app.first = app.last
-        app.last = None
-        prompt.value = "and the other file?"
-        await pilot.press("enter")
-        await settle(app, pilot, lambda: isinstance(app.screen, Permission))
-        await pilot.press("escape")                                         # no
+        await ask(app, pilot, "and the other file?")
+        await pilot.press("down", "down", "enter")                          # "No"
         await settle(app, pilot, lambda: not app.busy and app.last is not None)
+        app.second = app.last
+        await ask(app, pilot, "please, that other file")
+        from textual.widgets import Static
+        app.shown_dialog = " ".join(str(w.render()) for w in app.screen.query(Static))
+        await pilot.press("escape")                                         # refuse, and stop the question
+        await settle(app, pilot, lambda: not app.busy and app.last is not None)
+        app.third = app.last
         app.focus_after = app.focused
     app = tui_run(make, steps)
     assert app.dialog and "N1" in app.first.sources and "Attention" in app.first.sources["N1"].text
-    assert app.last.sources == {} and isinstance(app.focus_after, Prompt)
+    assert app.second.sources == {} and app.second.text == "I was not allowed to read it." and not app.second.stopped
+    assert app.third.stopped == "cancelled" and "never reached" not in app.shown
+    assert "esc stops the question" in app.shown_dialog
+    assert isinstance(app.focus_after, Prompt)
 
+
+def test_an_interrupted_answer_is_not_called_an_answer_without_sources():
+    from peresearch.agent import Answer, Check
+    from peresearch.tui import render
+
+    shown = render(Answer("_(interrupted)_", {}, Check(), 1, stopped="cancelled"))
+    assert "stopped: interrupted" in shown and "without any source" not in shown
 
 
 def test_a_late_spinner_tick_after_the_interface_closed_is_harmless(home, notes):

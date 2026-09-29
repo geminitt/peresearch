@@ -89,7 +89,7 @@ class Answer:
     steps: int
     prompt_tokens: int = 0
     completion_tokens: int = 0
-    stopped: str = ""          # which limit ended the search, if any
+    stopped: str = ""          # why it ended early: a limit ("steps", "time"), "cancelled", or "length" (cut)
     calls: list = field(default_factory=list)   # every tool call made: (name, args), in order
 
 
@@ -226,7 +226,9 @@ class Agent:
                         break
                     steps += 1
                     prompt, completion = prompt + again.prompt_tokens, completion + again.completion_tokens
-                    text = again.text
+                    text, reply = again.text, again
+                if reply.finish == "length":    # cut at max_tokens: say so rather than pass it off as complete
+                    stopped = stopped or "length"
                 break
             messages.append({"role": "assistant", "content": reply.text, "tool_calls": [
                 {"id": c.id, "type": "function", "function": {"name": c.name, "arguments": json.dumps(c.args, ensure_ascii=False)}}
