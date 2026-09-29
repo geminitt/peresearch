@@ -27,6 +27,7 @@ DATA = json.loads((Path(__file__).parent / "data" / "unikey_telex.json").read_te
 
 APP = """
 import sys, time
+from pathlib import Path
 from types import SimpleNamespace as NS
 from peresearch.tui import Chat
 
@@ -50,7 +51,12 @@ def f(x):
 class Stub:
     def __init__(self, on_event):
         self.on_event = on_event
+        self.toolbox = NS(ask=None)                     # the interface puts its permission dialog here
     def ask(self, q):
+        if "outside" in q:
+            choice = self.toolbox.ask("read", Path.home() / "Downloads" / "paper.md")
+            return NS(text="allowed: " + choice, sources={}, check=NS(unknown_ids=[], unsupported_quotes=[], uncited=False),
+                      stopped="", steps=1, prompt_tokens=1, completion_tokens=1)
         self.on_event("tool", 'search_notes("bpe")')
         self.on_event("result", "1 source")
         time.sleep(0.5)
@@ -144,8 +150,15 @@ def test_every_color_comes_from_the_terminal_scheme(terminal):
     terminal.read(1.5)
     terminal.write("\x1b[1;2H")                           # Shift+Home selects the typed text
     terminal.read(0.6)
+    terminal.write("\x15read outside please")              # Ctrl+U clears; then the permission dialog
+    terminal.submitted()
+    assert terminal.read(5, until=b"Yes, this once"), "the permission dialog never appeared"
+    terminal.read(0.5)
+    terminal.write("\r")
+    assert terminal.read(5, until=b"allowed: once")
     shown = re.sub(r"\s+", " ", re.sub(r"\x1b\[[0-9;?<>=:$]*[a-zA-Z~]", "", terminal.screen.decode("utf-8", "replace")))
-    for part in ("Heading", "def f", "a quote", "item", "search_notes", "Sources", "quotes not found", "/help"):
+    for part in ("Heading", "def f", "a quote", "item", "search_notes", "Sources", "quotes not found", "/help",
+                 "wants to read", "No (esc)"):
         assert part in shown, part                        # every kind of element was drawn
     codes = re.findall(rb"\x1b\[([0-9;:]*)m", terminal.screen)
     fixed = {c.decode() for c in codes if re.search(rb"(^|;)(38|48)[;:](2|5)[;:]", c)}
@@ -177,3 +190,18 @@ def test_the_chosen_command_stands_out_in_the_menu(terminal):
     terminal.write("\x1b[B")                              # ↓ moves the choice
     terminal.read(0.8)
     assert b"7" in style_of(b"/add") and b"7" not in style_of(b"/help")
+
+
+def test_editing_keys_keep_their_place_among_typed_text(terminal):
+    """Keys bound to an action (Ctrl+U, arrows, Enter…) arriving in one read with typed text: Textual inserts the
+    text at once and ran the action later, so "abc ⌃U xyz" came out empty and "ab ← c" as "abc"."""
+    for burst in ("abc\x15xyz\r", "ab\x1b[Dc\r", "one\rtwo\r"):
+        terminal.write(burst)
+        terminal.read(1.5)
+    assert terminal.out.read_text(encoding="utf-8").splitlines() == ["xyz", "acb", "one", "two"]
+
+
+def test_a_bracketed_paste_keeps_its_place_among_typed_text(terminal):
+    terminal.write("see \x1b[200~first line\nsecond line\x1b[201~ ok\r")
+    terminal.read(1.5)
+    assert terminal.out.read_text(encoding="utf-8").splitlines() == ["see [Pasted text #1 +2 lines] ok"]

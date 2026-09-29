@@ -85,8 +85,17 @@ def cmd_ask(args):
     def event(kind, detail):
         print(guard.sanitize(f"· {kind}: {detail}" if detail else f"· {kind}"), file=sys.stderr)
 
-    answer = make_agent(args.project, event).ask(args.question)
-    _print(render(answer))
+    agent = make_agent(args.project, event)
+    agent.toolbox.ask = ask_in_terminal if sys.stdin.isatty() else None     # nobody to ask: nothing outside is read
+    _print(render(agent.ask(args.question)))
+
+
+def ask_in_terminal(tool: str, path) -> str:
+    """The command line's answer to "may the agent read this path outside the declared folders?"."""
+    folder = path if path.is_dir() else path.parent
+    reply = input(guard.sanitize(f"peresearch wants to {tool} {path}, outside your declared folders. "
+                                 f"Allow [o]nce, [s]ession ({folder}), or [N]o? ")).strip().lower()
+    return {"o": "once", "once": "once", "s": "session", "session": "session"}.get(reply, "no")
 
 
 def heading(project: str) -> str:

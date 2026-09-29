@@ -108,7 +108,7 @@ def test_glob_takes_a_path_as_written_by_the_user(home, notes):
     tb = toolbox(home, notes)
     assert "bpe.md" in tb.call("glob", {"pattern": str(notes / "*.md")})     # absolute, as a model writes it
     assert "bpe.md" in tb.call("glob", {"pattern": str(notes)})              # a folder: the files in it
-    assert tb.call("glob", {"pattern": "/etc/*"}) == "no file matches"
+    assert tb.call("glob", {"pattern": "/etc/*"}).startswith("refused")      # outside the home folder
 
 
 def test_tree_shows_the_declared_folders_and_nothing_outside_or_protected(home, notes, tmp_path):
@@ -708,3 +708,144 @@ def test_nested_declared_folders_count_once(home, notes):
         ws.add(str(notes / "project" / ".." / "project"))
     ws.add(str(notes))
     assert ws.folders() == [notes.resolve()]
+
+
+@pytest.fixture
+def user_home(tmp_path, monkeypatch):
+    """A home folder with a file outside the declared folders, and hidden data that must never be offered."""
+    user = tmp_path / "user"
+    (user / "Downloads" / "sub").mkdir(parents=True)
+    (user / "Downloads" / "paper.md").write_text("# Paper\n\nAttention is all you need.\n")
+    (user / "Downloads" / "sub" / "more.md").write_text("more attention\n")
+    (user / ".config").mkdir()
+    (user / ".config" / "app.md").write_text("private settings\n")
+    monkeypatch.setenv("HOME", str(user))
+    return user
+
+
+def test_reading_outside_the_declared_folders_asks_the_user_first(home, notes, user_home):
+    tb = toolbox(home, notes)
+    assert "peresearch chat" in tb.call("read", {"path": "~/Downloads/paper.md"})     # nobody to ask: refused
+    asked, answers = [], iter(["once", "session", "no"])
+    tb.ask = lambda tool, path: (asked.append((tool, path)), next(answers))[1]
+    assert "Attention" in tb.call("read", {"path": "~/Downloads/paper.md"})           # allowed once
+    assert "Attention" in tb.call("read", {"path": "~/Downloads/paper.md"})           # asked again: this session
+    assert "paper.md" in tb.call("glob", {"pattern": "~/Downloads/*.md"})              # the folder is now allowed
+    assert "more attention" in tb.call("grep", {"pattern": "attention", "glob": "~/Downloads/**/*.md"})
+    assert "paper.md" in tb.call("tree", {"path": "~/Downloads"})
+    assert [t for t, _ in asked] == ["read", "read"]
+    assert "did not allow" in tb.call("tree", {"path": str(user_home)})                 # refused by the user
+    before = len(asked)
+    for path in ("~/.config/app.md", "/etc/hostname", str(home / "config.json")):
+        assert tb.call("read", {"path": path}).startswith("refused"), path            # never even asked
+    assert tb.call("glob", {"pattern": "~/.config/*"}).startswith("refused")
+    assert len(asked) == before + 0 and "private settings" not in tb.call("tree", {"path": "~/Downloads"})
+
+
+def test_the_interface_asks_before_reading_outside_the_declared_folders(home, notes, user_home):
+    from textual.widgets import Input
+
+    from peresearch.tui import Permission
+
+    def make(on_event):
+        a, _ = agent(home, notes, Reply("", [ToolCall("c1", "read", {"path": "~/Downloads/paper.md"})]),
+                     Reply("Your paper says attention is all you need [N1]."),
+                     Reply("", [ToolCall("c2", "read", {"path": "~/Downloads/sub/more.md"})]),
+                     Reply("I was not allowed to read it."))
+        return a
+
+    async def steps(app, pilot):
+        from textual.widgets import Input
+        prompt = app.query_one("#ask", Input)
+        prompt.value = "what does the paper in Downloads say?"
+        await pilot.press("enter")
+        await settle(app, pilot, lambda: isinstance(app.screen, Permission))
+        app.dialog = isinstance(app.screen, Permission) and "paper.md" in str(app.screen.path)
+        await pilot.press("enter")                                          # "Yes, this once"
+        await settle(app, pilot, lambda: not app.busy and app.last is not None)
+        app.first = app.last
+        app.last = None
+        prompt.value = "and the other file?"
+        await pilot.press("enter")
+        await settle(app, pilot, lambda: isinstance(app.screen, Permission))
+        await pilot.press("escape")                                         # no
+        await settle(app, pilot, lambda: not app.busy and app.last is not None)
+        app.focus_after = app.focused
+    app = tui_run(make, steps)
+    assert app.dialog and "N1" in app.first.sources and "Attention" in app.first.sources["N1"].text
+    assert app.last.sources == {} and isinstance(app.focus_after, Input)
+
+
+def test_the_command_line_asks_too(home, notes, user_home, monkeypatch):
+    from peresearch.cli import ask_in_terminal
+
+    replies = iter(["s", ""])
+    monkeypatch.setattr("builtins.input", lambda prompt: next(replies))
+    assert ask_in_terminal("read", user_home / "Downloads" / "paper.md") == "session"
+    assert ask_in_terminal("read", user_home / "Downloads" / "paper.md") == "no"      # Enter means no
+
+
+def test_the_interface_keeps_working_while_a_dialog_is_open(home, notes):
+    """The spinner ticks and notes arrive while another screen (the permission dialog) is on top: they must find
+    the conversation's widgets, not look for them on the dialog."""
+    from textual.screen import ModalScreen
+    from textual.widgets import Static
+
+    class Dialog(ModalScreen):
+        def compose(self):
+            yield Static("a dialog")
+
+    async def steps(app, pilot):
+        await pilot.pause()
+        app.start("Working")
+        app.push_screen(Dialog())
+        await pilot.pause(0.35)                                # a few spinner ticks under the dialog
+        app.note("a note that arrives meanwhile")
+        await pilot.pause(0.1)
+        app.pop_screen()
+        await pilot.pause(0.1)
+    app = tui_run(lambda e: agent(home, notes)[0], steps)
+    assert "a note that arrives meanwhile" in app.shown
+
+
+def test_a_late_spinner_tick_after_the_interface_closed_is_harmless(home, notes):
+    """The spinner's timer can fire once more while the app shuts down; its widgets are gone by then (this made
+    test_up_recalls_earlier_questions_and_new_forgets_them fail about once in ten runs)."""
+    async def steps(app, pilot):
+        await pilot.pause()
+    app = tui_run(lambda e: agent(home, notes)[0], steps)
+    app.busy = True
+    app.tick()                                                   # after unmounting: must not raise
+
+
+def test_pasted_lines_reach_the_model_whole(home, notes):
+    """Textual's input keeps only the first line of a paste; the prompt shows a multi-line paste as a marker, as
+    Claude Code does, and the model gets every line."""
+    from textual import events
+
+    from peresearch.tui import Prompt
+
+    def make(on_event):
+        a, llm = agent(home, notes, Reply("Seen."))
+        make.llm = llm
+        return a
+
+    async def steps(app, pilot):
+        await pilot.pause()
+        prompt = app.query_one("#ask", Prompt)
+        prompt.value = "why does this fail: "
+        prompt.cursor_position = len(prompt.value)
+        prompt.post_message(events.Paste("Traceback (most recent call last):\n  File \"x.py\", line 1\nKeyError: 'a'\n"))
+        await pilot.pause()
+        app.shown_value = prompt.value
+        prompt.post_message(events.Paste("one line"))
+        await pilot.pause()
+        app.after_single = prompt.value
+        await pilot.press("enter")
+        await settle(app, pilot, lambda: not app.busy and app.last is not None)
+    app = tui_run(make, steps)
+    assert app.shown_value == "why does this fail: [Pasted text #1 +3 lines]"
+    assert app.after_single.endswith("[Pasted text #1 +3 lines]one line")
+    sent = [m["content"] for m in make.llm.seen[0][0] if m["role"] == "user"][-1]
+    assert "KeyError: 'a'" in sent and "File \"x.py\", line 1" in sent and "[Pasted text" not in sent
+    assert "❯ why does this fail: [Pasted text #1 +3 lines]one line" in app.shown       # the log keeps the marker

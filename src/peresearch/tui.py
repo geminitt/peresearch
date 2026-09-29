@@ -9,6 +9,8 @@
   after a click on it.
 - Folders are managed here too: /add <folder> (Tab completes the path), /remove, /folders, /index. On start, the
   index is brought up to date with the declared folders (only new or changed files are read).
+- Before the agent reads anything outside the declared folders, a dialog asks: yes this once, yes for that folder
+  for the rest of the session, or no (Esc).
 Colors are the terminal's own, so its color scheme (light or dark) decides how everything looks: the default
 foreground and background and the six plain hues, never RGB, 256 colors, black, white or the bright colors (black
 or white is the background in some scheme, the bright ones are grays in Solarized). Muted text is dimmed; the
@@ -17,15 +19,19 @@ The agent runs in a worker thread. Everything that came from a file, a page or t
 control sequences before it is shown.
 """
 
+import threading
 import time
+from pathlib import Path
 
 from textual import events, work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from rich.style import Style as RichStyle
 from pygments.token import Token
-from textual.containers import VerticalScroll
+from rich.markup import escape
+from textual.containers import Vertical, VerticalScroll
 from textual.highlight import ANSIDarkHighlightTheme, highlight
+from textual.screen import ModalScreen
 from textual.strip import Strip
 from textual.theme import Theme
 from textual.widgets import Input, Markdown, OptionList, Static
@@ -99,21 +105,53 @@ def render(answer) -> str:
 class Prompt(Input):
     """The input line; ↑/↓, Tab and Esc go to the app (history, command menu, interrupt).
 
-    Backspace is handled here, in order with the typed characters. A Vietnamese input method types the raw
-    letters, then sends backspaces and the accented text in one burst ("chao", ⌫, ⌫, "ào"); Textual inserts
-    characters at once but runs the backspace binding later, so the burst came out as "chao" or "chaà"."""
+    Every key bound to an action (Backspace, arrows, Home/End, Ctrl+U, Enter…) runs here, in order with the typed
+    characters. Textual inserts characters at once but runs a key's action later, so a burst came out reordered: a
+    Vietnamese input method types the raw letters, then backspaces and the accented text in one burst ("chao", ⌫,
+    ⌫, "ào"), which came out as "chaà"; "abc ⌃U xyz" came out empty, and "one ⏎ two ⏎" as "onetwo"."""
 
     BINDINGS = [Binding("up", "app.up", show=False), Binding("down", "app.down", show=False),
                 Binding("tab", "app.complete", show=False), Binding("escape", "app.escape", show=False),
                 Binding("pageup", "app.page(-1)", show=False), Binding("pagedown", "app.page(1)", show=False)]
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.pasted: dict[str, str] = {}              # marker shown in the line -> the text it stands for
+
+    def _on_paste(self, event: events.Paste) -> None:
+        """A paste of several lines shows as a marker, as in Claude Code (Textual kept only its first line); the
+        marker is replaced by the whole text when the question is sent (`expand`)."""
+        text = event.text.replace("\r\n", "\n").replace("\r", "\n")
+        lines = text.rstrip("\n").count("\n") + 1
+        if lines == 1:
+            return                                     # Input's own handler runs next (Textual calls each class's)
+        event.stop()
+        event.prevent_default()
+        marker = f"[Pasted text #{len(self.pasted) + 1} +{lines} lines]"
+        self.pasted[marker] = text
+        if self.selection.is_empty:
+            self.insert_text_at_cursor(marker)
+        else:
+            self.replace(marker, *self.selection)
+
+    def expand(self, text: str) -> str:
+        for marker, full in self.pasted.items():
+            text = text.replace(marker, "\n" + full.rstrip("\n") + "\n")
+        return text.strip()
+
     async def _on_key(self, event: events.Key) -> None:
-        if event.key == "backspace":
+        bound = self._bindings.key_to_bindings.get(event.key)
+        if bound:
             event.stop()
             event.prevent_default()
-            self.action_delete_left()
+            await self.run_action(bound[0].action)
             return
         await super()._on_key(event)
+
+    async def action_submit(self) -> None:
+        """Sends the text and empties the line at once, before any key typed after Enter is handled."""
+        await super().action_submit()
+        self.value = ""
 
 
 class CodeColors(ANSIDarkHighlightTheme):
@@ -157,6 +195,45 @@ class Menu(OptionList):
         return strip
 
 
+class Permission(ModalScreen[str]):
+    """May the agent read a path outside the declared folders? Dismissed with "once", "session" or "no"."""
+
+    CSS = """
+    Permission { align: center bottom; }
+    #permission { width: 100%; height: auto; margin: 0 0 3 0; padding: 0 1; border: round ansi_yellow;
+                  background: ansi_default; }
+    #choices { height: auto; border: none; padding: 0; background: ansi_default; }
+    """
+    BINDINGS = [Binding("escape", "deny", show=False)]
+    VERBS = {"read": "read", "tree": "list", "glob": "list the files in", "grep": "search in"}
+
+    def __init__(self, tool: str, path: Path):
+        super().__init__()
+        self.tool, self.path = tool, path
+
+    def compose(self) -> ComposeResult:
+        folder = self.path if self.path.is_dir() else self.path.parent
+        with Vertical(id="permission"):
+            yield Static(f"[b]peresearch wants to {self.VERBS.get(self.tool, self.tool)}[/b] something outside your "
+                         f"declared folders:\n  {escape(guard.sanitize(str(self.path)))}")
+            yield Menu(Option("Yes, this once", id="once"),
+                       Option(f"Yes, and everything in {escape(guard.sanitize(str(folder)))} for this session",
+                              id="session"),
+                       Option("No (esc)", id="no"), id="choices")
+
+    def on_mount(self) -> None:
+        menu = self.query_one("#choices", Menu)
+        menu.highlighted = 0
+        menu.focus()
+
+    def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
+        event.stop()
+        self.dismiss(event.option.id)
+
+    def action_deny(self) -> None:
+        self.dismiss("no")
+
+
 class Chat(App):
     CSS = """
     /* No scrollbar anywhere; the mouse wheel, PageUp/PageDown and the arrow keys still scroll. */
@@ -193,7 +270,8 @@ class Chat(App):
     def compose(self) -> ComposeResult:
         yield Static(f"✻ {self.heading()}", id="heading")
         yield VerticalScroll(id="log", can_focus=False)
-        yield Static("", id="status")
+        self.status = Static("", id="status")       # kept: the spinner may tick once more after unmounting
+        yield self.status
         yield Menu(id="commands")
         yield Prompt(placeholder="❯ Ask about your files or the web", id="ask")
         yield Static("/ commands · ↑↓ earlier questions · pgup/pgdn scroll · esc interrupt · ctrl+c quit", id="hints")
@@ -220,7 +298,7 @@ class Chat(App):
         self.add(Static(guard.sanitize(text), classes="note"))
 
     def tick(self) -> None:
-        status = self.query_one("#status", Static)
+        status = self.status
         if not self.busy:
             status.update("")
             return
@@ -248,20 +326,19 @@ class Chat(App):
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
         menu = self.query_one("#commands", OptionList)
-        if menu.display and menu.highlighted is not None and event.value.strip().startswith("/"):
+        q = event.value.strip()                            # the prompt has already emptied itself
+        if menu.display and menu.highlighted is not None and q.startswith("/"):
             chosen = menu.get_option_at_index(menu.highlighted).id
             if chosen.startswith("path:"):                  # a path picked from the Tab suggestions
                 self.set_prompt(event.value.split(" ")[0] + " " + chosen[5:])
                 self.hide_menu()
                 return
-            if event.value.strip().split(" ")[0] != chosen:
-                event.input.value = chosen
+            if q.split(" ")[0] != chosen:
+                q = chosen
                 if chosen in ("/add", "/remove"):          # these need a folder: wait for it
                     self.set_prompt(chosen + " ")
                     self.hide_menu()
                     return
-        q = event.input.value.strip()
-        event.input.value = ""
         self.hide_menu()
         if not q:
             return
@@ -274,8 +351,8 @@ class Chat(App):
         self.asked.append(q)
         self.recall = None
         self.start("Starting")
-        self.add(Static(f"❯ {guard.sanitize(q)}", classes="question"))
-        self.run_agent(q)
+        self.add(Static(f"❯ {guard.sanitize(q)}", classes="question", markup=False))
+        self.run_agent(self.query_one("#ask", Prompt).expand(q))
 
     @work(thread=True, exclusive=True)
     def run_agent(self, question: str) -> None:
@@ -285,6 +362,8 @@ class Chat(App):
             if self.agent is None:
                 self.call_from_thread(self.on_agent_event, "wait", "Loading the local models")
                 self.agent = self.make_agent(event)
+                if hasattr(self.agent, "toolbox"):
+                    self.agent.toolbox.ask = self.permission
                 if self.pending_new:
                     self.agent.new_session()
             answer = self.agent.ask(question)
@@ -294,6 +373,19 @@ class Chat(App):
             self.call_from_thread(self.add, Page(f"> **Error:** {guard.sanitize(type(e).__name__ + ': ' + str(e))[:500]}"))
         finally:
             self.call_from_thread(self.done)
+
+    def permission(self, tool: str, path: Path) -> str:
+        """Called from the agent's thread: shows the dialog and waits for the answer."""
+        answer, answered = {}, threading.Event()
+
+        def show():
+            self.doing = "Waiting for your permission"
+            self.push_screen(Permission(tool, path), lambda choice: (answer.update(choice=choice), answered.set()))
+        self.call_from_thread(show)
+        while not answered.wait(0.1):
+            if not self.is_running:                     # quit while the dialog was open
+                return "no"
+        return answer.get("choice") or "no"
 
     def done(self) -> None:
         self.busy = False

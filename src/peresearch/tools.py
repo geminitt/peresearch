@@ -1,7 +1,9 @@
 """What the agent can do: look through and read the declared folders, search the web and read pages it found.
 
-Every tool is read-only. File tools see only the declared folders (`guard.allowed`: symlinks resolved, protected
-names refused) and redact anything credential-like before the model sees it. `fetch` only opens URLs that a
+Every tool is read-only. File tools read the declared folders freely (`guard.allowed`: symlinks resolved,
+protected names refused). Elsewhere in the home folder they read only what the user allows when asked (`ask`:
+once, or a folder for the session); hidden folders, protected names, peresearch's own data and anything outside
+the home folder are refused without asking. Anything credential-like is redacted before the model sees it. `fetch` only opens URLs that a
 web search returned in this session, so the model cannot send data out by encoding it into a URL of its own.
 `web_search` is refused until the model has recorded with `gaps` what the user's files already cover and what is
 missing, so the web is searched for what the user does not have.
@@ -63,14 +65,16 @@ def _match(rel: str, pattern: str) -> bool:
             or ("/" not in pattern and fnmatch.fnmatch(rel.rsplit("/", 1)[-1], pattern)))
 
 
-def _files(roots: list[Path], pattern: str = "**/*"):
+def _files(roots: list[Path], pattern: str = "**/*", hidden: bool = True):
+    """Files under `roots` matching `pattern`; `hidden=False` also skips hidden files and folders."""
     for root in roots:
         for dirpath, dirnames, filenames in os.walk(root):
             dirnames[:] = sorted(d for d in dirnames if d not in guard.SKIP_DIRS and not guard.denied(Path(dirpath) / d)
-                                 and not os.path.islink(Path(dirpath) / d))
+                                 and not os.path.islink(Path(dirpath) / d) and (hidden or not d.startswith(".")))
             for f in sorted(filenames):
                 p = Path(dirpath) / f
-                if _match(p.relative_to(root).as_posix(), pattern) and guard.allowed(p, roots):
+                if ((hidden or not f.startswith(".")) and _match(p.relative_to(root).as_posix(), pattern)
+                        and guard.allowed(p, roots)):
                     yield p
 
 
@@ -81,27 +85,74 @@ def outermost(roots: list[Path]) -> list[Path]:
             and rr not in real[:real.index(rr)]]
 
 
-def _resolve(path: str, roots: list[Path]) -> Path:
-    p = Path(path).expanduser()
-    if not p.is_absolute():
-        hits = [r / p for r in roots if (r / p).exists()]
-        if not hits:
-            raise guard.Refused(f"{path}: not found in the declared folders")
-        p = hits[0]
-    if not guard.allowed(p, roots):
-        raise guard.Refused(f"{path}: outside the declared folders or protected")
-    return p
-
-
 class Toolbox:
     """The tools, their JSON schemas for the model, and the sources they produce."""
 
-    def __init__(self, searcher=None, web=None, roots: list[Path] | None = None):
-        self.searcher, self.web = searcher, web
+    def __init__(self, searcher=None, web=None, roots: list[Path] | None = None, ask=None):
+        """`ask(tool, path) -> "once" | "session" | "no"` asks the user before reading outside the declared
+        folders; without it, nothing outside them is read."""
+        self.searcher, self.web, self.ask = searcher, web, ask
+        self.granted: list[Path] = []    # folders the user allowed for this session
         self.roots = outermost([Path(r) for r in (guard.roots() if roots is None else roots)])
         self.sources = Sources()
         self.web_calls = 0
         self.recorded_gaps = None        # set by gaps(); the agent clears it for every question
+
+    # --- where the tools may read ---
+
+    def _readable(self) -> list[Path]:
+        return self.roots + self.granted
+
+    def _outside(self, tool: str, p: Path) -> Path:
+        """`p` lies outside the declared folders: refused outright, or read if the user allows it."""
+        real, user = Path(os.path.realpath(p)), Path(os.path.realpath(Path.home()))
+        own = Path(os.path.realpath(guard.home()))
+        if not (real == user or user in real.parents):
+            raise guard.Refused(f"{p}: outside your home folder")
+        if (any(part.startswith(".") for part in real.relative_to(user).parts) or guard.denied(p) or guard.denied(real)
+                or real == own or own in real.parents):
+            raise guard.Refused(f"{p}: hidden or protected")
+        if not real.exists():
+            raise guard.Refused(f"{p}: not found")
+        if self.ask is None:
+            raise guard.Refused(f"{p}: outside the declared folders; the user can allow it when asked in "
+                                "peresearch chat, or declare it with /add")
+        answer = self.ask(tool, real)
+        if answer == "session":
+            self.granted.append(real if real.is_dir() else real.parent)
+        elif answer != "once":
+            raise guard.Refused(f"the user did not allow reading {p}; do not ask for it again")
+        return real
+
+    def _path(self, path: str, tool: str) -> tuple[Path, list[Path]]:
+        """A path the model named, and the folders the call may read below it."""
+        p = Path(path).expanduser()
+        if not p.is_absolute():
+            hits = [r / p for r in self._readable() if (r / p).exists()]
+            if not hits:
+                raise guard.Refused(f"{path}: not found in the declared folders")
+            p = hits[0]
+        if guard.allowed(p, self._readable()):
+            return p, self._readable()
+        real = self._outside(tool, p)
+        return real, self._readable() + [real if real.is_dir() else real.parent]
+
+    def _scope(self, pattern: str, tool: str) -> tuple[list[Path], str, bool]:
+        """Where a glob pattern looks: the readable folders for a relative pattern, or the folder a path names
+        (~/x/*.py, /abs/dir); the last value says whether hidden entries may be listed."""
+        pattern = pattern.strip()
+        if not pattern.startswith(("/", "~")):
+            return self._readable(), pattern, True
+        full = Path(pattern).expanduser()
+        if full.is_dir():
+            full = full / "*"                               # a folder: the files directly in it
+        base = next((b for b in full.parents if b.is_dir()), None)
+        if base is None:
+            return [], "", True
+        rel = full.relative_to(base).as_posix()
+        if any(base == r or r in base.parents for r in self._readable()):
+            return [base], rel, True
+        return [self._outside(tool, base)], rel, False
 
     # --- the tools ---
 
@@ -109,7 +160,11 @@ class Toolbox:
         """The folders and files under the declared folders (or one folder inside them), `depth` levels down.
         Hidden entries, tooling folders and protected files are left out; folders never read (data, runs…) are
         named but not opened. Each folder that is opened says how many folders and files it holds."""
-        starts = [_resolve(path, self.roots)] if path else self.roots
+        if path:
+            start, scope = self._path(path, "tree")
+            starts = [start]
+        else:
+            starts, scope = self._readable(), self._readable()
         if not starts:
             return "no folders are declared"
         depth = max(1, min(int(depth), TREE_MAX_DEPTH))
@@ -117,14 +172,14 @@ class Toolbox:
         for start in starts:
             if not start.is_dir():
                 return f"{start}: not a folder"
-            entries = self._visible(start)
+            entries = self._visible(start, scope)
             lines.append(f"{start}/ {self._count(entries)}")
-            self._tree(entries, 1, depth, lines)
+            self._tree(entries, 1, depth, lines, scope)
         text = "\n".join(lines)
         s = self.sources.add("file", f"{', '.join(map(str, starts))} (listing)", "folder listing", text)
         return f"[{s.id}] listing of {', '.join(map(str, starts))}\n{_clip(text)}"
 
-    def _visible(self, folder: Path) -> list:
+    def _visible(self, folder: Path, scope: list[Path]) -> list:
         """The entries of a folder that tree shows: folders first, then the files the guard allows."""
         try:
             entries = sorted(os.scandir(folder), key=lambda e: (not e.is_dir(follow_symlinks=False), e.name.lower()))
@@ -132,7 +187,7 @@ class Toolbox:
             return []
         return [e for e in entries
                 if not (e.name.startswith(".") or e.name in TREE_HIDDEN or e.is_symlink() or guard.denied(Path(e.path)))
-                and (e.is_dir(follow_symlinks=False) or guard.allowed(Path(e.path), self.roots))]
+                and (e.is_dir(follow_symlinks=False) or guard.allowed(Path(e.path), scope))]
 
     @staticmethod
     def _count(entries: list) -> str:
@@ -140,7 +195,7 @@ class Toolbox:
         files = len(entries) - folders
         return f"({folders} folder{'' if folders == 1 else 's'}, {files} file{'' if files == 1 else 's'})"
 
-    def _tree(self, entries: list, level: int, depth: int, lines: list[str]) -> None:
+    def _tree(self, entries: list, level: int, depth: int, lines: list[str], scope: list[Path]) -> None:
         indent = "  " * level
         for e in entries[:TREE_PER_FOLDER]:
             if not e.is_dir(follow_symlinks=False):
@@ -150,9 +205,9 @@ class Toolbox:
             elif level >= depth:
                 lines.append(f"{indent}{e.name}/ …")
             else:
-                inner = self._visible(Path(e.path))
+                inner = self._visible(Path(e.path), scope)
                 lines.append(f"{indent}{e.name}/ {self._count(inner)}")
-                self._tree(inner, level + 1, depth, lines)
+                self._tree(inner, level + 1, depth, lines, scope)
         if len(entries) > TREE_PER_FOLDER:
             lines.append(f"{indent}… {len(entries) - TREE_PER_FOLDER} more")
 
@@ -183,7 +238,8 @@ class Toolbox:
         except re.error as e:
             return f"invalid regular expression: {e}"
         out = []
-        for p in _files(self.roots, glob):
+        roots, glob, hidden = self._scope(glob, "grep")
+        for p in _files(roots, glob, hidden):
             doc = parse.read(p)
             if doc.status != "ok":
                 continue
@@ -200,24 +256,15 @@ class Toolbox:
 
     def glob(self, pattern: str, max_results: int = 100) -> str:
         found = []
-        roots, pattern = self.roots, pattern.strip()
-        if pattern.startswith(("/", "~")):                  # a path as the user wrote it: match inside that root
-            full = Path(pattern).expanduser()
-            if full.is_dir():
-                full = full / "*"                           # a folder: the files directly in it
-            base = next((b for b in full.parents if b.is_dir() and any(b == r or r in b.parents for r in self.roots)),
-                        None)
-            if base is None:
-                return "no file matches"
-            roots, pattern = [base], full.relative_to(base).as_posix()
-        for p in _files(roots, pattern):
+        roots, pattern, hidden = self._scope(pattern, "glob")
+        for p in _files(roots, pattern, hidden):
             found.append(str(p))
             if len(found) >= max_results:
                 break
         return "\n".join(found) or "no file matches"
 
     def read(self, path: str, start: int = 1, end: int | None = None) -> str:
-        p = _resolve(path, self.roots)
+        p, _ = self._path(path, "read")
         doc = parse.read(p)
         if doc.status != "ok":
             return f"{p}: cannot be read ({doc.status}{': ' + doc.note if doc.note else ''})"
@@ -260,7 +307,8 @@ class Toolbox:
 
     SPECS = {
         "tree": ("Show the folders and files the user has: every declared folder, or one folder inside them, a few "
-                 "levels deep. Use it to see what a project or folder contains.",
+                 "levels deep. Use it to see what a project or folder contains. A folder outside the declared "
+                 "ones is shown only if the user allows it when asked.",
                  {"path": ("string", "a folder, e.g. ~/projects/x; default: every declared folder"),
                   "depth": ("integer", "levels to show, default 2, at most 4")}, []),
         "search_notes": ("Search the user's own files (notes, projects, course material) by meaning and keywords. "
@@ -274,7 +322,8 @@ class Toolbox:
         "glob": ("List the user's files whose path matches a pattern, e.g. **/*.ipynb, notes/** or "
                  "~/projects/x/*.py. To see folders, use tree.",
                  {"pattern": ("string", "glob pattern")}, ["pattern"]),
-        "read": ("Read part of one of the user's files: lines for text files, pages for PDFs, cells for notebooks.",
+        "read": ("Read part of one of the user's files: lines for text files, pages for PDFs, cells for notebooks. "
+                 "A file outside the declared folders is read only if the user allows it when asked.",
                  {"path": ("string", "path from a previous result"), "start": ("integer", "first line/page/cell"),
                   "end": ("integer", "last line/page/cell")}, ["path"]),
         "gaps": ("Record, before searching the web, what the user's own files already cover and what is missing "
