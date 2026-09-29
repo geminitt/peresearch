@@ -213,3 +213,10 @@ def test_history_written_before_conversation_ids_and_a_torn_line_are_read(home, 
     a.ask("continue")
     sent = [m["content"] for m in llm.seen[0][0] if m["role"] == "user"]
     assert sent[:2] == ["old one", "old two"]
+
+
+def test_the_answer_keeps_the_models_reasoning(home, notes):
+    a, _ = agent(home, notes, Reply("", [ToolCall("c1", "grep", {"pattern": "BPE"})], reasoning="look in the notes"),
+                 Reply("BPE merges pairs [N1].", reasoning="the notes say it"))
+    ans = a.ask("How does BPE work?")
+    assert ans.reasoning == "look in the notes\n\nthe notes say it"

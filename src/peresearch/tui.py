@@ -109,9 +109,20 @@ def explain(error: Exception) -> str:
     return f"> **Error:** {why} `/retry` asks again. <sub>({name}{': ' + text if name not in WHY else ''})</sub>"
 
 
-def render(answer) -> str:
-    """The answer, then its sources, then what the citation check found (Markdown)."""
-    parts = [guard.sanitize(answer.text or "_(no answer)_"), ""]
+REASONING_SHOWN = 8000     # characters of reasoning drawn per answer: tens of thousands stall the interface
+
+
+def render(answer, reasoning: bool = False) -> str:
+    """The answer, then its sources, then what the citation check found (Markdown); with `reasoning`, what the
+    model thought first, as a quote above it."""
+    parts = []
+    if reasoning and getattr(answer, "reasoning", ""):
+        thought = guard.sanitize(answer.reasoning)
+        cut = len(thought) - REASONING_SHOWN
+        if cut > 0:                                    # its end, just before the answer, matters most
+            thought = f"_({cut:,} earlier characters not shown)_\n\n…" + thought[cut:]
+        parts += ["> **Reasoning**\n>\n> " + thought.replace("\n", "\n> "), ""]
+    parts += [guard.sanitize(answer.text or "_(no answer)_"), ""]
     if answer.sources:
         parts.append("**Sources**")
         parts += [f"- `{s.id}` {guard.sanitize(s.where)}" + (f" — {guard.sanitize(s.title)}" if s.title else "")
@@ -154,7 +165,7 @@ class Prompt(TextArea):
 
     OWN = {"enter": "submit", "ctrl+j": "newline", "ctrl+enter": "newline", "up": "up", "down": "down",
            "tab": "app.complete", "escape": "app.escape", "pageup": "app.page(-1)", "pagedown": "app.page(1)",
-           "ctrl+c": "app.copy"}
+           "ctrl+c": "app.copy", "ctrl+r": "app.toggle_reasoning"}
     BINDINGS = [Binding(key, action, show=False) for key, action in OWN.items()]
 
     def __init__(self, placeholder: str = "", id: str | None = None):
@@ -338,6 +349,7 @@ class Chat(App):
         self.agent, self.busy, self.last, self.pending_new = None, False, None, False
         self.pending_resume = None                    # a conversation picked before the agent existed
         self.last_question = None                     # (as shown, as sent) for /retry
+        self.show_reasoning, self.pages = False, []   # Ctrl+R; this session's answers, to redraw them
         self.menu_kind = ""                           # what the menu lists: "commands", "paths" or "conversations"
         self.asked, self.recall = [], None
         self.started, self.doing, self.tokens, self.frame = 0.0, "", 0, 0
@@ -454,11 +466,25 @@ class Chat(App):
                     self.agent.new_session()
             answer = self.agent.ask(question)
             self.last = answer
-            self.call_from_thread(self.add, Page(render(answer)))
+            self.call_from_thread(self.show_answer, answer)
         except Exception as e:
             self.call_from_thread(self.add, Page(explain(e)))
         finally:
             self.call_from_thread(self.done)
+
+    def show_answer(self, answer) -> None:
+        page = Page(render(answer, self.show_reasoning))
+        self.pages.append((page, answer))
+        self.add(page)
+
+    def action_toggle_reasoning(self) -> None:
+        """Ctrl+R: show or hide what the model thought before answering, on every answer of this session."""
+        self.show_reasoning = not self.show_reasoning
+        for page, answer in self.pages:
+            if page.is_attached:
+                page.update(render(answer, self.show_reasoning))
+        self.say("the model's reasoning is shown (ctrl+r hides it)" if self.show_reasoning
+                 else "the model's reasoning is hidden (ctrl+r shows it)")
 
     def permission(self, tool: str, path: Path) -> str:
         """Called from the agent's thread: shows the dialog and waits for the answer."""
@@ -505,7 +531,8 @@ class Chat(App):
             self.exit()
         elif name == "/help":
             self.add(Page("**Keys** — Enter ask · Ctrl+Enter new line · ↑↓ earlier questions · `/` commands (↑↓ pick, Tab/Enter take, "
-                              "Esc close) · PgUp/PgDn scroll · Esc interrupt · Ctrl+C copy the selection · Ctrl+Q quit\n\n**Commands**\n"
+                              "Esc close) · PgUp/PgDn scroll · Esc interrupt · Ctrl+R show or hide the model's reasoning · "
+                              "Ctrl+C copy the selection · Ctrl+Q quit\n\n**Commands**\n"
                               + "\n".join(f"- `{c}` {d}" for c, d in COMMANDS.items())))
         elif name == "/new":
             if self.busy:
@@ -515,6 +542,7 @@ class Chat(App):
                 self.agent.new_session()
             self.pending_new, self.pending_resume = self.agent is None, None
             self.query_one("#log", VerticalScroll).remove_children()
+            self.pages = []
             self.note("New conversation: earlier questions are no longer sent as context.")
         elif name == "/retry":
             if self.busy:
@@ -609,6 +637,7 @@ class Chat(App):
             self.pending_resume, self.pending_new = conversation, False
         log = self.query_one("#log", VerticalScroll)
         log.remove_children()
+        self.pages = []
         when = time.strftime("%Y-%m-%d %H:%M", time.localtime(turns[0].get("time", 0))) if turns else "?"
         self.note(f"Resumed the conversation of {when} ({len(turns)} question{'' if len(turns) == 1 else 's'}); "
                   "the next question continues it.")

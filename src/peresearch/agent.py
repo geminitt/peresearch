@@ -95,6 +95,7 @@ class Answer:
     completion_tokens: int = 0
     stopped: str = ""          # why it ended early: a limit ("steps", "time"), "cancelled", or "length" (cut)
     calls: list = field(default_factory=list)   # every tool call made: (name, args), in order
+    reasoning: str = ""        # what the model thought before each reply, in order (shown with Ctrl+R)
 
 
 def _norm(s: str) -> str:
@@ -253,7 +254,7 @@ class Agent:
                  if past and MARK_CURRENT else question)
         messages = [{"role": "system", "content": system}, *past, {"role": "user", "content": asked}]
         prompt = completion = steps = 0
-        stopped, text, calls = "", "", []
+        stopped, text, calls, thoughts = "", "", [], []
         while True:
             if self.cancelled:
                 stopped, text = "cancelled", "_(interrupted)_"
@@ -270,6 +271,7 @@ class Agent:
                 break
             steps += 1
             prompt, completion = prompt + reply.prompt_tokens, completion + reply.completion_tokens
+            thoughts += [reply.reasoning.strip()] if reply.reasoning.strip() else []
             self.on_event("tokens", str(prompt + completion))
             if not reply.calls or over:
                 text = reply.text
@@ -283,6 +285,7 @@ class Agent:
                         break
                     steps += 1
                     prompt, completion = prompt + again.prompt_tokens, completion + again.completion_tokens
+                    thoughts += [again.reasoning.strip()] if again.reasoning.strip() else []
                     text, reply = again.text, again
                 if reply.finish == "length":    # cut at max_tokens: say so rather than pass it off as complete
                     stopped = stopped or "length"
@@ -308,7 +311,8 @@ class Agent:
                     self.on_event("result", _summary(result))
                 messages.append({"role": "tool", "tool_call_id": c.id, "content": _wrap(c.name, result)})
         sources = dict(tb.sources.items)
-        answer = Answer(text, sources, check(text, sources), steps, prompt, completion, stopped, calls)
+        answer = Answer(text, sources, check(text, sources), steps, prompt, completion, stopped, calls,
+                        "\n\n".join(thoughts))
         if self.record:
             self._remember(question, answer)
         self.on_event("answer", "")

@@ -541,3 +541,45 @@ def test_no_model_endpoint_says_how_to_set_one(home, notes):
         await settle(app, pilot, lambda: not app.busy and "setup" in texts(app))
     app = tui_run(make, steps)
     assert "peresearch setup" in app.shown
+
+
+def test_ctrl_r_shows_and_hides_the_models_reasoning(home, notes):
+    from peresearch.tui import Prompt
+
+    def make(on_event):
+        return agent(home, notes, Reply("BPE merges pairs [N1].", reasoning="first I recall the notes"),
+                     Reply("It has two stages [N1].", reasoning="then SuperBPE"))[0]
+
+    async def steps(app, pilot):
+        prompt = app.query_one("#ask", Prompt)
+        prompt.value = "How does BPE work?"
+        await pilot.press("enter")
+        await settle(app, pilot, lambda: not app.busy and app.last is not None)
+        app.hidden = texts(app)
+        await pilot.press("ctrl+r")
+        await settle(app, pilot, lambda: "first I recall" in texts(app))
+        app.shown_once = texts(app)
+        app.last = None
+        prompt.value = "And SuperBPE?"
+        await pilot.press("enter")
+        await settle(app, pilot, lambda: not app.busy and app.last is not None)
+        await settle(app, pilot, lambda: "then SuperBPE" in texts(app))
+        app.shown_both = texts(app)
+        await pilot.press("ctrl+r")
+        await settle(app, pilot, lambda: "first I recall" not in texts(app))
+    app = tui_run(make, steps)
+    assert "first I recall" not in app.hidden and "BPE merges pairs" in app.hidden
+    assert "first I recall the notes" in app.shown_once and "Reasoning" in app.shown_once
+    assert "then SuperBPE" in app.shown_both                         # new answers follow the setting
+    assert "first I recall" not in app.shown and "then SuperBPE" not in app.shown
+
+
+def test_a_long_reasoning_is_shown_from_its_end():
+    """Twelve model calls can think tens of thousands of characters; drawing all of it stalls the interface."""
+    from peresearch.agent import Answer, Check
+    from peresearch.tui import REASONING_SHOWN, render
+
+    long = "early thought. " * 2000 + "the last step before answering"
+    shown = render(Answer("ok", {}, Check(), 1, reasoning=long), reasoning=True)
+    assert "the last step before answering" in shown and len(shown) < REASONING_SHOWN + 500
+    assert f"{len(long) - REASONING_SHOWN:,} earlier characters not shown" in shown
