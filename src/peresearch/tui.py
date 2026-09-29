@@ -88,6 +88,8 @@ def render(answer) -> str:
                      + "; ".join(f"“{guard.sanitize(q)[:80]}”" for q in c.unsupported_quotes))
     if c.uncited:
         parts.append("\n> **Check:** the answer cites no source")
+    if not answer.sources:
+        parts.append("\n_Answered without any source: from the model's own knowledge._")
     if answer.stopped:
         parts.append(f"\n> stopped: {answer.stopped}")
     parts.append(f"\n<sub>{answer.steps} model calls · {answer.prompt_tokens + answer.completion_tokens:,} tokens</sub>")

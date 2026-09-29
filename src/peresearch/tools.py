@@ -101,7 +101,7 @@ class Toolbox:
     def tree(self, path: str | None = None, depth: int = 2) -> str:
         """The folders and files under the declared folders (or one folder inside them), `depth` levels down.
         Hidden entries, tooling folders and protected files are left out; folders never read (data, runs…) are
-        named but not opened."""
+        named but not opened. Each folder that is opened says how many folders and files it holds."""
         starts = [_resolve(path, self.roots)] if path else self.roots
         if not starts:
             return "no folders are declared"
@@ -110,33 +110,44 @@ class Toolbox:
         for start in starts:
             if not start.is_dir():
                 return f"{start}: not a folder"
-            lines.append(f"{start}/")
-            self._tree(start, 1, depth, lines)
+            entries = self._visible(start)
+            lines.append(f"{start}/ {self._count(entries)}")
+            self._tree(entries, 1, depth, lines)
         text = "\n".join(lines)
         s = self.sources.add("file", f"{', '.join(map(str, starts))} (listing)", "folder listing", text)
         return f"[{s.id}] listing of {', '.join(map(str, starts))}\n{_clip(text)}"
 
-    def _tree(self, folder: Path, level: int, depth: int, lines: list[str]) -> None:
+    def _visible(self, folder: Path) -> list:
+        """The entries of a folder that tree shows: folders first, then the files the guard allows."""
         try:
             entries = sorted(os.scandir(folder), key=lambda e: (not e.is_dir(follow_symlinks=False), e.name.lower()))
         except OSError:
-            return
-        shown = [e for e in entries if not (e.name.startswith(".") or e.name in TREE_HIDDEN or e.is_symlink()
-                                            or guard.denied(Path(e.path)))]
+            return []
+        return [e for e in entries
+                if not (e.name.startswith(".") or e.name in TREE_HIDDEN or e.is_symlink() or guard.denied(Path(e.path)))
+                and (e.is_dir(follow_symlinks=False) or guard.allowed(Path(e.path), self.roots))]
+
+    @staticmethod
+    def _count(entries: list) -> str:
+        folders = sum(e.is_dir(follow_symlinks=False) for e in entries)
+        files = len(entries) - folders
+        return f"({folders} folder{'' if folders == 1 else 's'}, {files} file{'' if files == 1 else 's'})"
+
+    def _tree(self, entries: list, level: int, depth: int, lines: list[str]) -> None:
         indent = "  " * level
-        for e in shown[:TREE_PER_FOLDER]:
-            if e.is_dir(follow_symlinks=False):
-                if e.name in guard.SKIP_DIRS:
-                    lines.append(f"{indent}{e.name}/ (not read)")
-                elif level >= depth:
-                    lines.append(f"{indent}{e.name}/ …")
-                else:
-                    lines.append(f"{indent}{e.name}/")
-                    self._tree(Path(e.path), level + 1, depth, lines)
-            elif guard.allowed(Path(e.path), self.roots):
+        for e in entries[:TREE_PER_FOLDER]:
+            if not e.is_dir(follow_symlinks=False):
                 lines.append(f"{indent}{e.name}")
-        if len(shown) > TREE_PER_FOLDER:
-            lines.append(f"{indent}… {len(shown) - TREE_PER_FOLDER} more")
+            elif e.name in guard.SKIP_DIRS:
+                lines.append(f"{indent}{e.name}/ (not read)")
+            elif level >= depth:
+                lines.append(f"{indent}{e.name}/ …")
+            else:
+                inner = self._visible(Path(e.path))
+                lines.append(f"{indent}{e.name}/ {self._count(inner)}")
+                self._tree(inner, level + 1, depth, lines)
+        if len(entries) > TREE_PER_FOLDER:
+            lines.append(f"{indent}… {len(entries) - TREE_PER_FOLDER} more")
 
     def gaps(self, have: list[str] | str = (), missing: list[str] | str = ()) -> str:
         """What the user's files already cover and what is missing or not enough: the web is searched for the

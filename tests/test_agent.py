@@ -124,6 +124,9 @@ def test_tree_shows_the_declared_folders_and_nothing_outside_or_protected(home, 
     assert ".env" not in everything and ".git" not in everything and "runs/ (not read)" in everything
     assert "main.py" not in everything                                  # deeper than the default depth of 2
     assert "main.py" in tb.call("tree", {"path": str(notes / "project"), "depth": 3})
+    # every folder's line counts what it shows, so a model reads the number instead of counting
+    assert f"{notes}/ (1 folder, 3 files)" in everything                # .env is protected, not counted
+    assert f"{notes / 'project'}/ (2 folders, 0 files)" in tb.call("tree", {"path": str(notes / "project")})
     assert tb.call("tree", {"path": str(tmp_path / "elsewhere")}).startswith("refused")
     assert tb.call("tree", {"path": str(notes / "bpe.md")}).endswith("not a folder")
 
@@ -675,3 +678,14 @@ def test_command_descriptions_line_up_in_one_column(home, notes):
         app.starts = {c: row.index(COMMANDS[c]) for row in rows for c in COMMANDS if f"{c} " in row and COMMANDS[c] in row}
     app = tui_run(lambda e: agent(home, notes)[0], steps, size=(100, 40))
     assert len(app.starts) >= 4 and len(set(app.starts.values())) == 1, app.starts
+
+
+def test_an_answer_that_used_no_source_says_so():
+    from peresearch.agent import Answer, Check
+    from peresearch.tui import render
+
+    bare = render(Answer("SuperBPE+ appeared in 2026.", {}, Check(), 1))
+    assert "Answered without any source" in bare                        # the model's memory only: flagged
+    cited = render(Answer("BPE merges pairs [N1].", {"N1": Source("N1", "file", "a.md:L1", "", "BPE merges pairs")},
+                          Check(), 2))
+    assert "without any source" not in cited
