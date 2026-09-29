@@ -575,3 +575,47 @@ def test_the_interface_uses_only_colors_every_terminal_scheme_can_show(home, not
     assert app.selection.reverse
     spans = [str(s.style) for s in app.fence_theme.spans]
     assert spans and not [s for s in spans if "bright" in s or "black" in s or "white" in s], spans
+
+
+def test_no_scrollbar_anywhere_yet_everything_still_scrolls(home, notes):
+    """The conversation and the command menu both overflow here; neither shows a scrollbar, and both still scroll:
+    the conversation with the mouse wheel and PageUp, the menu by moving the choice past its last visible row."""
+    from textual import events
+
+    async def steps(app, pilot):
+        await pilot.pause()
+        for i in range(80):
+            app.note(f"line {i}")
+        await pilot.press("slash")                               # 8 commands in a menu that shows fewer
+        await pilot.pause()
+        app.bars = {f"{type(w).__name__}#{w.id}": (w.scrollbar_size_vertical, w.scrollbar_size_horizontal)
+                    for w in app.query("*") if w.scrollbar_size_vertical or w.scrollbar_size_horizontal}
+        menu, log = app.query_one("#commands"), app.query_one("#log")
+        app.menu_overflows = menu.max_scroll_y > 0
+        for _ in range(len(menu.options) - 1):
+            await pilot.press("down")
+        await pilot.pause()
+        app.menu_scrolled = menu.scroll_y
+        bottom = log.scroll_y
+        for _ in range(3):
+            log.post_message(events.MouseScrollUp(log, 5, 5, 0, 0, 0, False, False, False))
+        await pilot.pause()
+        app.wheel = (bottom, log.scroll_y)
+    app = tui_run(lambda e: agent(home, notes)[0], steps, size=(100, 30))
+    assert app.bars == {}
+    assert app.menu_overflows and app.menu_scrolled > 0
+    assert app.wheel[1] < app.wheel[0]
+
+
+def test_command_descriptions_line_up_in_one_column(home, notes):
+    from peresearch.tui import COMMANDS
+
+    async def steps(app, pilot):
+        await pilot.pause()
+        await pilot.press("slash")
+        await pilot.pause()
+        menu = app.query_one("#commands")
+        rows = ["".join(s.text for s in menu.render_line(y)) for y in range(menu.size.height)]
+        app.starts = {c: row.index(COMMANDS[c]) for row in rows for c in COMMANDS if f"{c} " in row and COMMANDS[c] in row}
+    app = tui_run(lambda e: agent(home, notes)[0], steps, size=(100, 40))
+    assert len(app.starts) >= 4 and len(set(app.starts.values())) == 1, app.starts

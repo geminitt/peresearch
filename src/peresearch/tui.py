@@ -157,6 +157,8 @@ class Menu(OptionList):
 
 class Chat(App):
     CSS = """
+    /* No scrollbar anywhere; the mouse wheel, PageUp/PageDown and the arrow keys still scroll. */
+    * { scrollbar-size: 0 0; }
     Screen { layout: vertical; }
     Screen { background: ansi_default; color: ansi_default; }
     #heading { height: auto; padding: 0 1; border: round ansi_blue; }
@@ -373,7 +375,8 @@ class Chat(App):
             matches = [c for c in COMMANDS if c.startswith(v)]
             menu = self.query_one("#commands", OptionList)
             menu.clear_options()
-            menu.add_options([Option(f"{c}  [dim]{d}[/dim]", id=c) for c, d in COMMANDS.items() if c in matches])
+            width = max(map(len, COMMANDS))                  # descriptions in one column
+            menu.add_options([Option(f"{c:<{width}}  [dim]{d}[/dim]", id=c) for c, d in COMMANDS.items() if c in matches])
             menu.display = bool(matches)
             if matches:
                 menu.highlighted = 0
