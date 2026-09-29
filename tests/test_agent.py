@@ -461,3 +461,22 @@ def test_past_answers_are_cut_and_the_current_question_marked(home, notes):
     assert past and len(past[0]) <= 810 and past[0].endswith("[…]")
     user = [m["content"] for m in msgs if m["role"] == "user"]
     assert user[0] == "BPE merges pairs?" and user[-1].startswith("Current question") and user[-1].endswith("And SuperBPE?")
+
+
+def test_vietnamese_input_method_bursts_type_correctly(home, notes):
+    from textual import events
+
+    from peresearch.tui import Prompt
+
+    async def steps(app, pilot):
+        await pilot.pause()
+        typed = [("c", "c"), ("h", "h"), ("a", "a"), ("o", "o"), ("backspace", "\x7f"), ("backspace", "\x08"),
+                 ("à", "à"), ("o", "o")]                    # Telex "chaof": raw letters, then ⌫⌫ + "ào", in one burst
+        for key, ch in typed:
+            e = events.Key(key, ch)
+            e.set_sender(app)
+            app._driver.send_message(e)                      # back to back, as one terminal read delivers them
+        await settle(app, pilot, lambda: app.query_one("#ask", Prompt).value == "chào", tries=50)
+        app.typed = app.query_one("#ask", Prompt).value
+    app = tui_run(lambda e: agent(home, notes)[0], steps)
+    assert app.typed == "chào"                               # Textual alone gave "chao": ⌫ ran after the letters

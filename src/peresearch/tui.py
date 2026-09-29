@@ -13,7 +13,7 @@ control sequences before it is shown.
 
 import time
 
-from textual import work
+from textual import events, work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import VerticalScroll
@@ -58,10 +58,22 @@ def render(answer) -> str:
 
 
 class Prompt(Input):
-    """The input line; ↑/↓, Tab and Esc go to the app (history, command menu, interrupt)."""
+    """The input line; ↑/↓, Tab and Esc go to the app (history, command menu, interrupt).
+
+    Backspace is handled here, in order with the typed characters. A Vietnamese input method types the raw
+    letters, then sends backspaces and the accented text in one burst ("chao", ⌫, ⌫, "ào"); Textual inserts
+    characters at once but runs the backspace binding later, so the burst came out as "chao" or "chaà"."""
 
     BINDINGS = [Binding("up", "app.up", show=False), Binding("down", "app.down", show=False),
                 Binding("tab", "app.complete", show=False), Binding("escape", "app.escape", show=False)]
+
+    async def _on_key(self, event: events.Key) -> None:
+        if event.key == "backspace":
+            event.stop()
+            event.prevent_default()
+            self.action_delete_left()
+            return
+        await super()._on_key(event)
 
 
 class Chat(App):
