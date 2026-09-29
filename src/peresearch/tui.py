@@ -35,7 +35,9 @@ from textual.app import App, ComposeResult
 from textual.binding import Binding
 from rich.style import Style as RichStyle
 from pygments.token import Token
+from rich.cells import cell_len
 from rich.markup import escape
+from rich.text import Text
 from textual.containers import Vertical, VerticalScroll
 from textual.highlight import ANSIDarkHighlightTheme, highlight
 from textual.screen import ModalScreen
@@ -118,6 +120,20 @@ def explain(error: Exception) -> str:
 
 
 REASONING_SHOWN = 8000     # characters of reasoning drawn per answer: tens of thousands stall the interface
+
+
+def conversation_rows(past, width: int) -> list[Text]:
+    """One line per conversation, in columns — when, how many questions, its first question — the question cut
+    near the end with "…" when the line would not fit, and kept on one line if it had line breaks."""
+    counts = [f"{c.questions} question{'' if c.questions == 1 else 's'}" for c in past]
+    count_width = max(map(len, counts), default=0)
+    rows = []
+    for c, count in zip(past, counts):
+        head = f"{time.strftime('%Y-%m-%d %H:%M', time.localtime(c.last))}  {count:<{count_width}}  "
+        first = Text(" ".join(guard.sanitize(c.first).split()), style="dim")
+        first.truncate(max(8, width - cell_len(head)), overflow="ellipsis")
+        rows.append(Text.assemble(head, first, no_wrap=True, overflow="ellipsis"))
+    return rows
 
 
 def render(answer, reasoning: bool = False) -> str:
@@ -658,10 +674,8 @@ class Chat(App):
                 return
             menu = self.query_one("#commands", OptionList)
             menu.clear_options()
-            menu.add_options([Option(f"{time.strftime('%Y-%m-%d %H:%M', time.localtime(c.last))}  "
-                                     f"{c.questions} question{'' if c.questions == 1 else 's'}  "
-                                     f"[dim]{escape(guard.sanitize(c.first)[:70])}[/dim]", id="resume:" + c.id)
-                              for c in past[:50]])
+            menu.add_options([Option(row, id="resume:" + c.id)
+                              for c, row in zip(past, conversation_rows(past[:50], self.size.width - 6))])
             menu.display, menu.highlighted, self.menu_kind = True, 0, "conversations"
         elif name == "/sources":
             if not self.last or not self.last.sources:

@@ -621,9 +621,10 @@ def test_clicking_a_citation_shows_the_source_and_links_open_only_what_is_safe(h
         app.after_citation = texts(app)
         shown = [w for w in app.query("#log > *") if isinstance(w, Markdown)][-1]
         shown.post_message(Markdown.LinkClicked(shown, "open:N1"))
+        await pilot.pause()                                          # clicks come one at a time, in order
         for href in ("https://arxiv.org/abs/1508.07909", "javascript:alert(1)", "file:///etc/passwd"):
             answer_page.post_message(Markdown.LinkClicked(answer_page, href))
-        await pilot.pause(0.2)
+            await pilot.pause()
     app = tui_run(make, steps)
     assert "bpe.md" in app.after_citation and "BPE merges frequent symbol pairs" in app.after_citation
     path = str(notes / "bpe.md")
@@ -678,3 +679,40 @@ def test_a_question_asked_while_the_folders_are_checked_is_answered(home, notes)
     assert "still working" not in app.shown
     assert app.last is not None and app.last.text == "BPE merges pairs [N1]."
     assert "Index up to date: 7 chunks" in app.shown                   # and the check still finished
+
+
+def test_resume_rows_line_up_and_long_questions_end_in_an_ellipsis(home, notes):
+    """One line per conversation: the date, the count and the first question in columns; a question too long for
+    the width is cut near the end with "…" instead of wrapping, and one with line breaks is kept on one line."""
+    import json as _json
+
+    from peresearch.agent import history_file
+    from peresearch.tui import Prompt
+
+    path = history_file("default")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    firsts = ["short", "a question with\nseveral lines\ninside it",
+              "a very long first question about tokenization " * 8, "twelve"]
+    lines = []
+    for n, (first, count) in enumerate(zip(firsts, (1, 2, 1, 12))):
+        for i in range(count):
+            lines.append({"time": 1_800_000_000 + n * 1000 + i, "conversation": f"c{n}",
+                          "question": first if i == 0 else f"follow-up {i}", "answer": "ok", "sources": {}})
+    path.write_text("\n".join(_json.dumps(x) for x in lines) + "\n")
+
+    async def steps(app, pilot):
+        app.query_one("#ask", Prompt).value = "/resume"
+        await pilot.press("enter")
+        await pilot.pause()
+        menu = app.query_one("#commands")
+        app.rows = ["".join(seg.text for seg in menu.render_line(y)).rstrip() for y in range(menu.size.height)]
+        app.width = menu.size.width
+    app = tui_run(lambda e: agent(home, notes)[0], steps, size=(90, 30))
+    rows = [r for r in app.rows if r.strip()]
+    assert len(rows) == 4                                             # one line each: nothing wrapped
+    starts = {r.index(key) for r, key in zip(rows, ("twelve", "a very long", "a question with", "short"))}
+    assert len(starts) == 1                                           # the questions start in one column
+    long_row = rows[1]
+    assert long_row.endswith("…") and len(long_row) <= app.width
+    assert "a question with several lines inside it" in rows[2]
+    assert "12 questions" in rows[0] and "1 question " in rows[3] + " "
