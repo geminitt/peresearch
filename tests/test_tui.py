@@ -29,7 +29,7 @@ def test_the_terminal_interface_shows_tools_answer_and_sources(home, notes):
     shown = app.shown
     assert "❯ BPE merges pairs?" in shown and "● grep(" in shown and "⎿" in shown
     assert "search_notes" not in shown                                   # only what the model chose to call
-    assert "Your notes cover it [N1]." in shown and "**Sources**" in shown and "answer" in events
+    assert "Your notes cover it [N1](source:N1)." in shown and "**Sources**" in shown and "answer" in events
 
 
 def test_the_conversation_fills_the_screen(home, notes):
@@ -583,3 +583,71 @@ def test_a_long_reasoning_is_shown_from_its_end():
     shown = render(Answer("ok", {}, Check(), 1, reasoning=long), reasoning=True)
     assert "the last step before answering" in shown and len(shown) < REASONING_SHOWN + 500
     assert f"{len(long) - REASONING_SHOWN:,} earlier characters not shown" in shown
+
+
+def test_citations_and_sources_become_links():
+    from peresearch.agent import Answer, Check
+    from peresearch.tools import Source
+    from peresearch.tui import render
+
+    src = {"N1": Source("N1", "file", "/n/bpe.md:L3-5", "bpe.md", "BPE merges"),
+           "W1": Source("W1", "web", "https://example.org/bpe", "BPE", "history")}
+    shown = render(Answer("BPE merges pairs [N1, W1]. More [W1].", src, Check(), 1))
+    assert "[N1](source:N1), [W1](source:W1)" in shown and "More [W1](source:W1)." in shown
+    assert "- [N1](source:N1) /n/bpe.md:L3-5" in shown
+
+
+def test_clicking_a_citation_shows_the_source_and_links_open_only_what_is_safe(home, notes, monkeypatch):
+    from textual.widgets import Markdown
+
+    from peresearch import tui
+
+    opened = []
+    monkeypatch.setattr(tui, "open_outside", lambda target, line=None: opened.append((target, line)))
+
+    def make(on_event):
+        return agent(home, notes, Reply("", [ToolCall("c1", "read", {"path": "bpe.md", "start": 1, "end": 4})]),
+                     Reply("BPE merges pairs [N1]. See [the paper](https://arxiv.org/abs/1508.07909), "
+                           "not [this](javascript:alert(1)) or [that](file:///etc/passwd)."))[0]
+
+    async def steps(app, pilot):
+        from peresearch.tui import Prompt
+        app.query_one("#ask", Prompt).value = "How does BPE work?"
+        await pilot.press("enter")
+        await settle(app, pilot, lambda: not app.busy and app.last is not None)
+        answer_page = app.pages[-1][0]
+        answer_page.post_message(Markdown.LinkClicked(answer_page, "source:N1"))
+        await settle(app, pilot, lambda: "open the file" in texts(app))
+        app.after_citation = texts(app)
+        shown = [w for w in app.query("#log > *") if isinstance(w, Markdown)][-1]
+        shown.post_message(Markdown.LinkClicked(shown, "open:N1"))
+        for href in ("https://arxiv.org/abs/1508.07909", "javascript:alert(1)", "file:///etc/passwd"):
+            answer_page.post_message(Markdown.LinkClicked(answer_page, href))
+        await pilot.pause(0.2)
+    app = tui_run(make, steps)
+    assert "bpe.md" in app.after_citation and "BPE merges frequent symbol pairs" in app.after_citation
+    path = str(notes / "bpe.md")
+    assert opened == [(path, 1), ("https://arxiv.org/abs/1508.07909", None)]
+    assert app.shown.count("not opened") == 2
+
+
+def test_open_outside_never_runs_a_file(monkeypatch, tmp_path):
+    """A file is shown in an editor at its line, or selected in Explorer — never handed to Explorer to open, which
+    would run a .bat or .exe; only http(s) goes to the browser."""
+    from peresearch import tui
+
+    runs = []
+    monkeypatch.setattr(tui.subprocess, "Popen", lambda cmd, **kw: runs.append(cmd))
+    monkeypatch.setattr(tui, "on_wsl", lambda: True)
+    monkeypatch.setattr(tui.shutil, "which", lambda name: "/usr/bin/code" if name == "code" else f"/x/{name}")
+    evil = tmp_path / "run me.bat"
+    evil.write_text("echo hi")
+    tui.open_outside(str(evil), 3)
+    tui.open_outside("https://example.org/a?b=1&c=2")
+    assert runs[0] == ["code", "-g", f"{evil}:3"] and runs[1] == ["explorer.exe", "https://example.org/a?b=1&c=2"]
+    monkeypatch.setattr(tui.shutil, "which", lambda name: None if name == "code" else f"/x/{name}")
+    monkeypatch.setattr(tui, "windows_path", lambda p: "C:\\\\x\\\\run me.bat")
+    tui.open_outside(str(evil), 3)
+    assert runs[2] == ["explorer.exe", "/select,C:\\\\x\\\\run me.bat"]
+    for bad in ("javascript:alert(1)", "file:///etc/passwd", str(tmp_path / "missing.md")):
+        assert tui.open_outside(bad) and len(runs) == 3                # refused, nothing run

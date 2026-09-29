@@ -19,9 +19,16 @@ The agent runs in a worker thread. Everything that came from a file, a page or t
 control sequences before it is shown.
 """
 
+import os
+import platform
+import re
+import shutil
+import subprocess
+import sys
 import threading
 import time
 from pathlib import Path
+from types import SimpleNamespace
 
 from textual import events, work
 from textual.app import App, ComposeResult
@@ -40,7 +47,8 @@ from textual.widgets._markdown import MarkdownFence
 from textual.widgets.option_list import Option
 
 from peresearch import guard
-from peresearch.agent import conversations, history_file, read_turns
+from peresearch.agent import _CITE, conversations, history_file, read_turns
+from peresearch.tools import Source
 from peresearch.workspace import complete, summary
 
 COMMANDS = {
@@ -122,10 +130,12 @@ def render(answer, reasoning: bool = False) -> str:
         if cut > 0:                                    # its end, just before the answer, matters most
             thought = f"_({cut:,} earlier characters not shown)_\n\n…" + thought[cut:]
         parts += ["> **Reasoning**\n>\n> " + thought.replace("\n", "\n> "), ""]
-    parts += [guard.sanitize(answer.text or "_(no answer)_"), ""]
+    text = _CITE.sub(lambda m: ", ".join(f"[{i.strip()}](source:{i.strip()})" for i in m.group(1).split(",")),
+                     guard.sanitize(answer.text or "_(no answer)_"))
+    parts += [text, ""]
     if answer.sources:
         parts.append("**Sources**")
-        parts += [f"- `{s.id}` {guard.sanitize(s.where)}" + (f" — {guard.sanitize(s.title)}" if s.title else "")
+        parts += [f"- [{s.id}](source:{s.id}) {guard.sanitize(s.where)}" + (f" — {guard.sanitize(s.title)}" if s.title else "")
                   for s in answer.sources.values()]
     c = answer.check
     if c.unknown_ids:
@@ -250,9 +260,54 @@ class Fence(MarkdownFence):
 
 
 class Page(Markdown):
-    """Markdown whose code blocks use CodeColors."""
+    """Markdown whose code blocks use CodeColors. It does not open links itself (Textual's Markdown handed any
+    clicked link to webbrowser.open, whatever its scheme): the app decides, see `Chat.on_markdown_link_clicked`."""
 
     BLOCKS = {**Markdown.BLOCKS, "fence": Fence, "code_block": Fence}
+
+    def __init__(self, markdown: str = "", **kwargs):
+        super().__init__(markdown, open_links=False, **kwargs)
+
+
+def on_wsl() -> bool:
+    return "microsoft" in platform.release().lower() or bool(os.environ.get("WSL_DISTRO_NAME"))
+
+
+def windows_path(path: str) -> str:
+    return subprocess.run(["wslpath", "-w", path], capture_output=True, text=True, check=True).stdout.strip()
+
+
+def open_outside(target: str, line: int | None = None) -> str | None:
+    """A web page (http or https only) in the browser; one of the user's files in an editor at its line, or selected
+    in the file manager; a folder in the file manager. A file is never given to the system's default action, which
+    would run a .bat or an .exe. Returns why it was refused, or None."""
+    if re.match(r"(?i)https?://", target):
+        cmd = (["explorer.exe", target] if on_wsl() else ["open", target] if sys.platform == "darwin"
+               else ["xdg-open", target])
+    elif not target.startswith("/"):
+        return "only web links (http, https) and your own files open"
+    elif os.path.isfile(target):
+        if shutil.which("code"):
+            cmd = ["code", "-g", f"{target}:{line or 1}"]
+        elif on_wsl():
+            cmd = ["explorer.exe", f"/select,{windows_path(target)}"]
+        else:
+            cmd = ["xdg-open", os.path.dirname(target)]
+    elif os.path.isdir(target):
+        cmd = ["explorer.exe", windows_path(target)] if on_wsl() else ["xdg-open", target]
+    else:
+        return f"{target}: not found"
+    subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                     start_new_session=True)
+    return None
+
+
+def location(where: str) -> tuple[str, int | None]:
+    """A source's place ("path:L10-20", "path:p.3", "path:cell 4", "path (listing)") as a path and a line."""
+    if where.endswith(" (listing)"):
+        return where[:-len(" (listing)")].split(", ")[0], None
+    m = re.match(r"(.+):(?:L(\d+)(?:-\d+)?|p\.\d+(?:-\d+)?|cell \d+(?:-\d+)?)$", where)
+    return (m.group(1), int(m.group(2)) if m.group(2) else None) if m else (where, None)
 
 
 class Menu(OptionList):
@@ -350,6 +405,7 @@ class Chat(App):
         self.pending_resume = None                    # a conversation picked before the agent existed
         self.last_question = None                     # (as shown, as sent) for /retry
         self.show_reasoning, self.pages = False, []   # Ctrl+R; this session's answers, to redraw them
+        self.sources_of = {}                          # a shown page -> the answer whose sources its links name
         self.menu_kind = ""                           # what the menu lists: "commands", "paths" or "conversations"
         self.asked, self.recall = [], None
         self.started, self.doing, self.tokens, self.frame = 0.0, "", 0, 0
@@ -475,6 +531,37 @@ class Chat(App):
     def show_answer(self, answer) -> None:
         page = Page(render(answer, self.show_reasoning))
         self.pages.append((page, answer))
+        self.sources_of[page] = answer
+        self.add(page)
+
+    def on_markdown_link_clicked(self, event: Markdown.LinkClicked) -> None:
+        """[N1] shows that source; "open the file / page" opens it; a web link opens in the browser; nothing else."""
+        href = event.href
+        if href.startswith(("source:", "open:")):
+            kind, sid = href.split(":", 1)
+            source = getattr(self.sources_of.get(event.markdown), "sources", {}).get(sid)
+            if source is None:
+                self.note(f"{sid}: no such source")
+            elif kind == "source":
+                self.show_source(source, self.sources_of[event.markdown])
+            else:
+                target, line = (source.where, None) if source.kind == "web" else location(source.where)
+                why = open_outside(target, line)
+                self.note(f"not opened: {why}" if why else f"opened {target}")
+        elif re.match(r"(?i)https?://", href):
+            why = open_outside(href)
+            self.note(f"not opened: {why}" if why else f"opened {href}")
+        else:
+            self.note("not opened: only web links (http, https) and your own files open")
+
+    def show_source(self, source, answer) -> None:
+        excerpt = guard.sanitize(source.text[:600]).replace("\n", "\n> ") if source.text else \
+            "_(the excerpt is not kept in the history)_"
+        what = "open the page" if source.kind == "web" else "open the file"
+        page = Page(f"**{source.id}** {guard.sanitize(source.where)}"
+                    + (f" — {guard.sanitize(source.title)}" if source.title else "")
+                    + f"\n\n> {excerpt}\n\n[{what}](open:{source.id})")
+        self.sources_of[page] = answer
         self.add(page)
 
     def action_toggle_reasoning(self) -> None:
@@ -542,7 +629,7 @@ class Chat(App):
                 self.agent.new_session()
             self.pending_new, self.pending_resume = self.agent is None, None
             self.query_one("#log", VerticalScroll).remove_children()
-            self.pages = []
+            self.pages, self.sources_of = [], {}
             self.note("New conversation: earlier questions are no longer sent as context.")
         elif name == "/retry":
             if self.busy:
@@ -637,14 +724,19 @@ class Chat(App):
             self.pending_resume, self.pending_new = conversation, False
         log = self.query_one("#log", VerticalScroll)
         log.remove_children()
-        self.pages = []
+        self.pages, self.sources_of = [], {}
         when = time.strftime("%Y-%m-%d %H:%M", time.localtime(turns[0].get("time", 0))) if turns else "?"
         self.note(f"Resumed the conversation of {when} ({len(turns)} question{'' if len(turns) == 1 else 's'}); "
                   "the next question continues it.")
         for t in turns:
             self.add(Static(f"❯ {guard.sanitize(t['question'])}", classes="question", markup=False))
-            sources = "".join(f"\n- `{k}` {guard.sanitize(str(v))}" for k, v in (t.get("sources") or {}).items())
-            self.add(Page(guard.sanitize(t["answer"]) + (f"\n\n**Sources**{sources}" if sources else "")))
+            kept = {k: Source(k, "web" if str(v).startswith("http") else "file", str(v), "", "")
+                    for k, v in (t.get("sources") or {}).items()}
+            page = Page(render(SimpleNamespace(text=t["answer"], sources=kept, check=SimpleNamespace(
+                unknown_ids=[], unsupported_quotes=[], uncited=False), stopped="", steps=0, prompt_tokens=0,
+                completion_tokens=0)).rsplit("\n<sub>", 1)[0])
+            self.sources_of[page] = SimpleNamespace(sources=kept)
+            self.add(page)
 
     def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
         prompt = self.query_one("#ask", Prompt)
