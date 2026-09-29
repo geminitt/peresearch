@@ -28,7 +28,11 @@ class Workspace:
             raise ValueError(f"refused: {p} matches a protected pattern (keys, tokens, credentials)")
         if p == guard.home() or guard.home() in p.parents:
             raise ValueError(f"refused: {p} is peresearch's own data")
-        guard.set_roots(guard.roots() + [p])
+        roots = guard.roots()
+        inside = next((r for r in roots if r == p or r in p.parents), None)
+        if inside is not None:
+            raise ValueError(f"{p} is already inside the declared folder {inside}")
+        guard.set_roots([r for r in roots if p not in r.parents] + [p])      # the parent absorbs its subfolders
         return p
 
     def remove(self, path: str) -> bool:

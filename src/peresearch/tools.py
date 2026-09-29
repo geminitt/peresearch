@@ -74,6 +74,13 @@ def _files(roots: list[Path], pattern: str = "**/*"):
                     yield p
 
 
+def outermost(roots: list[Path]) -> list[Path]:
+    """The declared folders without those inside another one, which would list their files twice."""
+    real = [Path(os.path.realpath(r)) for r in roots]
+    return [r for r, rr in zip(roots, real) if not any(o != rr and o in rr.parents for o in real)
+            and rr not in real[:real.index(rr)]]
+
+
 def _resolve(path: str, roots: list[Path]) -> Path:
     p = Path(path).expanduser()
     if not p.is_absolute():
@@ -91,7 +98,7 @@ class Toolbox:
 
     def __init__(self, searcher=None, web=None, roots: list[Path] | None = None):
         self.searcher, self.web = searcher, web
-        self.roots = [Path(r) for r in (guard.roots() if roots is None else roots)]
+        self.roots = outermost([Path(r) for r in (guard.roots() if roots is None else roots)])
         self.sources = Sources()
         self.web_calls = 0
         self.recorded_gaps = None        # set by gaps(); the agent clears it for every question

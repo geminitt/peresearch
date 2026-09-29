@@ -689,3 +689,22 @@ def test_an_answer_that_used_no_source_says_so():
     cited = render(Answer("BPE merges pairs [N1].", {"N1": Source("N1", "file", "a.md:L1", "", "BPE merges pairs")},
                           Check(), 2))
     assert "without any source" not in cited
+
+
+def test_nested_declared_folders_count_once(home, notes):
+    """~/projects and ~/projects/x both declared: every file once, a nested folder is not declared again, and a
+    parent declared later absorbs the folders inside it."""
+    from peresearch.workspace import Workspace
+
+    (notes / "project").mkdir()
+    (notes / "project" / "plan.md").write_text("# Plan\n\nship it\n")
+    tb = Toolbox(None, None, roots=[notes, notes / "project"])
+    assert tb.call("glob", {"pattern": "**/plan.md"}).count("plan.md") == 1
+    assert tb.call("grep", {"pattern": "ship it"}).count("plan.md") == 1
+    assert tb.call("tree", {}).count(f"{notes}/ (") == 1 and f"{notes / 'project'}/ (" not in tb.call("tree", {})
+    ws = Workspace(index=None)
+    ws.add(str(notes / "project"))
+    with pytest.raises(ValueError, match="already inside"):
+        ws.add(str(notes / "project" / ".." / "project"))
+    ws.add(str(notes))
+    assert ws.folders() == [notes.resolve()]
