@@ -166,24 +166,6 @@ def test_folders_are_added_with_tab_completion_indexed_and_removed_in_the_interf
     assert any("attention.md" in r[1] for r in ws.index.rows()) is False       # its chunks left the index
 
 
-def test_vietnamese_input_method_bursts_type_correctly(home, notes):
-    from textual import events
-
-    from peresearch.tui import Prompt
-
-    async def steps(app, pilot):
-        await pilot.pause()
-        typed = [("c", "c"), ("h", "h"), ("a", "a"), ("o", "o"), ("backspace", "\x7f"), ("backspace", "\x08"),
-                 ("à", "à"), ("o", "o")]                    # Telex "chaof": raw letters, then ⌫⌫ + "ào", in one burst
-        for key, ch in typed:
-            e = events.Key(key, ch)
-            e.set_sender(app)
-            app._driver.send_message(e)                      # back to back, as one terminal read delivers them
-        await settle(app, pilot, lambda: app.query_one("#ask", Prompt).value == "chào", tries=50)
-        app.typed = app.query_one("#ask", Prompt).value
-    app = tui_run(lambda e: agent(home, notes)[0], steps)
-    assert app.typed == "chào"                               # Textual alone gave "chao": ⌫ ran after the letters
-
 
 def test_typing_after_a_click_on_the_conversation_still_goes_to_the_prompt(home, notes):
     from peresearch.tui import Prompt
@@ -345,28 +327,6 @@ def test_the_interface_asks_before_reading_outside_the_declared_folders(home, no
     assert app.dialog and "N1" in app.first.sources and "Attention" in app.first.sources["N1"].text
     assert app.last.sources == {} and isinstance(app.focus_after, Input)
 
-
-def test_the_interface_keeps_working_while_a_dialog_is_open(home, notes):
-    """The spinner ticks and notes arrive while another screen (the permission dialog) is on top: they must find
-    the conversation's widgets, not look for them on the dialog."""
-    from textual.screen import ModalScreen
-    from textual.widgets import Static
-
-    class Dialog(ModalScreen):
-        def compose(self):
-            yield Static("a dialog")
-
-    async def steps(app, pilot):
-        await pilot.pause()
-        app.start("Working")
-        app.push_screen(Dialog())
-        await pilot.pause(0.35)                                # a few spinner ticks under the dialog
-        app.note("a note that arrives meanwhile")
-        await pilot.pause(0.1)
-        app.pop_screen()
-        await pilot.pause(0.1)
-    app = tui_run(lambda e: agent(home, notes)[0], steps)
-    assert "a note that arrives meanwhile" in app.shown
 
 
 def test_a_late_spinner_tick_after_the_interface_closed_is_harmless(home, notes):

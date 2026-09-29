@@ -195,21 +195,6 @@ def test_search_works_between_the_vectors_write_and_the_commit(home, notes, monk
     assert hits and hits[0].path.endswith("new.md")
 
 
-def test_an_index_written_before_the_single_vector_file_is_read_and_migrated(home, notes):
-    import numpy as np
-
-    idx, s = make(home, notes)
-    idx.update([notes])
-    ids, vecs = idx.dense()
-    (home / "dense.npz").unlink()
-    np.save(home / "dense_ids.npy", ids)                                # the old two-file layout
-    np.save(home / "dense.npy", vecs)
-    fresh, s2 = make(home, notes)
-    assert s2.find("gradient descent", k=1)[0][0].path.endswith("ml.md")
-    (notes / "new.md").write_text("# Mới\n\nMột ghi chú mới.\n")
-    fresh.update([notes])
-    assert (home / "dense.npz").exists() and not (home / "dense.npy").exists()
-
 
 def test_the_models_use_the_cpu_when_the_gpu_is_busy(monkeypatch):
     torch = pytest.importorskip("torch")

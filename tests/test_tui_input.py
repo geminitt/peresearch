@@ -195,10 +195,10 @@ def test_the_chosen_command_stands_out_in_the_menu(terminal):
 def test_editing_keys_keep_their_place_among_typed_text(terminal):
     """Keys bound to an action (Ctrl+U, arrows, Enter…) arriving in one read with typed text: Textual inserts the
     text at once and ran the action later, so "abc ⌃U xyz" came out empty and "ab ← c" as "abc"."""
-    for burst in ("abc\x15xyz\r", "ab\x1b[Dc\r", "one\rtwo\r"):
+    for burst in ("abc\x15xyz\r", "ab\x1b[Dc\r", "one\rtwo\r", "chao\x08\x08ào\r"):   # ^H: Windows' backspace
         terminal.write(burst)
         terminal.read(1.5)
-    assert terminal.out.read_text(encoding="utf-8").splitlines() == ["xyz", "acb", "one", "two"]
+    assert terminal.out.read_text(encoding="utf-8").splitlines() == ["xyz", "acb", "one", "two", "chào"]
 
 
 def test_a_bracketed_paste_keeps_its_place_among_typed_text(terminal):

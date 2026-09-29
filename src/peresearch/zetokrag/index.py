@@ -82,9 +82,6 @@ class Index:
         if path.exists():
             with np.load(path) as z:
                 return z["ids"], z["vecs"]
-        old_ids, old_vecs = self.home / "dense_ids.npy", self.home / "dense.npy"   # indexes written before 0.1
-        if old_ids.exists():
-            return np.load(old_ids), np.load(old_vecs)
         return np.zeros(0, dtype=np.int64), np.zeros((0, 0), dtype=np.float16)
 
     def _save_dense(self, ids: np.ndarray, vecs: np.ndarray) -> None:
@@ -92,15 +89,11 @@ class Index:
         tmp = self.home / "dense.tmp.npz"
         np.savez(tmp, ids=ids, vecs=vecs)
         os.replace(tmp, self.home / "dense.npz")
-        for old in ("dense_ids.npy", "dense.npy"):
-            (self.home / old).unlink(missing_ok=True)
 
     def dense32(self) -> tuple[np.ndarray, np.ndarray]:
         """The stored vectors as float32, converted once and kept until the file on disk changes (an update by
         this or another process), instead of reading and converting them for every query."""
         path = self.home / "dense.npz"
-        if not path.exists():
-            path = self.home / "dense.npy"
         stamp = path.stat().st_mtime_ns if path.exists() else None
         if self._dense32 is None or self._dense32[0] != stamp:
             ids, vecs = self.dense()
