@@ -300,8 +300,19 @@ def lexical_terms(variant: str, texts: list[str], folded: bool) -> list[list[str
     return out
 
 
-def lexical_top(variant: str, texts: list[str], qtexts: list[str], own: list | None = None) \
-        -> list[tuple[np.ndarray, np.ndarray]]:
+def _term_ids(variant: str, texts: list[str], folded: bool, chunk: int = 1000):
+    """The corpus as word ids (int32 per document) and the vocabulary, cut `chunk` texts at a time: MLDR's long
+    documents as Python strings would take several GB (mldr-ja: ~10^8 terms)."""
+    vocab: dict[str, int] = {}
+    ids = []
+    for a in range(0, len(texts), chunk):
+        for terms in lexical_terms(variant, texts[a:a + chunk], folded):
+            ids.append(np.fromiter((vocab.setdefault(t, len(vocab)) for t in (terms or ["∅"])), dtype=np.int32))
+    return ids, vocab
+
+
+def lexical_top(variant: str, texts: list[str], qtexts: list[str], own: list | None = None,
+                low_memory: bool = False) -> list[tuple[np.ndarray, np.ndarray]]:
     """BM25 top 100 per query with ZetokRAG's rule: queries typed with diacritics search the plain index, the
     others the folded one. As in ZetokRAG, the top 100 of the full score vector: when fewer documents share a term
     with the query, documents with score 0 fill the list (they set the minimum of the min-max normalization)."""
@@ -317,7 +328,10 @@ def lexical_top(variant: str, texts: list[str], qtexts: list[str], own: list | N
         if not pick:
             continue
         model = bm25s.BM25()
-        model.index([t or ["∅"] for t in lexical_terms(variant, texts, folded)], show_progress=False)
+        if low_memory:
+            model.index(_term_ids(variant, texts, folded), show_progress=False)
+        else:
+            model.index([t or ["∅"] for t in lexical_terms(variant, texts, folded)], show_progress=False)
         qterms = lexical_terms(variant, [qtexts[k] for k in pick], folded)
         ids, sc = model.retrieve([t or ["∅"] for t in qterms], k=min(TOP + 1, len(texts)), show_progress=False,
                                  n_threads=WORKERS)
@@ -344,8 +358,10 @@ def run_lexical(names) -> list[str]:
                 qt = queries_for(qtexts, st)
                 arrays = {}
                 for v in LEXICAL:
-                    packed = _pack(lexical_top(v, texts, qt, own))
+                    tv = time.time()
+                    packed = _pack(lexical_top(v, texts, qt, own, low_memory=name.startswith("mldr")))
                     arrays[f"{v}:ids"], arrays[f"{v}:scores"] = packed["ids"], packed["scores"]
+                    log(name, st, v, f"{time.time() - tv:.0f}s")
                 (RUNS / name / st).mkdir(parents=True, exist_ok=True)
                 _atomic_save(RUNS / name / st / "lexical.npz", **arrays)
                 log(name, st, "lexical", f"{time.time() - t:.0f}s")

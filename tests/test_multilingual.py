@@ -52,6 +52,19 @@ def test_reranking_from_cached_scores_matches_core_and_refuses_gaps():
     assert multilingual.reranked(order, cached, 4) is None           # 1 was never scored
 
 
+def test_the_low_memory_index_gives_the_same_ranking():
+    """MLDR is indexed from word ids built 1,000 texts at a time; the results must equal the string path's."""
+    ids, texts, _, qtexts, _ = _synthetic(n_docs=2600, n_queries=40, seed=3)
+    texts[5] = ""                                                # an empty document
+    qtexts += ["unknownword", "hoc may", "học máy doc12"]       # no known term; folded and plain indexes
+    for v in ("current", "unspaced-bigrams"):
+        a = multilingual.lexical_top(v, texts, qtexts)
+        b = multilingual.lexical_top(v, texts, qtexts, low_memory=True)
+        for (ia, sa), (ib, sb) in zip(a, b):
+            assert np.allclose(sa, sb), v
+            assert ia[sa > 0].tolist() == ib[sb > 0].tolist(), v   # zero-score fillers may come in any order
+
+
 def test_folded_terms_add_the_bare_form_as_zetokrag_does():
     text = "Học máy SuperBPE 机器学习"
     assert multilingual.lexical_terms("current", [text], True)[0] == core.tokenize(text, folded=True)
