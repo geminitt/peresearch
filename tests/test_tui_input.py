@@ -89,7 +89,7 @@ class Terminal:
                                      start_new_session=True)
         os.close(tty)
         self.screen = b""
-        assert self.read(60, until=b"commands"), "the interface never drew its hints line"
+        assert self.read(60, until=b"Ask about"), "the interface never drew its prompt"
         self.read(0.5)
 
     def read(self, seconds: float, until: bytes | None = None) -> bool:
@@ -189,10 +189,10 @@ def test_the_chosen_command_stands_out_in_the_menu(terminal):
         return set(found[-1].split(b";")) if found else set()
     terminal.write("/")
     terminal.read(0.8)
-    assert b"7" in style_of(b"/help") and b"7" not in style_of(b"/add")
+    assert b"7" in style_of(b"/help") and b"7" not in style_of(b"/keys")
     terminal.write("\x1b[B")                              # ↓ moves the choice
     terminal.read(0.8)
-    assert b"7" in style_of(b"/add") and b"7" not in style_of(b"/help")
+    assert b"7" in style_of(b"/keys") and b"7" not in style_of(b"/help")
 
 
 def test_editing_keys_keep_their_place_among_typed_text(terminal):

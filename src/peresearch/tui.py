@@ -6,7 +6,8 @@
 - The prompt at the bottom: Enter asks, ↑/↓ recall earlier questions, `/` opens the command menu (↑/↓ to pick,
   Tab or Enter to take it, Esc to close), Esc during a question interrupts it at the next step. PageUp/PageDown
   scroll the conversation; the conversation never takes the focus, so typing always reaches the prompt, also
-  after a click on it.
+  after a click on it. No line of key hints (the owner's choice): /keys lists the keys.
+- Nothing needs a minimum width (as in Claude Code): text, menu descriptions and code lines wrap to the terminal.
 - Folders are managed here too: /add <folder> (Tab completes the path), /remove, /folders, /index. On start, the
   index is brought up to date with the declared folders (only new or changed files are read).
 - Before the agent reads anything outside the declared folders, a dialog asks: yes this once, yes for that folder
@@ -37,6 +38,7 @@ from rich.style import Style as RichStyle
 from pygments.token import Token
 from rich.cells import cell_len
 from rich.markup import escape
+from rich.table import Table
 from rich.text import Text
 from textual.containers import Vertical, VerticalScroll
 from textual.highlight import ANSIDarkHighlightTheme, highlight
@@ -54,7 +56,8 @@ from peresearch.tools import Source
 from peresearch.workspace import complete, summary
 
 COMMANDS = {
-    "/help": "keys and commands",
+    "/help": "the commands",
+    "/keys": "the keys",
     "/add": "<folder> let peresearch read a folder (Tab completes the path), then index it",
     "/remove": "<folder> stop reading a folder",
     "/folders": "the folders peresearch may read",
@@ -64,6 +67,13 @@ COMMANDS = {
     "/retry": "ask the last question again",
     "/sources": "every source of the last answer, in full",
     "/exit": "quit",
+}
+KEYS = {
+    "Enter": "ask", "Ctrl+Enter": "new line", "↑ ↓": "earlier questions (in the menu: pick)",
+    "/": "the command menu (Tab or Enter takes the chosen command, Esc closes it)",
+    "PgUp PgDn": "scroll the conversation", "Esc": "interrupt the question",
+    "Ctrl+R": "show or hide the model's reasoning", "Ctrl+C": "copy the text selected with the mouse",
+    "Ctrl+Q": "quit",
 }
 SPINNER = "∗✢✻✢"
 # The terminal's palette only. Everything that would need a shade of the background (panels, cursors, selections)
@@ -120,6 +130,15 @@ def explain(error: Exception) -> str:
 
 
 REASONING_SHOWN = 8000     # characters of reasoning drawn per answer: tens of thousands stall the interface
+
+
+def command_row(command: str, description: str) -> Table:
+    """A row of the command menu: the descriptions in one column, a wrapped one going on under itself."""
+    row = Table.grid(padding=(0, 2))
+    row.add_column(width=max(map(len, COMMANDS)), no_wrap=True)
+    row.add_column(ratio=1)
+    row.add_row(command, Text(description, style="dim"))
+    return row
 
 
 def conversation_rows(past, width: int) -> list[Text]:
@@ -266,7 +285,17 @@ class CodeColors(ANSIDarkHighlightTheme):
 
 
 class Fence(MarkdownFence):
-    """A code block colored with CodeColors."""
+    """A code block colored with CodeColors, its long lines wrapped (Textual's scrolled sideways, with no
+    scrollbar here, so the end of a line was out of sight)."""
+
+    DEFAULT_CSS = """
+    Fence { overflow: hidden hidden; }
+    Fence > Label { width: 1fr; text-wrap: wrap; text-overflow: fold; }
+    """
+
+    @property
+    def allow_horizontal_scroll(self) -> bool:
+        return False
 
     @classmethod
     def highlight(cls, code: str, language: str, ansi: bool = False, dark: bool = False):
@@ -407,7 +436,6 @@ class Chat(App):
     #ask > .text-area--cursor-line { background: ansi_default; }
     #ask > .text-area--placeholder { color: ansi_default; text-style: dim; }
     Screen > .screen--selection { background: ansi_default; color: ansi_default; text-style: reverse; }
-    #hints { height: 1; padding: 0 1; color: ansi_default; text-style: dim; }
     """
     BINDINGS = [Binding("ctrl+q", "quit", "Quit", priority=True)]     # Ctrl+C copies (the owner's choice)
     ENABLE_COMMAND_PALETTE = False       # Textual's own palette (Ctrl+P): another look, and it switches themes
@@ -435,8 +463,6 @@ class Chat(App):
         yield self.status
         yield Menu(id="commands")
         yield Prompt(placeholder="❯ Ask about your files or the web", id="ask")
-        yield Static("/ commands · ctrl+enter new line · ↑↓ earlier questions · pgup/pgdn scroll · esc interrupt · "
-                     "ctrl+c copy · ctrl+q quit", id="hints")
 
     def on_mount(self) -> None:
         self.register_theme(TERMINAL)
@@ -643,10 +669,9 @@ class Chat(App):
         if name == "/exit":
             self.exit()
         elif name == "/help":
-            self.add(Page("**Keys** — Enter ask · Ctrl+Enter new line · ↑↓ earlier questions · `/` commands (↑↓ pick, Tab/Enter take, "
-                              "Esc close) · PgUp/PgDn scroll · Esc interrupt · Ctrl+R show or hide the model's reasoning · "
-                              "Ctrl+C copy the selection · Ctrl+Q quit\n\n**Commands**\n"
-                              + "\n".join(f"- `{c}` {d}" for c, d in COMMANDS.items())))
+            self.add(Page("**Commands** (the keys: `/keys`)\n" + "\n".join(f"- `{c}` {d}" for c, d in COMMANDS.items())))
+        elif name == "/keys":
+            self.add(Page("**Keys**\n" + "\n".join(f"- **{k}** {d}" for k, d in KEYS.items())))
         elif name == "/new":
             if self.busy:
                 self.note("wait for the current question to finish, or press esc")
@@ -723,8 +748,7 @@ class Chat(App):
             matches = [c for c in COMMANDS if c.startswith(v)]
             menu = self.query_one("#commands", OptionList)
             menu.clear_options()
-            width = max(map(len, COMMANDS))                  # descriptions in one column
-            menu.add_options([Option(f"{c:<{width}}  [dim]{d}[/dim]", id=c) for c, d in COMMANDS.items() if c in matches])
+            menu.add_options([Option(command_row(c, d), id=c) for c, d in COMMANDS.items() if c in matches])
             menu.display, self.menu_kind = bool(matches), "commands"
             if matches:
                 menu.highlighted = 0

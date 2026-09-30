@@ -45,7 +45,7 @@ def test_the_conversation_fills_the_screen(home, notes):
             log, ask = app.query_one("#log", VerticalScroll), app.query_one("#ask", Prompt)
             return log.size.height, ask.region.bottom
     height, bottom = asyncio.run(run())
-    assert height >= 30 and bottom == 39                   # the log takes the screen; input, then the key hints
+    assert height >= 30 and bottom == 40                   # the log takes the screen, the input the bottom line
 
 
 def test_slash_opens_the_command_menu_filters_it_and_runs_the_choice(home, notes):
@@ -716,3 +716,50 @@ def test_resume_rows_line_up_and_long_questions_end_in_an_ellipsis(home, notes):
     assert long_row.endswith("…") and len(long_row) <= app.width
     assert "a question with several lines inside it" in rows[2]
     assert "12 questions" in rows[0] and "1 question " in rows[3] + " "
+
+
+def screen_lines(app) -> list[str]:
+    return [strip.text.rstrip() for strip in app.screen._compositor.render_strips()]
+
+
+def test_no_key_hints_line_and_keys_lists_them(home, notes):
+    """The owner's choice (2026-09-30): no line of key hints under the prompt (at 100 columns it was already cut
+    before "ctrl+q quit"); /keys shows the keys."""
+    async def steps(app, pilot):
+        await pilot.pause()
+        await pilot.press(*"/keys", "enter")
+        await pilot.pause(0.2)
+        app.lines = screen_lines(app)
+    app = tui_run(lambda e: agent(home, notes)[0], steps, size=(100, 40))
+    assert not app.query("#hints")
+    assert app.lines[-1].startswith("╰"), app.lines[-3:]               # the prompt's border is the last line
+    for key in ("Enter", "Ctrl+Enter", "Esc", "Ctrl+R", "Ctrl+C", "Ctrl+Q", "PgUp"):
+        assert key in app.shown, key
+
+
+def test_a_wrapped_command_description_stays_in_its_column(home, notes):
+    async def steps(app, pilot):
+        await pilot.pause()
+        await pilot.press("slash")
+        await pilot.pause()
+        menu = app.query_one("#commands")
+        app.rows = ["".join(s.text for s in menu.render_line(y)) for y in range(menu.size.height)]
+    app = tui_run(lambda e: agent(home, notes)[0], steps, size=(60, 40))
+    column = app.rows[0].index("the commands")
+    add = next(i for i, row in enumerate(app.rows) if row.lstrip().startswith("/add"))
+    assert app.rows[add + 1].rstrip() and not app.rows[add + 1].lstrip().startswith("/"), app.rows   # it wrapped
+    assert len(app.rows[add + 1]) - len(app.rows[add + 1].lstrip()) == column, app.rows
+
+
+def test_a_long_code_line_wraps_instead_of_being_cut(home, notes):
+    code = "print('a fairly long line of code that will not fit a narrow terminal at all, ending here')"
+
+    async def steps(app, pilot):
+        await pilot.pause()
+        await pilot.press(*"q", "enter")
+        await settle(app, pilot, lambda: not app.busy and len(app.pages) > 0)
+        await pilot.pause(0.2)
+        app.lines = screen_lines(app)
+    app = tui_run(lambda e: agent(home, notes, Reply(f"Code:\n\n```python\n{code}\n```\n"))[0], steps, size=(50, 30))
+    joined = "".join(line.strip() for line in app.lines)
+    assert "".join(code.split()) in "".join(joined.split()), app.lines
