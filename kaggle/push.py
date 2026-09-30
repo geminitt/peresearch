@@ -19,6 +19,7 @@ ap.add_argument("--commit", default=None, help="defaults to HEAD, which must be 
 ap.add_argument("--set", nargs="*", default=[], help="NAME=VALUE overrides of top-level constants")
 ap.add_argument("--job", default=None, help="suffix of a separate kernel, so jobs run in parallel")
 ap.add_argument("--input", nargs="*", default=[], help="earlier kernels whose outputs this one reads")
+ap.add_argument("--dataset", nargs="*", default=[], help="datasets this kernel reads (owner/slug)")
 args = ap.parse_args()
 
 commit = args.commit or subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
@@ -33,6 +34,7 @@ for kv in args.set:
     assert n == 1, f"no top-level constant {k}"
 meta = json.loads((HERE / args.kernel / "kernel-metadata.json").read_text())
 meta["kernel_sources"] = args.input
+meta["dataset_sources"] = args.dataset
 build = HERE / args.kernel / "build"
 if args.job:
     meta["id"] += f"-{args.job}"

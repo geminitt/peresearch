@@ -66,6 +66,9 @@ WORD = regex.compile(r"[\p{L}\p{M}\p{N}_]+")
 # Scripts written without spaces between words; Script_Extensions takes in the signs they share (ー, 々).
 UNSPACED = r"\p{scx=Han}\p{scx=Hiragana}\p{scx=Katakana}\p{scx=Thai}\p{scx=Lao}\p{scx=Khmer}\p{scx=Myanmar}"
 UNSPACED_RUN = regex.compile(rf"((?:[{UNSPACED}]\p{{M}}*)+)")
+# The same, with Hangul: Korean is spaced, but a word carries its particles (학습을, 학습이), which only a subword
+# cut separates from the stem (MIRACL-ko: XLM-R on everything 37.6 nDCG@10 against 29.1 for words).
+UNSPACED_HANGUL_RUN = regex.compile(rf"((?:[{UNSPACED}\p{{scx=Hangul}}]\p{{M}}*)+)")
 GRAPHEME = regex.compile(r"\X")
 
 
@@ -134,9 +137,10 @@ def cut_all(variant: str, texts: list[str]) -> list[list[str]]:
             batch = [unicodedata.normalize("NFC", t) for t in texts[a:a + BATCH]]
             out.extend(tok.convert_ids_to_tokens(ids) for ids in tok(batch, add_special_tokens=False)["input_ids"])
         return out
-    if variant == "words+marks+xlmr":          # words, and every stretch without spaces cut by XLM-R
+    if variant in ("words+marks+xlmr", "words+marks+hangul+xlmr"):   # words; stretches without spaces by XLM-R
+        runs_re = UNSPACED_RUN if variant == "words+marks+xlmr" else UNSPACED_HANGUL_RUN
         words = cut_all("words+marks", texts)
-        split = [[(k % 2, p) for w in ws for k, p in enumerate(UNSPACED_RUN.split(w)) if p] for ws in words]
+        split = [[(k % 2, p) for w in ws for k, p in enumerate(runs_re.split(w)) if p] for ws in words]
         runs = sorted({p for parts in split for unspaced, p in parts if unspaced})
         cut = {r: [x for x in (y.lstrip("▁") for y in toks) if x] for r, toks in zip(runs, cut_all("xlmr", runs))}
         return [[t for unspaced, p in parts for t in (cut[p] if unspaced else [p])] for parts in split]
