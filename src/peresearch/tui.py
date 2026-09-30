@@ -49,6 +49,7 @@ from textual.message import Message
 from textual.widgets import Markdown, OptionList, Static, TextArea
 from textual.widgets._markdown import MarkdownFence
 from textual.widgets.option_list import Option
+from textual.widgets.text_area import Selection
 
 from peresearch import guard
 from peresearch.agent import _CITE, conversations, history_file, read_turns
@@ -247,11 +248,11 @@ class Prompt(TextArea):
         return text.replace(MARK, "").strip()
 
     # A marker is one block: only a paste makes one (its MARK cannot be typed and is stripped from pasted text),
-    # an edit that touches it removes all of it, and the cursor steps over it.
+    # an edit that touches it removes all of it, and the cursor never stops inside it.
 
     def _spans(self, row: int) -> list[tuple[int, int]]:
         line, spans = self.document.get_line(row), []
-        for marker in self.pasted:
+        for marker in getattr(self, "pasted", ()):    # TextArea sets a selection before __init__ sets `pasted`
             at = line.find(marker)
             while at >= 0:
                 spans.append((at, at + len(marker)))
@@ -278,11 +279,27 @@ class Prompt(TextArea):
         start, end = sorted((start, end))
         return super()._delete_via_keyboard(self._outside(start, False), self._outside(end, True))
 
-    def get_cursor_left_location(self):
-        return self._outside(super().get_cursor_left_location(), False)
+    def _nearer_edge(self, location):
+        row, column = location
+        for start, end in self._spans(row):
+            if start < column < end:
+                return (row, start if column - start <= end - column else end)
+        return location
 
-    def get_cursor_right_location(self):
-        return self._outside(super().get_cursor_right_location(), True)
+    def _validate_selection(self, selection: Selection) -> Selection:
+        """Every cursor move and selection passes here (keys, word jumps, lines, clicks): a cursor that would stop
+        inside a marker goes to its edge the way it was heading, or to the nearer edge with no heading (a click,
+        another line); a selection that touches a marker covers all of it."""
+        start, end = super()._validate_selection(selection)
+        if start != end:
+            forward = end > start
+            return Selection(self._outside(start, not forward), self._outside(end, forward))
+        before = self.selection.end
+        if end[0] == before[0] and end != before:
+            end = self._outside(end, end > before)
+        else:
+            end = self._nearer_edge(end)
+        return Selection(end, end)
 
     async def _on_key(self, event: events.Key) -> None:
         action = self.OWN.get(event.key)

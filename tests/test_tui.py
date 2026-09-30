@@ -806,8 +806,7 @@ def test_a_paste_marker_is_one_block_and_only_a_real_paste_expands(home, notes):
         app.at_start = prompt.cursor_location
         await pilot.press("right")
         app.back_at_end = prompt.cursor_location
-        prompt.move_cursor((0, 3))                                   # a click inside the marker
-        await pilot.press("x")                                       # typed after it, not inside
+        await pilot.press("x")                                       # typed right after the marker
         app.typed_inside = prompt.value
         await pilot.press("end", *["left"] * 6, "backspace")         # one Backspace: the whole marker
         app.after_backspace = prompt.value
@@ -852,3 +851,56 @@ def test_the_invisible_mark_cannot_be_pasted_in(home, notes):
     app = tui_run(lambda e: agent(home, notes)[0], steps)
     assert "\u2060" not in app.value and app.expanded == "copied [Pasted text #1 +2 lines] back"
     assert app.copied == ["[Pasted text #1 +2 lines]"]
+
+
+def test_the_cursor_never_stops_inside_a_paste_marker(home, notes):
+    """Every way the cursor moves — word jumps, ↑/↓ between lines, a click, a selection — ends at an edge of a marker:
+    the way it was heading, or the nearer edge when it has no heading (a click, another line); a selection that
+    touches a marker covers all of it."""
+    from textual import events
+    from textual.widgets.text_area import Selection
+
+    from peresearch.tui import Prompt
+
+    async def steps(app, pilot):
+        await pilot.pause()
+        prompt = app.query_one("#ask", Prompt)
+        prompt.value = "ab "
+        prompt.post_message(events.Paste("one\ntwo\nthree\n"))
+        await pilot.pause()
+        await pilot.press(*" cd", "ctrl+j", *"0123456789012345678901234567890123456789")
+        start = 3
+        end = start + len(prompt.document.get_line(0)) - len("ab  cd")
+        app.span = (start, end)
+        seen = []
+        prompt.move_cursor((0, len(prompt.document.get_line(0))))
+        for _ in range(8):                                           # word jumps back, then forward
+            await pilot.press("ctrl+left")
+            seen.append(("ctrl+left", prompt.cursor_location))
+        for _ in range(8):
+            await pilot.press("ctrl+right")
+            seen.append(("ctrl+right", prompt.cursor_location))
+        prompt.move_cursor((1, start + 3))                            # ↑ from under the marker's start
+        await pilot.press("up")
+        seen.append(("up near the start", prompt.cursor_location))
+        prompt.move_cursor((1, end - 3))                              # ↑ from under its end
+        await pilot.press("up")
+        seen.append(("up near the end", prompt.cursor_location))
+        await pilot.click("#ask", offset=(2 + start + 4, 1))         # border and padding, then the column
+        seen.append(("click near the start", prompt.cursor_location))
+        await pilot.click("#ask", offset=(2 + end - 2, 1))
+        seen.append(("click near the end", prompt.cursor_location))
+        prompt.selection = Selection((0, 1), (0, start + 5))
+        seen.append(("select into it", prompt.selection))
+        prompt.selection = Selection((0, end - 2), (0, 1))
+        seen.append(("select back into it", prompt.selection))
+        app.seen = seen
+    app = tui_run(lambda e: agent(home, notes)[0], steps)
+    start, end = app.span
+    inside = [(how, at) for how, at in app.seen[:16] if at[0] == 0 and start < at[1] < end]
+    assert not inside, (app.span, inside)
+    got = dict(app.seen[16:])
+    assert got["up near the start"] == (0, start) and got["up near the end"] == (0, end), (app.span, got)
+    assert got["click near the start"] == (0, start) and got["click near the end"] == (0, end), (app.span, got)
+    assert tuple(got["select into it"]) == ((0, 1), (0, end)), (app.span, got)
+    assert tuple(got["select back into it"]) == ((0, end), (0, 1)), (app.span, got)
