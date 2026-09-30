@@ -8,7 +8,6 @@
 # (and every 100 reranked queries) saved in /kaggle/working.
 COMMIT = "main"
 SETS = None              # e.g. [["autorag-ko"], ["xpqa-hi"]]: these sets per GPU (smoke test), else all, balanced
-MAX_QUERIES = None       # e.g. 50 for the smoke test
 PINS = "sentence-transformers==6.1.0 transformers==5.17.0 bm25s==0.3.11 huggingface_hub==1.33.0"
 
 import json
@@ -39,28 +38,6 @@ sh("nvidia-smi --query-gpu=name,memory.total --format=csv")
 # The image ships JAX, which bm25s imports; kept off the GPU, or it takes 75% of it (see zetokrag/core.py).
 env = {**os.environ, "PYTHONPATH": f"{SRC}/src", "PERESEARCH_RUNS": str(WORK / "runs"), "PERESEARCH_COMMIT": COMMIT,
        "PERESEARCH_RESULTS": str(WORK / "results"), "TOKENIZERS_PARALLELISM": "false", "JAX_PLATFORMS": "cpu"}
-if MAX_QUERIES:
-    env["PERESEARCH_MAX_QUERIES"] = str(MAX_QUERIES)
-
-RUNS.mkdir(parents=True, exist_ok=True)
-# 1. an earlier run of this kernel (resume), then the laptop's BM25 views
-for earlier in sorted(INPUT.glob("**/runs/multilingual")):
-    sh(f"cp -rn {earlier}/. {RUNS}/")
-for lex in sorted(INPUT.glob("**/*__lexical.npz")):      # the dataset is flat: <set>__<setting>__
-    name, setting, _ = lex.name.split("__")
-    (RUNS / name / setting).mkdir(parents=True, exist_ok=True)
-    if not (RUNS / name / setting / "lexical.npz").exists():
-        sh(f"cp {lex} {RUNS / name / setting}/lexical.npz")
-# 2. gate 1's Qwen3 document embeddings, as candidates (checked below before they are used)
-reused = []
-for emb in sorted(INPUT.glob("**/runs/retrieval/*/docs-qwen3-embedding-0.6b.npy")):
-    name = emb.parent.name
-    dest = RUNS / name / "docs-qwen3-embedding-0.6b.npy"
-    if (RUNS / name).exists() and not dest.exists():
-        sh(f"cp {emb} {dest}")
-        reused.append(name)
-sh(f"find {RUNS} -name '*.npz' -o -name '*.npy' | sort | head -200")
-
 sys.path[:0] = [f"{SRC}/eval", f"{SRC}/src"]
 import multilingual  # noqa: E402
 
@@ -68,14 +45,39 @@ names = [n for n in multilingual.SETS if not n.startswith("mldr")]
 groups = SETS or multilingual.shards(names, 2)
 print("sets per GPU:", groups, flush=True)
 flat = [n for g in groups for n in g]
+
+RUNS.mkdir(parents=True, exist_ok=True)
+# 1. an earlier run of this kernel (resume), then the laptop's BM25 views of this run's sets only
+for earlier in sorted(INPUT.glob("**/runs/multilingual")):
+    sh(f"cp -rn {earlier}/. {RUNS}/")
+for lex in sorted(INPUT.glob("**/*__lexical.npz")):      # the dataset is flat: <set>__<setting>__lexical.npz
+    name, setting, _ = lex.name.split("__")
+    if name in flat and not (RUNS / name / setting / "lexical.npz").exists():
+        (RUNS / name / setting).mkdir(parents=True, exist_ok=True)
+        sh(f"cp {lex} {RUNS / name / setting}/lexical.npz")
+# 2. gate 1's Qwen3 document embeddings of this run's sets, as candidates (checked below before they are used)
+reused = []
+for emb in sorted(INPUT.glob("**/runs/retrieval/*/docs-qwen3-embedding-0.6b.npy")):
+    name = emb.parent.name
+    dest = RUNS / name / "docs-qwen3-embedding-0.6b.npy"
+    if name in flat and name in multilingual.REUSED and not dest.exists():
+        sh(f"cp {emb} {dest}")
+        reused.append(name)
+sh(f"find {RUNS} -name '*.npz' -o -name '*.npy' | sort | head -200")
 missing = [n for n in flat for st in multilingual.settings(n) if not (RUNS / n / st / "lexical.npz").exists()]
 assert not missing, f"BM25 views missing for {missing}"
 subprocess.run([sys.executable, f"{SRC}/eval/multilingual.py", "prefetch", *flat], cwd=SRC, check=True,
                env={**env, "CUDA_VISIBLE_DEVICES": ""})
 env["HF_HUB_OFFLINE"] = "1"
-# 3. the reuse check on GPU 0: a sample of each reused set re-embedded here must match gate 1's vectors
-subprocess.run([sys.executable, f"{SRC}/eval/multilingual.py", "reuse-check", *reused], cwd=SRC, check=True,
-               env={**env, "CUDA_VISIBLE_DEVICES": "0"})
+# 3. the reuse check on GPU 0: a sample of each reused set re-embedded here must match gate 1's vectors; if the
+# check itself fails, the reused vectors are dropped and computed afresh (slower, never wrong)
+if reused:
+    check = subprocess.run([sys.executable, f"{SRC}/eval/multilingual.py", "reuse-check", *reused], cwd=SRC,
+                           env={**env, "CUDA_VISIBLE_DEVICES": "0"})
+    if check.returncode != 0:
+        print("reuse check failed: the reused vectors are dropped", flush=True)
+        for name in reused:
+            (RUNS / name / "docs-qwen3-embedding-0.6b.npy").unlink(missing_ok=True)
 workers = []
 for gpu, group in enumerate(groups):
     if group:
