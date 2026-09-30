@@ -76,6 +76,7 @@ KEYS = {
     "Ctrl+Q": "quit",
 }
 SPINNER = "∗✢✻✢"
+MARK = "\u2060"          # WORD JOINER, zero width: ends a real paste marker; no key types it
 # The terminal's palette only. Everything that would need a shade of the background (panels, cursors, selections)
 # is the default colors, reversed or dimmed, so the same theme reads on a light and on a dark scheme.
 TERMINAL = Theme(
@@ -235,14 +236,53 @@ class Prompt(TextArea):
         if lines == 1:
             return                                     # TextArea's own handler runs next (Textual calls each class's)
         event.prevent_default()
-        marker = f"[Pasted text #{len(self.pasted) + 1} +{lines} lines]"
+        # MARK at the end only: the cursor at the marker's start would sit on a leading one and be invisible
+        marker = f"[Pasted text #{len(self.pasted) + 1} +{lines} lines]{MARK}"
         self.pasted[marker] = text
-        self._replace_via_keyboard(marker, *self.selection)
+        self._put(marker, *self.selection)
 
     def expand(self, text: str) -> str:
         for marker, full in self.pasted.items():
             text = text.replace(marker, "\n" + full.rstrip("\n") + "\n")
-        return text.strip()
+        return text.replace(MARK, "").strip()
+
+    # A marker is one block: only a paste makes one (its MARK cannot be typed and is stripped from pasted text),
+    # an edit that touches it removes all of it, and the cursor steps over it.
+
+    def _spans(self, row: int) -> list[tuple[int, int]]:
+        line, spans = self.document.get_line(row), []
+        for marker in self.pasted:
+            at = line.find(marker)
+            while at >= 0:
+                spans.append((at, at + len(marker)))
+                at = line.find(marker, at + 1)
+        return spans
+
+    def _outside(self, location, forward: bool):
+        row, column = location
+        for start, end in self._spans(row):
+            if start < column < end:
+                return (row, end if forward else start)
+        return location
+
+    def _put(self, insert: str, start, end):
+        start, end = sorted((start, end))
+        if start == end:                               # typed inside a marker: goes after it
+            start = end = self._outside(start, True)
+        return super()._replace_via_keyboard(insert, self._outside(start, False), self._outside(end, True))
+
+    def _replace_via_keyboard(self, insert: str, start, end):
+        return self._put(insert.replace(MARK, ""), start, end)
+
+    def _delete_via_keyboard(self, start, end):
+        start, end = sorted((start, end))
+        return super()._delete_via_keyboard(self._outside(start, False), self._outside(end, True))
+
+    def get_cursor_left_location(self):
+        return self._outside(super().get_cursor_left_location(), False)
+
+    def get_cursor_right_location(self):
+        return self._outside(super().get_cursor_right_location(), True)
 
     async def _on_key(self, event: events.Key) -> None:
         action = self.OWN.get(event.key)
@@ -549,7 +589,7 @@ class Chat(App):
     def ask(self, shown: str, sent: str) -> None:
         self.last_question = (shown, sent)
         self.start("Starting")
-        self.add(Static(f"❯ {guard.sanitize(shown)}", classes="question", markup=False))
+        self.add(Static(f"❯ {guard.sanitize(shown.replace(MARK, ''))}", classes="question", markup=False))
         self.run_agent(sent)
 
     @work(thread=True, exclusive=True, group="agent")
@@ -848,7 +888,7 @@ class Chat(App):
 
     def action_copy(self) -> None:
         """Ctrl+C: the text selected with the mouse in the conversation, else the prompt's selection."""
-        text = self.screen.get_selected_text() or self.query_one("#ask", Prompt).selected_text
+        text = (self.screen.get_selected_text() or self.query_one("#ask", Prompt).selected_text or "").replace(MARK, "")
         if text:
             self.copy_to_clipboard(text)
             self.say(f"copied {len(text):,} characters")

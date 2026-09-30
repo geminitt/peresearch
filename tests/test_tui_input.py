@@ -207,7 +207,7 @@ def test_editing_keys_keep_their_place_among_typed_text(terminal):
 def test_a_bracketed_paste_keeps_its_place_among_typed_text(terminal):
     terminal.write("see \x1b[200~first line\nsecond line\x1b[201~ ok\r")
     terminal.read(1.5)
-    assert terminal.sent() == ["see [Pasted text #1 +2 lines] ok"]
+    assert terminal.sent() == ["see [Pasted text #1 +2 lines]\u2060 ok"]      # a real marker ends in the mark
 
 
 def test_ctrl_enter_starts_a_new_line_and_enter_sends(terminal):

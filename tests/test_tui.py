@@ -224,8 +224,8 @@ def test_pasted_lines_reach_the_model_whole(home, notes):
         await pilot.press("enter")
         await settle(app, pilot, lambda: not app.busy and app.last is not None)
     app = tui_run(make, steps)
-    assert app.shown_value == "why does this fail: [Pasted text #1 +3 lines]"
-    assert app.after_single.endswith("[Pasted text #1 +3 lines]one line")
+    assert app.shown_value.replace("\u2060", "") == "why does this fail: [Pasted text #1 +3 lines]"
+    assert app.after_single.replace("\u2060", "").endswith("[Pasted text #1 +3 lines]one line")
     sent = [m["content"] for m in make.llm.seen[0][0] if m["role"] == "user"][-1]
     assert "KeyError: 'a'" in sent and "File \"x.py\", line 1" in sent and "[Pasted text" not in sent
     assert "❯ why does this fail: [Pasted text #1 +3 lines]one line" in app.shown       # the log keeps the marker
@@ -763,3 +763,92 @@ def test_a_long_code_line_wraps_instead_of_being_cut(home, notes):
     app = tui_run(lambda e: agent(home, notes, Reply(f"Code:\n\n```python\n{code}\n```\n"))[0], steps, size=(50, 30))
     joined = "".join(line.strip() for line in app.lines)
     assert "".join(code.split()) in "".join(joined.split()), app.lines
+
+
+def test_a_paste_marker_is_one_block_and_only_a_real_paste_expands(home, notes):
+    """The marker was plain text: a marker typed by hand expanded to an earlier paste, and deleting one character
+    of a marker sent the broken marker instead of the paste. Now only a marker made by a paste expands, an edit
+    touching a marker removes all of it, the cursor steps over it, and ↑ brings it back working."""
+    from textual import events
+
+    from peresearch.tui import Prompt
+
+    paste = "Traceback\n  File x\nKeyError: 'a'\n"
+
+    def make(on_event):
+        a, llm = agent(home, notes, *[Reply(f"Answer {i}.") for i in range(4)])
+        make.llm = llm
+        return a
+
+    def sent(n):
+        return [m["content"] for m in make.llm.seen[n][0] if m["role"] == "user"][-1]
+
+    async def send(app, pilot, n):
+        await pilot.press("enter")
+        await settle(app, pilot, lambda: not app.busy and len(make.llm.seen) > n)
+
+    async def steps(app, pilot):
+        await pilot.pause()
+        prompt = app.query_one("#ask", Prompt)
+        prompt.post_message(events.Paste(paste))
+        await pilot.pause()
+        marker = prompt.value
+        app.marker = marker
+        await send(app, pilot, 0)                                    # 0: the paste itself
+        await pilot.press(*"typed [Pasted text #1 +3 lines] by hand")
+        await send(app, pilot, 1)                                    # 1: the same words typed
+        prompt.post_message(events.Paste(paste))
+        await pilot.pause()
+        await pilot.press(*" tail")
+        await pilot.press(*["left"] * 5)                             # to the end of the marker
+        app.at_end = prompt.cursor_location
+        await pilot.press("left")                                    # over the marker in one step
+        app.at_start = prompt.cursor_location
+        await pilot.press("right")
+        app.back_at_end = prompt.cursor_location
+        prompt.move_cursor((0, 3))                                   # a click inside the marker
+        await pilot.press("x")                                       # typed after it, not inside
+        app.typed_inside = prompt.value
+        await pilot.press("end", *["left"] * 6, "backspace")         # one Backspace: the whole marker
+        app.after_backspace = prompt.value
+        await send(app, pilot, 2)                                    # 2: no paste left
+        await pilot.press("up", "up", "up")                          # back to the first question
+        app.recalled = prompt.value
+        await send(app, pilot, 3)                                    # 3: the paste again
+    app = tui_run(make, steps)
+    assert app.marker.replace("\u2060", "") == "[Pasted text #1 +3 lines]"
+    assert "KeyError: 'a'" in sent(0) and "[Pasted text" not in sent(0)
+    assert sent(1).endswith("typed [Pasted text #1 +3 lines] by hand") and "KeyError" not in sent(1)
+    assert app.at_end[1] - app.at_start[1] == len(app.marker.replace("\u2060", "")) + 1 and app.at_start == (0, 0)
+    assert app.back_at_end == app.at_end
+    assert app.typed_inside.replace("\u2060", "") == "[Pasted text #2 +3 lines]x tail"
+    assert app.after_backspace == "x tail"
+    assert sent(2).endswith("x tail") and "KeyError" not in sent(2) and "Pasted" not in sent(2)
+    assert app.recalled == app.marker and "KeyError: 'a'" in sent(3) and "\u2060" not in sent(3)
+
+
+def test_the_invisible_mark_cannot_be_pasted_in(home, notes):
+    """The mark that makes a paste marker real is stripped from pasted text (a marker copied off the screen), so a
+    paste cannot forge a marker either."""
+    from textual import events
+
+    from peresearch.tui import Prompt
+
+    async def steps(app, pilot):
+        await pilot.pause()
+        prompt = app.query_one("#ask", Prompt)
+        prompt.post_message(events.Paste("a\nb\n"))
+        await pilot.pause()
+        forged = prompt.value
+        copied = []
+        app.copy_to_clipboard = copied.append
+        prompt.select_all()
+        app.action_copy()                                            # Ctrl+C on the prompt: no mark on the clipboard
+        app.copied = copied
+        prompt.value = ""
+        prompt.post_message(events.Paste(f"copied {forged} back"))
+        await pilot.pause()
+        app.value, app.expanded = prompt.value, prompt.expand(prompt.value)
+    app = tui_run(lambda e: agent(home, notes)[0], steps)
+    assert "\u2060" not in app.value and app.expanded == "copied [Pasted text #1 +2 lines] back"
+    assert app.copied == ["[Pasted text #1 +2 lines]"]
