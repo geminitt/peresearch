@@ -91,6 +91,7 @@ for w in workers:
         w.terminate()
         codes.append(f"stopped at the deadline ({w.wait()})")
 print("workers exited with", codes, flush=True)
-sh(f"pip freeze > {WORK}/pip-freeze.txt && du -sh {RUNS} && df -h {WORK}")
+# the record: never let it fail the kernel (the laptop rehearsal has no pip)
+sh(f"({sys.executable} -m pip freeze > {WORK}/pip-freeze.txt || true); du -sh {RUNS}; df -h {WORK}")
 sh(f"find {RUNS} -name rerank.npz | sort | wc -l; find {RUNS} -name 'rerank.part.npz' | sort")
 sh(f"grep -hE 'FAILED|Error|retry|preflight|reuse' {WORK}/worker*.log || true")

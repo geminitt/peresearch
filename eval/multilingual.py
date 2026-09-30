@@ -33,8 +33,16 @@ _spec.loader.exec_module(retrieval)
 log, retry = retrieval.log, retrieval.retry
 
 MIRACL = ("mteb/MIRACLRetrievalHardNegatives", "332a9acb49f5e83d5397683f79d23e588f685916")
-CMTEB = {"DuRetrieval": ("a1a333e290fe30b10f3f56498e3a0d911a693ced", "497b7bd1bbb25cb3757ff34d95a8be50a3de2279"),
-         "CmedqaRetrieval": ("cd540c506dae1cf9e9a59c3e06f42030d54e7301", "279d737f36c731c8ff6e2b055f31fe02216fa23d")}
+# (revision, qrels revision, corpus file, queries file, qrels file): file names written out, so that loading works
+# offline (listing a repository's files needs the network)
+CMTEB = {"DuRetrieval": ("a1a333e290fe30b10f3f56498e3a0d911a693ced", "497b7bd1bbb25cb3757ff34d95a8be50a3de2279",
+                         "data/corpus-00000-of-00001-19b9e924cb33e4d5.parquet",
+                         "data/queries-00000-of-00001-7c7edb40be6b560c.parquet",
+                         "data/dev-00000-of-00001-d3c385852a7c0c9d.parquet"),
+         "CmedqaRetrieval": ("cd540c506dae1cf9e9a59c3e06f42030d54e7301", "279d737f36c731c8ff6e2b055f31fe02216fa23d",
+                             "data/corpus-00000-of-00001-a3949861f65a3226.parquet",
+                             "data/queries-00000-of-00001-daeedab899d3c839.parquet",
+                             "data/dev-00000-of-00001-57fb84a4aceaa695.parquet")}
 JMTEB = ("sbintuitions/JMTEB", "6064d6d00e3eccca0f9673621022b409f79d1a18")
 MLDR = ("Shitao/MLDR", "d67138e705d963e346253a80e59676ddb418810a")
 
@@ -109,16 +117,11 @@ def load(name: str):
         return _finish(corpus[cid].astype(str).tolist(), text.tolist(), rel,
                        dict(zip(queries[qid].astype(str), queries["text"])))
     if kind == "cmteb":
-        from huggingface_hub import list_repo_files
-
         (task,) = args
-        rev, qrev = CMTEB[task]
-        files = [f for f in list_repo_files(f"C-MTEB/{task}", repo_type="dataset", revision=rev) if f.endswith(".parquet")]
-        corpus = pd.read_parquet(_file(f"C-MTEB/{task}", rev, next(f for f in files if "corpus" in f)))
-        queries = pd.read_parquet(_file(f"C-MTEB/{task}", rev, next(f for f in files if "queries" in f)))
-        qfile = next(f for f in list_repo_files(f"C-MTEB/{task}-qrels", repo_type="dataset", revision=qrev)
-                     if f.endswith(".parquet"))
-        qrels = pd.read_parquet(_file(f"C-MTEB/{task}-qrels", qrev, qfile))
+        rev, qrev, cfile, qfile, rfile = CMTEB[task]
+        corpus = pd.read_parquet(_file(f"C-MTEB/{task}", rev, cfile))
+        queries = pd.read_parquet(_file(f"C-MTEB/{task}", rev, qfile))
+        qrels = pd.read_parquet(_file(f"C-MTEB/{task}-qrels", qrev, rfile))
         rel = {}
         for q, d, s in zip(qrels["qid"].astype(str), qrels["pid"].astype(str), qrels["score"]):
             if int(s) > 0:
@@ -878,7 +881,9 @@ def reuse_check(names, n: int = 64) -> dict:
     del e
     free_gpu()
     RUNS.mkdir(parents=True, exist_ok=True)
-    (RUNS / "reuse_check.json").write_text(json.dumps(out, indent=1))
+    path = RUNS / "reuse_check.json"                  # a resumed run adds to the record, never erases it
+    record = {**(json.loads(path.read_text()) if path.exists() else {}), **out}
+    path.write_text(json.dumps(record, indent=1))
     return out
 
 
