@@ -46,7 +46,9 @@ class Workspace:
 
 
 PROBLEMS = {"needs_ocr": "need OCR (no text layer)", "too_large": "too large", "binary": "binary",
-            "error": "could not be read", "large_folder": "folders skipped as datasets"}
+            "error": "could not be read", "large_folder": "folders skipped as datasets",
+            "duplicate": "copies of another file (indexed once)",
+            "data_file": "data files (lines of URLs or numbers): not searched, still readable"}
 
 
 def summary(r, limit: int = 20) -> str:

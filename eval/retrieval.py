@@ -30,6 +30,7 @@ from pathlib import Path
 import numpy as np
 
 from peresearch.zetokrag import core
+from peresearch.zetokrag.models import BENCHMARK_MAX_TOKENS  # every model cut alike, as published
 
 ROOT = Path(__file__).resolve().parent.parent
 RUNS = Path(os.environ.get("PERESEARCH_RUNS", ROOT / "runs")) / "retrieval"
@@ -172,7 +173,7 @@ def prefetch(names) -> None:
         doc_ids, _, qs, _, _ = load(name)
         log(name, f"{len(doc_ids)} documents, {len(qs)} queries")
     for m in EMBEDDERS:
-        retry(lambda: Embedder(m))
+        retry(lambda: Embedder(m, max_tokens=BENCHMARK_MAX_TOKENS))
         log(m, "ready")
     retry(Reranker)
     log("bge-reranker-v2-m3 ready")
@@ -228,7 +229,7 @@ def document_embeddings(name, model, texts, base: Path) -> np.ndarray:
     for a in range(0, len(texts), step):
         part = base / f"docs-{model}.{a:08d}.npy"
         if not part.exists():
-            emb = emb or Embedder(model)
+            emb = emb or Embedder(model, max_tokens=BENCHMARK_MAX_TOKENS)
             np.save(part, emb.documents(texts[a:a + step]))
             log(name, model, f"{min(a + step, len(texts))}/{len(texts)} docs, {time.time() - t:.0f}s;", gpu_memory())
         parts.append(part)
@@ -256,7 +257,7 @@ def first_stages(name, texts, qtexts, out: Path, own, base: Path) -> dict:
     docs = {m: document_embeddings(name, m, texts, base) for m in EMBEDDERS}
     qvecs = {}
     for m in EMBEDDERS:
-        e = Embedder(m)
+        e = Embedder(m, max_tokens=BENCHMARK_MAX_TOKENS)
         qvecs[m] = e.queries(qtexts)
         log(name, m, f"{len(qtexts)} queries;", gpu_memory())
         del e
@@ -318,7 +319,7 @@ def rerank_all(name, texts, qtexts, rels, doc_ids, stages, out: Path) -> dict:
         return json.loads(path.read_text())
     from peresearch.zetokrag.models import Reranker, free_gpu, gpu_memory
 
-    rr = Reranker()
+    rr = Reranker(windowed=False)
     cache_path = out / "rerank_scores.json"
     cache: list[dict[int, float]] = [{int(k): v for k, v in d.items()} for d in json.loads(cache_path.read_text())] \
         if cache_path.exists() else [{} for _ in qtexts]

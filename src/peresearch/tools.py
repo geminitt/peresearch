@@ -78,13 +78,6 @@ def _files(roots: list[Path], pattern: str = "**/*", hidden: bool = True):
                     yield p
 
 
-def outermost(roots: list[Path]) -> list[Path]:
-    """The declared folders without those inside another one, which would list their files twice."""
-    real = [Path(os.path.realpath(r)) for r in roots]
-    return [r for r, rr in zip(roots, real) if not any(o != rr and o in rr.parents for o in real)
-            and rr not in real[:real.index(rr)]]
-
-
 class Toolbox:
     """The tools, their JSON schemas for the model, and the sources they produce."""
 
@@ -93,7 +86,7 @@ class Toolbox:
         folders; without it, nothing outside them is read."""
         self.searcher, self.web, self.ask = searcher, web, ask
         self.granted: list[Path] = []    # folders the user allowed for this session
-        self.roots = outermost([Path(r) for r in (guard.roots() if roots is None else roots)])
+        self.roots = guard.outermost([Path(r) for r in (guard.roots() if roots is None else roots)])
         self.sources = Sources()
         self.web_calls = 0
         self.recorded_gaps = None        # set by gaps(); the agent clears it for every question

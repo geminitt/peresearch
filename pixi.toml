@@ -18,6 +18,7 @@ openai = "*"
 httpx = "*"
 trafilatura = "*"
 textual = "*"
+regex = "*"            # zetokrag.core: Unicode scripts and grapheme clusters (came only through trafilatura)
 
 # models: BGE-M3 and the reranker on the local GPU
 [feature.models.pypi-dependencies]

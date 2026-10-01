@@ -32,6 +32,7 @@ import importlib.util
 import json
 import multiprocessing
 import os
+import re
 import sys
 import time
 import unicodedata
@@ -105,12 +106,26 @@ def model_tokenizer(name: str):
     return _tokenizers[name]
 
 
+_LEGACY_WORD = re.compile(r"\w+")                     # the standard library's \w, exactly as zetokrag.core used it
+
+
+def legacy_tokenize(text: str, folded: bool) -> list[str]:
+    """ZetokRAG's terms until 2026-10-01 (`\\w+`, then the bare form of each word with diacritics): what the
+    variant `current` measured, kept here so these results reproduce after zetokrag.core moved on."""
+    out = []
+    for w in _LEGACY_WORD.findall(unicodedata.normalize("NFC", text).lower()):
+        out.append(w)
+        if folded and (bare := core.fold(w)) != w:
+            out.append(bare)
+    return out
+
+
 def _plain(text: str) -> list[str]:
-    return core.tokenize(text, folded=False)
+    return legacy_tokenize(text, folded=False)
 
 
 def _folded(text: str) -> list[str]:
-    return core.tokenize(text, folded=True)
+    return legacy_tokenize(text, folded=True)
 
 
 def _bigrams(text: str) -> list[str]:

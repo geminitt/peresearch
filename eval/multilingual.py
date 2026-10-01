@@ -31,6 +31,7 @@ _spec = importlib.util.spec_from_file_location("retrieval", Path(__file__).paren
 retrieval = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(retrieval)
 log, retry = retrieval.log, retrieval.retry
+BENCHMARK_MAX_TOKENS = retrieval.BENCHMARK_MAX_TOKENS   # every model cut alike, as published
 
 MIRACL = ("mteb/MIRACLRetrievalHardNegatives", "332a9acb49f5e83d5397683f79d23e588f685916")
 # (revision, qrels revision, corpus file, queries file, qrels file): file names written out, so that loading works
@@ -206,7 +207,7 @@ def speed(n_docs: int = 1536, n_queries: int = 48, depth: int = 64) -> dict:
         queries += [qtexts[i] for i in rng.choice(len(qtexts), n_queries // len(picks), replace=False)]
     out = {"gpu": torch.cuda.get_device_name(0) if torch.cuda.is_available() else "cpu", "documents": len(docs)}
     for name in ["qwen3-embedding-0.6b", "bge-m3"]:
-        e = Embedder(name)
+        e = Embedder(name, max_tokens=BENCHMARK_MAX_TOKENS)
         tok = e.model.tokenizer
         tokens = sum(min(512, len(x)) for x in tok(docs, add_special_tokens=True)["input_ids"])
         e.documents(docs[:64])                                  # warm-up
@@ -218,7 +219,7 @@ def speed(n_docs: int = 1536, n_queries: int = 48, depth: int = 64) -> dict:
         log(name, out[name])
         del e
         free_gpu()
-    r = Reranker()
+    r = Reranker(windowed=False)
     pairs = [(q, docs[i]) for q in queries for i in rng.choice(len(docs), depth, replace=False)]
     r.scores(pairs[0][0], [d for _, d in pairs[:32]])            # warm-up
     torch.cuda.synchronize()
@@ -533,7 +534,7 @@ def run_scores(names) -> list[str]:
                 out = base / st
                 qt = queries_for(qtexts, st)
                 if not (out / "dense.npz").exists():
-                    e = Embedder("qwen3-embedding-0.6b")
+                    e = Embedder("qwen3-embedding-0.6b", max_tokens=BENCHMARK_MAX_TOKENS)
                     qv = e.queries(qt)
                     del e
                     free_gpu()
@@ -574,7 +575,7 @@ def run_scores(names) -> list[str]:
                     done_ids, done_scores = list(np.split(z["ids"], z["offsets"][1:-1])), \
                         list(np.split(z["scores"], z["offsets"][1:-1]))
                     done_ids, done_scores = done_ids[:start], done_scores[:start]
-                rr, t = Reranker(), time.time()
+                rr, t = Reranker(windowed=False), time.time()
                 for k in range(start, len(qt)):
                     ids = np.array(sorted(union[k]), dtype=np.int32)
                     done_ids.append(ids)
@@ -819,6 +820,92 @@ def analyze(names, n_boot: int = 10_000, out_path: Path = None) -> str:
     return text
 
 
+# --- bigrams or XLM-R for unspaced scripts, with the reranker (one GPU for both) -----------------------------------
+
+CUTS = ("unspaced-xlmr", "unspaced-bigrams")
+
+
+def cut_lists(views: dict, k: int, depth: int = OTHER_DEPTH) -> dict[str, list[int]]:
+    return {c: fuse(views[f"lexical:{c}"][k], views["qwen3"][k])[0][:depth].tolist() for c in CUTS}
+
+
+def verify_cut(names) -> list[str]:
+    """ZetokRAG's reranked system with either cut of unspaced scripts. Where a query's two top-30s hold documents
+    the main pass never scored (Chinese, Japanese), every document of both is scored again here, so that within a
+    query both cuts are ranked by scores from the same GPU; saved per set and setting (rerank-cuts.npz)."""
+    from peresearch.zetokrag.models import Reranker, free_gpu
+
+    failed, rr = [], None
+    for name in names:
+        try:
+            for st in settings(name):
+                out = RUNS / name / st / "rerank-cuts.npz"
+                if out.exists():
+                    continue
+                _, texts, _, qtexts, _ = load(name)
+                qt = queries_for(qtexts, st)
+                views = load_views(name, st)
+                z = np.load(RUNS / name / st / "rerank.npz")
+                cached = [set(i.tolist()) for i in np.split(z["ids"], z["offsets"][1:-1])]
+                redo = [k for k in range(len(qt)) if set().union(*cut_lists(views, k).values()) - cached[k]]
+                ids, scores, t = [], [], time.time()
+                for n, k in enumerate(redo):
+                    rr = rr or Reranker(windowed=False)
+                    u = np.array(sorted(set().union(*cut_lists(views, k).values())), dtype=np.int32)
+                    ids.append(u)
+                    scores.append(rr.scores(qt[k], [texts[i] for i in u]).astype(np.float32))
+                    if (n + 1) % 200 == 0:
+                        log(name, st, "cut check", f"{n + 1}/{len(redo)} queries, {time.time() - t:.0f}s")
+                offsets = np.cumsum([0] + [len(x) for x in ids])
+                _atomic_save(out, queries=np.array(redo, dtype=np.int32), offsets=offsets,
+                             ids=np.concatenate(ids) if ids else np.zeros(0, np.int32),
+                             scores=np.concatenate(scores) if scores else np.zeros(0, np.float32))
+                log(name, st, "cut check", f"{len(redo)} queries scored again, {time.time() - t:.0f}s")
+        except Exception:
+            import traceback
+
+            log(name, "cut check FAILED")
+            traceback.print_exc()
+            failed.append(name)
+    del rr
+    free_gpu()
+    return failed
+
+
+def compare_cuts(names, n_boot: int = 10_000) -> str:
+    """nDCG@10 of the reranked system with each cut, and bigrams minus XLM-R with a paired bootstrap interval."""
+    rng = np.random.default_rng(0)
+    per: dict[str, dict] = {}
+    for name in names:
+        for st in settings(name):
+            path = RUNS / name / st / "rerank-cuts.npz"
+            if not path.exists():
+                continue
+            doc_ids, _, _, _, rels = load(name)
+            views = load_views(name, st)
+            z = np.load(RUNS / name / st / "rerank.npz")
+            main = [dict(zip(i.tolist(), s.tolist())) for i, s in
+                    zip(np.split(z["ids"], z["offsets"][1:-1]), np.split(z["scores"], z["offsets"][1:-1]))]
+            c = np.load(path)
+            again = {int(k): dict(zip(i.tolist(), s.tolist())) for k, i, s in
+                     zip(c["queries"], np.split(c["ids"], c["offsets"][1:-1]), np.split(c["scores"], c["offsets"][1:-1]))}
+            row = {}
+            for cut in CUTS:
+                fused = [fuse(views[f"lexical:{cut}"][k], views["qwen3"][k])[0] for k in range(len(rels))]
+                ranked = [reranked(f, again.get(k, main[k]), OTHER_DEPTH) for k, f in enumerate(fused)]
+                row[cut] = [retrieval.metrics([doc_ids[i] for i in r], rel)["ndcg@10"] for r, rel in zip(ranked, rels)]
+            per[(name, st)] = row
+    a_cut, b_cut = CUTS
+    lines = [f"| set | setting | queries | {a_cut} | {b_cut} | {b_cut} − {a_cut} |", "|---|---|---:|---:|---:|---|"]
+    for (name, st), row in per.items():
+        d = np.array(row[b_cut]) - np.array(row[a_cut])
+        boot = [d[rng.integers(0, len(d), len(d))].mean() for _ in range(n_boot)]
+        lo, hi = np.percentile(boot, [2.5, 97.5])
+        lines.append(f"| {name} | {st} | {len(d)} | {100 * np.mean(row[a_cut]):.1f} | "
+                     f"{100 * np.mean(row[b_cut]):.1f} | {100 * d.mean():+.1f} [{100 * lo:+.1f}, {100 * hi:+.1f}] |")
+    return "\n".join(lines)
+
+
 # --- Kaggle helpers ---------------------------------------------------------------------------------------------
 
 REUSED = {"scifact", "nfcorpus", "fiqa", "arguana", "scidocs",
@@ -860,7 +947,7 @@ def prefetch(names) -> None:
     for name in names:
         doc_ids, _, qs, _, _ = load(name)
         log(name, f"{len(doc_ids)} documents, {len(qs)} queries")
-    retry(lambda: Embedder("qwen3-embedding-0.6b"))
+    retry(lambda: Embedder("qwen3-embedding-0.6b", max_tokens=BENCHMARK_MAX_TOKENS))
     retry(lambda: BgeM3())
     retry(lambda: hf_hub_download(BGE[0], "sparse_linear.pt", revision=BGE[1]))
     retry(Reranker)
@@ -873,7 +960,7 @@ def reuse_check(names, n: int = 64) -> dict:
     bits); a set that fails has its file removed, so its vectors are computed afresh."""
     from peresearch.zetokrag.models import Embedder, free_gpu
 
-    e, out = Embedder("qwen3-embedding-0.6b"), {}
+    e, out = Embedder("qwen3-embedding-0.6b", max_tokens=BENCHMARK_MAX_TOKENS), {}
     for name in names:
         path = RUNS / name / "docs-qwen3-embedding-0.6b.npy"
         if not path.exists():
@@ -905,19 +992,20 @@ def reuse_check(names, n: int = 64) -> dict:
 
 def overlap_scores(qtexts, doc_texts_per_query, corpus_texts) -> dict:
     """How many of a question's words appear in its relevant documents. Words found in more than 10% of the
-    corpus's documents are left out (they would count as overlap anywhere); each question counts once."""
-    from peresearch.zetokrag import core
+    corpus's documents are left out (they would count as overlap anywhere); each question counts once. Words are cut
+    as ZetokRAG did when these numbers were taken (`legacy_tokenize`)."""
+    from tokenization import legacy_tokenize
 
     df: dict[str, int] = {}
     for t in corpus_texts:
-        for w in set(core.tokenize(t, folded=False)):
+        for w in set(legacy_tokenize(t, folded=False)):
             df[w] = df.get(w, 0) + 1
     common = {w for w, n in df.items() if n > 0.1 * len(corpus_texts)}
     shares = []
     for q, docs in zip(qtexts, doc_texts_per_query):
-        words = set(core.tokenize(q, folded=False)) - common
+        words = set(legacy_tokenize(q, folded=False)) - common
         if words:
-            seen = set().union(*(set(core.tokenize(d, folded=False)) for d in docs)) if docs else set()
+            seen = set().union(*(set(legacy_tokenize(d, folded=False)) for d in docs)) if docs else set()
             shares.append(len(words & seen) / len(words))
     return {"questions": len(shares), "mean_share": float(np.mean(shares)),
             "share_all_found": float(np.mean([s == 1.0 for s in shares]))}
@@ -962,6 +1050,14 @@ if __name__ == "__main__":
             print(analyze(names))
         if failed:
             sys.exit(f"failed: {' '.join(failed)}")
+    elif args[:1] in (["verify-cut"], ["compare-cuts"]):
+        names = [a for a in args[1:] if a in SETS] or [n for n in SETS if not n.startswith("mldr")]
+        if args[0] == "verify-cut":
+            failed = verify_cut(names)
+            if failed:
+                sys.exit(f"failed: {' '.join(failed)}")
+        else:
+            print(compare_cuts(names))
     elif args[:1] == ["prefetch"]:
         prefetch([a for a in args[1:] if a in SETS])
     elif args[:1] == ["reuse-check"]:

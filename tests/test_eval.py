@@ -43,6 +43,16 @@ def test_exact_binomial_interval():
     assert abs(lo - 0.1871) < 1e-3 and abs(hi - 0.8129) < 1e-3      # textbook Clopper-Pearson for 5/10
 
 
+def test_the_personal_overlap_metric_does_not_follow_the_retrievers_cut():
+    spec2 = importlib.util.spec_from_file_location("personal", Path(__file__).parent.parent / "eval" / "personal.py")
+    personal = importlib.util.module_from_spec(spec2)
+    spec2.loader.exec_module(personal)
+    # `\w+` keeps each Chinese stretch whole, so these two passages share no word; ZetokRAG's character pairs would
+    # share three of five and turn a miss into a "content" hit
+    assert personal.jaccard("中文检索", "中文检索系统") == 0.0
+    assert personal.jaccard("học máy", "Học máy và dữ liệu") == 0.4                # 2 shared of 5
+
+
 def test_every_corpus_is_pinned_and_shards_cover_all_once():
     assert set(retrieval.REVISIONS) == set(retrieval.DATASETS)
     assert all(len(r) == 40 for r in retrieval.REVISIONS.values())

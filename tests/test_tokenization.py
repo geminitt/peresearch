@@ -40,3 +40,10 @@ def test_cutting_on_all_cores_gives_the_terms_of_cutting_one_text_at_a_time():
              "मशीन लर्निंग क्या है", "hoc may la gi", ""] * 400                     # 2,400 texts: the process pool
     for variant, one in tokenization.REGEX_CUTS.items():
         assert tokenization.cut_all(variant, texts) == [one(t) for t in texts], variant
+
+
+def test_the_legacy_cut_is_zetokrag_before_2026_10_01():
+    """`current` in these results is the old rule; zetokrag.core moved on, so the scripts keep their own copy."""
+    assert tokenization.legacy_tokenize("Học MÁY 机器学习 मशीन", folded=True) == \
+        ["học", "hoc", "máy", "may", "机器学习", "मश", "न"]
+    assert tokenization.cut_all("words", ["机器学习 Qwen3"]) == [["机器学习", "qwen3"]]

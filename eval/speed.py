@@ -20,6 +20,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from retrieval import DATASETS, RESULTS, RUNS, load, log, preflight  # noqa: E402
 
 from peresearch.zetokrag import core, search  # noqa: E402
+from peresearch.zetokrag.models import BENCHMARK_MAX_TOKENS  # noqa: E402 — every model cut alike, as published
 
 OUT = RUNS.parent / "speed"
 MODELS = ["bge-m3", "qwen3-embedding-0.6b"]
@@ -50,7 +51,7 @@ def run_corpus(name, reranker) -> None:
     bm = {False: core.BM25(texts, folded=False), True: core.BM25(texts, folded=True)}
     out = {"documents": len(texts), "gpu": torch.cuda.get_device_name(0) if cuda else "cpu", "index": {}, "query": {}}
     for m in MODELS:
-        e = Embedder(m)
+        e = Embedder(m, max_tokens=BENCHMARK_MAX_TOKENS)
         tok = e.model.tokenizer
         lengths = [min(len(tok(t, add_special_tokens=True)["input_ids"]), 512) for t in sample]
         e.documents(sample[:32])                                    # warm-up
@@ -135,7 +136,7 @@ def main(only=None):
     from peresearch.zetokrag.models import Reranker, free_gpu, gpu_memory
 
     preflight()
-    reranker = Reranker()
+    reranker = Reranker(windowed=False)
     for name in DATASETS:
         if all((RUNS / name / f"docs-{m}.npy").exists() for m in MODELS) and (not only or name in only):
             log(name, "before:", gpu_memory())

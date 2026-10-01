@@ -1,25 +1,49 @@
 """The retrieval core of ZetokRAG, the same code for a folder of notes and for a benchmark corpus.
 
-Two first-stage views score every text: BM25 and a dense embedding. BM25 matches words as typed, except when
-the query itself has no diacritics ("hoc may"): then it matches on diacritic-free forms, so the notes written
-with accents are still found. (Matching every query on bare forms merges too many Vietnamese words: ma, má,
-mà, mả, mã, mạ; results/retrieval.md compares this "auto" rule with folding always and never.)
+Two first-stage views score every text: BM25 and a dense embedding. ZetokRAG's BM25 matches words as typed
+(owner, 2026-10-02: notes and questions typed without Vietnamese diacritics are rare, so the folded index and
+the rule choosing it by the query's diacritics were removed). `fold`, `accented` and `BM25(folded=True)` stay
+for the benchmarks that measured that rule (results/retrieval.md, results/multilingual.md).
 Each view keeps its top candidates, min-max normalizes their scores (a text missing from a view gets 0),
 and the two are mixed with weight rho, the fusion Zero-Mem uses. A cross-encoder then reranks the best
 fused candidates. No step calls an LLM, hence "zero-token".
 """
 
 import os
-import re
 import unicodedata
 
 import numpy as np
+import regex
 
 # bm25s imports JAX when it is installed (Kaggle's image has it) and runs one JAX op at import; JAX then claims
 # 75% of the GPU for itself, and the embedders run out of memory. Nothing here needs JAX on the GPU.
 os.environ.setdefault("JAX_PLATFORMS", "cpu")
 
-_WORD = re.compile(r"\w+")
+# A word: letters, combining marks (Hindi and Thai vowel signs belong to their word; `\w+` cut words at them) and
+# digits. A stretch in a script written without spaces (Han, Hiragana, Katakana, Thai, Lao, Khmer, Myanmar) is cut
+# further by `_cut_unspaced`; spaced scripts (Latin, Hangul, Devanagari…) keep their words as before. Measured on six
+# languages in results/multilingual.md (Chinese 8.0 → 63.7, Japanese 27.6 → 83.8 nDCG@10; English, Vietnamese,
+# Korean unchanged).
+_WORD = regex.compile(r"[\p{L}\p{M}\p{N}_]+")
+_UNSPACED = (r"\p{scx=Han}\p{scx=Hiragana}\p{scx=Katakana}\p{scx=Thai}\p{scx=Lao}\p{scx=Khmer}\p{scx=Myanmar}")
+_UNSPACED_RUN = regex.compile(rf"((?:[{_UNSPACED}]\p{{M}}*)+)")
+_GRAPHEME = regex.compile(r"\X")
+
+
+def _cut_unspaced(run: str) -> list[str]:
+    """Overlapping pairs of characters (grapheme clusters, so a Thai vowel stays with its consonant)."""
+    g = _GRAPHEME.findall(run)
+    return g if len(g) == 1 else [g[i] + g[i + 1] for i in range(len(g) - 1)]
+
+
+def words(text: str) -> list[str]:
+    """Lower-cased words; each stretch of an unspaced script inside a word is cut by `_cut_unspaced`."""
+    out = []
+    for word in _WORD.findall(unicodedata.normalize("NFC", text).lower()):
+        for k, piece in enumerate(_UNSPACED_RUN.split(word)):
+            if piece:
+                out.extend(_cut_unspaced(piece) if k % 2 else [piece])
+    return out
 
 
 def fold(text: str) -> str:
@@ -32,11 +56,11 @@ def fold(text: str) -> str:
 def tokenize(text: str, folded: bool = True) -> list[str]:
     """Lower-cased words; with `folded`, every word with diacritics also yields its bare form, so a query
     typed without accents ('hoc may') still meets a note written with them ('học máy') and vice versa."""
-    words = _WORD.findall(unicodedata.normalize("NFC", text).lower())
+    terms = words(text)
     if not folded:
-        return words
+        return terms
     out = []
-    for w in words:
+    for w in terms:
         out.append(w)
         bare = fold(w)
         if bare != w:
@@ -78,10 +102,15 @@ def minmax(values: np.ndarray) -> np.ndarray:
 
 
 def fuse_minmax(lexical: np.ndarray, dense: np.ndarray, rho: float = 0.5, n: int = 100) -> tuple[np.ndarray, np.ndarray]:
-    """rho * lexical + (1 - rho) * dense over each view's top n, both min-max normalized over that top n."""
+    """rho * lexical + (1 - rho) * dense over each view's top n, both min-max normalized over that top n.
+
+    A lexical view that matched nothing (best score 0) is left out: min-max maps equal scores to 1, so 100 documents
+    BM25 never matched used to get rho each and push the dense ranking down (results/multilingual.md)."""
     fused: dict[int, float] = {}
     for weight, scores in ((rho, lexical), (1 - rho, dense)):
         idx = top(scores, n)
+        if scores is lexical and (len(idx) == 0 or float(scores[idx[0]]) <= 0):
+            continue
         for i, s in zip(idx, minmax(scores[idx])):
             fused[int(i)] = fused.get(int(i), 0.0) + weight * float(s)
     ids = np.array(sorted(fused, key=lambda i: -fused[i]))

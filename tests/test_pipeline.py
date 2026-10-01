@@ -29,14 +29,15 @@ def fake_load(name):
 
 
 class Embedder(FakeEmbedder):
-    def __init__(self, name="bge-m3", batch_size=32):
+    def __init__(self, name="bge-m3", batch_size=32, max_tokens=None):
+        assert max_tokens == 512, "the benchmarks cut every model at 512 tokens, as published"
         self.name = name
         self.model = SimpleNamespace(tokenizer=lambda t, add_special_tokens=True: {"input_ids": t.split()})
 
 
 class Reranker(FakeReranker):
-    def __init__(self, batch_size=32):
-        pass
+    def __init__(self, batch_size=32, windowed=True):
+        assert not windowed, "the benchmarks cut the reranker's input, as published"
 
 
 @pytest.fixture

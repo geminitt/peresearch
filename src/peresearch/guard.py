@@ -81,6 +81,13 @@ def roots() -> list[Path]:
     return [Path(r) for r in json.loads(p.read_text())["roots"]] if p.exists() else []
 
 
+def outermost(roots: list[Path]) -> list[Path]:
+    """The declared folders without those inside another one, which would list their files twice."""
+    real = [Path(os.path.realpath(r)) for r in roots]
+    return [r for r, rr in zip(roots, real) if not any(o != rr and o in rr.parents for o in real)
+            and rr not in real[:real.index(rr)]]
+
+
 def set_roots(paths: list[Path]) -> None:
     home().mkdir(parents=True, exist_ok=True)
     config_path().write_text(json.dumps({"roots": sorted({str(Path(r).resolve()) for r in paths})}, indent=1))

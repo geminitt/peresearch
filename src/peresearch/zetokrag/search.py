@@ -1,8 +1,7 @@
 """`find`: the ZetokRAG query over the local index.
 
-BM25 (diacritic-folded only for queries typed without accents) and the dense embedder each propose their
-top candidates, min-max fusion (rho) merges them, bge-reranker-v2-m3
-reranks the best N_RERANK, and the top k are returned with their source and neighbouring chunks. Before an
+BM25 (on words as typed) and the dense embedder each propose their top candidates, min-max fusion (rho) merges
+them, bge-reranker-v2-m3 reranks the best N_RERANK, and the top k are returned with their source and neighbouring chunks. Before an
 excerpt is shown, its file is checked again: if the file changed and the excerpt is no longer in it, the
 excerpt is dropped as stale instead of being quoted wrongly.
 
@@ -63,18 +62,13 @@ class Searcher:
 
     def rank(self, query: str) -> tuple[list[tuple], np.ndarray]:
         """The reranked head: chunk rows and reranker scores, best first."""
-        bm_ids, bm = self.index.bm25(folded=not core.accented(query))
-        dense_ids, vecs = self.index.dense32()
-        if bm is None or len(dense_ids) == 0:
+        ids, bm, vecs = self.index.snapshot()          # one read: ids, BM25 and vectors line up
+        if bm is None:
             return [], np.zeros(0, dtype=np.float32)
         lexical = bm.scores(query)
         q = self.index.embedder.queries([query])[0].astype(np.float32)
-        semantic = vecs @ q
-        if not np.array_equal(bm_ids, dense_ids):     # another process is mid-update: align the two by chunk id
-            pos = np.minimum(np.searchsorted(dense_ids, bm_ids), len(dense_ids) - 1)
-            semantic = np.where(dense_ids[pos] == bm_ids, semantic[pos], -np.inf).astype(np.float32)
-        cand, _ = core.fuse_minmax(lexical, semantic, RHO, N_FIRST)
-        rows = self.index.rows(bm_ids[cand[:N_RERANK]])
+        cand, _ = core.fuse_minmax(lexical, vecs @ q, RHO, N_FIRST)
+        rows = self.index.rows(ids[cand[:N_RERANK]])
         scores = self.reranker.scores(query, [embed_text(r[2], r[6]) for r in rows])
         order = np.argsort(-scores, kind="stable")
         return [rows[i] for i in order], scores[order]

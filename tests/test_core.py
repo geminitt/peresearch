@@ -59,3 +59,40 @@ def test_excluded_texts_never_reach_a_ranking():
     ids, fused = core.fuse_minmax(s, np.array([0.2, -np.inf, 0.3, 0.8], dtype=np.float32), 0.5, 10)
     assert 1 not in ids and np.isfinite(fused).all()
     assert len(core.top(np.full(3, -np.inf), 5)) == 0
+
+
+# --- the multilingual cut (2026-10-01, results/multilingual.md) ---------------------------------------------------
+
+def test_bm25_finds_chinese_and_japanese_words_inside_unspaced_text():
+    """`\\w+` kept a whole Chinese or Japanese sentence as one term, so BM25 matched nothing for 60-97% of the
+    Chinese and Japanese queries of MIRACL, DuRetrieval, CmedqaRetrieval and JMTEB."""
+    docs = ["机器学习模型的训练方法", "今天天气很好", "機械学習のモデルを訓練する", "học máy và mô hình"]
+    bm = core.BM25(docs)
+    zh, ja = bm.scores("机器学习"), bm.scores("機械学習")
+    assert zh.max() > 0 and int(np.argmax(zh)) == 0
+    assert ja.max() > 0 and int(np.argmax(ja)) == 2
+
+
+def test_words_keep_their_vowel_signs():
+    """Hindi vowel signs are combining marks: `\\w+` cut every word at them (मशीन -> मश, न)."""
+    assert core.tokenize("मशीन लर्निंग क्या है", folded=False) == ["मशीन", "लर्निंग", "क्या", "है"]
+
+
+def test_spaced_text_is_cut_as_before():
+    """English, Vietnamese and Korean words are unchanged, so gate 1's numbers stand."""
+    assert core.tokenize("Học MÁY, SuperBPE và Qwen3.6-35B-A3B-FP8") == \
+        ["học", "hoc", "máy", "may", "superbpe", "và", "va", "qwen3", "6", "35b", "a3b", "fp8"]
+    assert core.tokenize("학습을 시작했다", folded=False) == ["학습을", "시작했다"]
+    assert core.tokenize("hoc may la gi", folded=False) == ["hoc", "may", "la", "gi"]
+
+
+def test_fusion_ignores_a_lexical_view_that_matched_nothing():
+    """All-zero BM25 scores were min-max normalized to 1, so 100 documents BM25 had not matched each got rho and
+    pushed the dense ranking down (NLP Journal, Japanese: 25.1 nDCG@10 against 94.9 without them)."""
+    dense = np.linspace(0, 1, 500).astype(np.float32)
+    ids, _ = core.fuse_minmax(np.zeros(500, np.float32), dense, rho=0.5, n=100)
+    assert ids[:10].tolist() == list(range(499, 489, -1))
+    lexical = np.zeros(500, np.float32)
+    lexical[3] = 2.0                                     # one match still counts
+    ids, _ = core.fuse_minmax(lexical, dense, rho=0.5, n=100)
+    assert 3 in ids[:5].tolist()

@@ -20,10 +20,23 @@ def test_fusion_from_saved_top_lists_equals_zetokrag_fusion():
         for _ in range(10):
             lex = np.where(rng.random(500) < share, rng.random(500) * 12, 0.0).astype(np.float32)
             dense = rng.random(500).astype(np.float32)
-            ids, sc = multilingual.fuse(multilingual._top(lex), multilingual._top(dense))
-            ref_ids, ref_sc = core.fuse_minmax(lex, dense, 0.5, 100)
-            assert np.allclose(sc, ref_sc)
-            assert ids[sc > 0].tolist() == ref_ids[ref_sc > 0].tolist()   # ties at 0 may be ordered otherwise
+            # guarded = zetokrag.core today; unguarded = ZetokRAG as measured (core before 2026-10-01)
+            for guard, (ref_ids, ref_sc) in ((True, core.fuse_minmax(lex, dense, 0.5, 100)),
+                                             (False, _fuse_before_the_guard(lex, dense))):
+                ids, sc = multilingual.fuse(multilingual._top(lex), multilingual._top(dense), guard=guard)
+                assert np.allclose(sc, ref_sc)
+                assert ids[sc > 0].tolist() == ref_ids[ref_sc > 0].tolist()   # ties at 0 may be ordered otherwise
+
+
+def _fuse_before_the_guard(lexical, dense, rho=0.5, n=100):
+    """zetokrag.core.fuse_minmax as it was until 2026-10-01 (no guard for a lexical view that matched nothing)."""
+    fused = {}
+    for weight, scores in ((rho, lexical), (1 - rho, dense)):
+        idx = core.top(scores, n)
+        for i, x in zip(idx, core.minmax(scores[idx])):
+            fused[int(i)] = fused.get(int(i), 0.0) + weight * float(x)
+    ids = np.array(sorted(fused, key=lambda i: -fused[i]))
+    return ids, np.array([fused[i] for i in ids], dtype=np.float32)
 
 
 def test_bm25_matching_nothing_pushes_arbitrary_documents_up_unless_guarded():
@@ -67,7 +80,8 @@ def test_the_low_memory_index_gives_the_same_ranking():
 
 def test_folded_terms_add_the_bare_form_as_zetokrag_does():
     text = "Học máy SuperBPE 机器学习"
-    assert multilingual.lexical_terms("current", [text], True)[0] == core.tokenize(text, folded=True)
+    import tokenization
+    assert multilingual.lexical_terms("current", [text], True)[0] == tokenization.legacy_tokenize(text, folded=True)
     assert multilingual.lexical_terms("unspaced-bigrams", [text], True)[0] == \
         ["học", "hoc", "máy", "may", "superbpe", "机器", "器学", "学习"]
 
@@ -85,7 +99,8 @@ def _vec(text: str, dim: int = 16) -> np.ndarray:
 
 
 class FakeEmbedder:
-    def __init__(self, name="x", batch_size=32):
+    def __init__(self, name="x", batch_size=32, max_tokens=None):
+        assert max_tokens == 512, "the benchmarks cut every model at 512 tokens, as published"
         self.name = name
 
     def documents(self, texts):
@@ -98,6 +113,9 @@ class FakeEmbedder:
 class FakeReranker:
     calls = 0
     fail_after = None
+
+    def __init__(self, batch_size=32, windowed=True):
+        assert not windowed, "the benchmarks cut the reranker's input, as published"
 
     def scores(self, query, texts):
         FakeReranker.calls += 1
@@ -262,3 +280,29 @@ def test_shards_balance_the_two_gpus_and_cover_every_set():
     assert sorted(a + b) == sorted(names)
     load = [sum(multilingual.COST[n] for n in g) for g in (a, b)]
     assert abs(load[0] - load[1]) <= max(multilingual.COST.values())
+
+
+def test_the_cut_check_scores_both_cuts_of_a_query_on_one_gpu(pipeline, monkeypatch):
+    """Where a query's two top-30s hold documents the main pass never scored, both are scored again together, so
+    the comparison of the two cuts never mixes scores from two GPUs within a query."""
+    pytest.importorskip("torch")
+    monkeypatch.setattr(multilingual, "CUTS", ("current", "unspaced-bigrams"))
+    names = ["synth-en"]
+    assert multilingual.run_lexical(names) == [] and multilingual.run_scores(names) == []
+    # forget some main-pass scores so that some queries need the check
+    z = dict(np.load(pipeline / "runs" / "synth-en" / "as-typed" / "rerank.npz"))
+    ids, sc = np.split(z["ids"], z["offsets"][1:-1]), np.split(z["scores"], z["offsets"][1:-1])
+    ids, sc = [i[1:] if k % 3 == 0 else i for k, i in enumerate(ids)], [s[1:] if k % 3 == 0 else s for k, s in enumerate(sc)]
+    np.savez(pipeline / "runs" / "synth-en" / "as-typed" / "rerank.npz", ids=np.concatenate(ids),
+             scores=np.concatenate(sc), offsets=np.cumsum([0] + [len(i) for i in ids]))
+    FakeReranker.calls = 0
+    assert multilingual.verify_cut(names) == []
+    c = np.load(pipeline / "runs" / "synth-en" / "as-typed" / "rerank-cuts.npz")
+    views = multilingual.load_views("synth-en", "as-typed")
+    redo = c["queries"].tolist()
+    assert redo and FakeReranker.calls == len(redo)
+    for k, u in zip(redo, np.split(c["ids"], c["offsets"][1:-1])):
+        assert set(u.tolist()) == set().union(*multilingual.cut_lists(views, k).values())
+    table = multilingual.compare_cuts(names, n_boot=100)
+    assert "| synth-en | as-typed | 130 |" in table
+    assert multilingual.verify_cut(names) == [] and FakeReranker.calls == len(redo)     # done: not scored twice

@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 
 import pytest
 
@@ -23,11 +24,11 @@ def notes(tmp_path):
     return root
 
 
-def test_find_across_diacritics_with_exact_source(home, notes):
+def test_find_with_exact_source(home, notes):
     idx, s = make(home, notes)
     r = idx.update([notes])
     assert (r.added, r.chunks) == (2, 2)
-    hits, verdict, stale = s.find("gradient descent cap nhat trong so", k=1)
+    hits, verdict, stale = s.find("gradient descent cập nhật trọng số", k=1)
     assert hits[0].path.endswith("ml.md") and hits[0].where.endswith("ml.md:L1-3") and stale == 0
     assert hits[0].section == "Học máy" and verdict in ("enough", "partial")
 
@@ -116,18 +117,114 @@ def test_dataset_folders_are_skipped_and_reported(home, notes, monkeypatch):
     assert r.added == 2 and any("reviews" in p for p in r.problems["large_folder"])
 
 
-def test_accented_queries_use_plain_bm25_and_bare_queries_folded(home, tmp_path):
+def test_one_plain_bm25_index_without_diacritic_folding(home, tmp_path):
+    """Owner, 2026-10-02: Vietnamese typed without diacritics is rare, so there is one BM25 index over words as
+    typed and no rule choosing a folded one by the query's diacritics ("ma" no longer matches "má")."""
     root = tmp_path / "n"
     root.mkdir()
     (root / "a.md").write_text("# A\n\nmá tôi nấu cơm\n")
     (root / "b.md").write_text("# B\n\nma quỷ trong truyện\n")
     idx, s = make(home, root)
     idx.update([root])
+    ids, bm = idx.bm25()
+    paths = dict((row[0], row[1]) for row in idx.rows())
+    matched = [paths[int(i)] for i, score in zip(ids, bm.scores("ma")) if score > 0]
+    assert len(matched) == 1 and matched[0].endswith("b.md")
     assert s.rank("ma quỷ")[0][0][1].endswith("b.md")
-    ids, bm = idx.bm25(folded=False)
-    assert bm.scores("má").tolist().count(0.0) == 1          # plain: "má" only in a.md
-    ids, bm = idx.bm25(folded=True)
-    assert (bm.scores("ma") > 0).sum() == 2                    # bare: matches both
+
+
+def test_identical_files_are_indexed_once(home, tmp_path):
+    """Five homework folders held the same vendored stb_image.h: 1,030 chunks of one file. A copy is listed in the
+    report with the file it copies; when that file goes, the copy is indexed in its place."""
+    root = tmp_path / "n"
+    for d in ("hw0", "hw1"):
+        (root / d).mkdir(parents=True)
+        (root / d / "lib.h").write_text("/* image loader */\nint load_image(const char *path);\n")
+    (root / "hw1" / "notes.md").write_text("# Notes\n\nown text\n")
+    idx, _ = make(home, root)
+    r = idx.update([root])
+    paths = [row[1] for row in idx.rows()]
+    assert sum(p.endswith("lib.h") for p in paths) == 1 and any(p.endswith("hw0/lib.h") for p in paths)
+    assert r.problems["duplicate"] == [f"{root / 'hw1' / 'lib.h'} (same as {root / 'hw0' / 'lib.h'})"]
+    assert idx.update([root]).problems.get("duplicate")                     # still reported on the next run
+    (root / "hw0" / "lib.h").unlink()
+    r = idx.update([root])
+    paths = [row[1] for row in idx.rows()]
+    assert any(p.endswith("hw1/lib.h") for p in paths) and "duplicate" not in r.problems
+    ids, vecs = idx.dense()
+    assert sorted(ids.tolist()) == sorted(row[0] for row in idx.rows())
+
+
+def test_data_files_stay_out_of_the_index_but_remain_readable(home, tmp_path):
+    """The IMDB folder's urls_*.txt (one URL per line) and imdbEr.txt (one number per line) were 3,940 of 8,512
+    chunks. A text file whose lines are nearly all URLs or numbers is data: not indexed, named in the report, and
+    still open to the agent's read and grep (only retrieval leaves it out)."""
+    root = tmp_path / "n"
+    root.mkdir()
+    (root / "urls_pos.txt").write_text("".join(f"http://www.imdb.com/title/tt{i:07d}/usercomments\n" for i in range(200)))
+    (root / "imdbEr.txt").write_text("".join(f"{(i - 100) / 37:.6f}\n" for i in range(200)))
+    (root / "readme.txt").write_text("".join(f"Line {i} of the dataset description, in words.\n" for i in range(200)))
+    (root / "links.txt").write_text("See https://arxiv.org/abs/1706.03762\nhttps://example.org\n")   # short: kept
+    idx, _ = make(home, root)
+    r = idx.update([root])
+    paths = {row[1] for row in idx.rows()}
+    assert {Path(p).name for p in paths} == {"readme.txt", "links.txt"}
+    assert sorted(Path(p).name for p in r.problems["data_file"]) == ["imdbEr.txt", "urls_pos.txt"]
+    from peresearch.tools import Toolbox
+    out = Toolbox(roots=[root]).read(str(root / "urls_pos.txt"), 1, 3)
+    assert "tt0000000" in out and "tt0000002" in out
+
+
+def test_vectors_are_stored_in_sqlite_with_their_chunks(home, notes):
+    """One store: the vectors live in index.sqlite and are written in the same transaction as their chunks, so a
+    reader never sees chunks without vectors or the reverse (dense.npz is gone)."""
+    idx, _ = make(home, notes)
+    idx.update([notes])
+    assert not (home / "dense.npz").exists()
+    ids, vecs = idx.dense()
+    assert ids.tolist() == sorted(row[0] for row in idx.rows()) and vecs.shape == (2, FakeEmbedder.dim)
+    n = idx.read("SELECT COUNT(*) FROM vectors")[0][0]
+    assert n == 2
+
+
+def test_an_index_in_the_old_layout_is_rebuilt(home, notes):
+    """An index from before the single store (dense.npz beside the database) is dropped and built again."""
+    import sqlite3
+
+    import numpy as np
+    home.mkdir(parents=True)
+    db = sqlite3.connect(home / "index.sqlite")
+    db.executescript("CREATE TABLE files (path TEXT PRIMARY KEY, size INTEGER, mtime REAL, sha TEXT, status TEXT, "
+                     "note TEXT, withheld INTEGER); CREATE TABLE chunks (id INTEGER PRIMARY KEY, path TEXT, "
+                     "section TEXT, unit TEXT, start INTEGER, end INTEGER, text TEXT, sha TEXT);"
+                     "INSERT INTO chunks VALUES (1, '/gone.md', '', 'line', 1, 1, 'old text', 'x');")
+    db.commit()
+    db.close()
+    np.savez(home / "dense.npz", ids=np.array([1]), vecs=np.zeros((1, 4), np.float16))
+    idx, s = make(home, notes)
+    assert not (home / "dense.npz").exists() and idx.rows() == []
+    r = idx.update([notes])
+    assert r.added == 2 and len(idx.dense()[0]) == 2
+
+
+class CountingEmbedder(FakeEmbedder):
+    def __init__(self, signature):
+        self.signature, self.embedded = signature, 0
+
+    def documents(self, texts):
+        self.embedded += len(texts)
+        return super().documents(texts)
+
+
+def test_a_different_embedder_embeds_every_chunk_again(home, notes):
+    """Vectors from another embedder (or the same one reading more tokens) cannot be mixed with new ones."""
+    first = CountingEmbedder("model-a/512")
+    Index(home, embedder=first).update([notes])
+    same = CountingEmbedder("model-a/512")
+    Index(home, embedder=same).update([notes])
+    other = CountingEmbedder("model-a/32768")
+    Index(home, embedder=other).update([notes])
+    assert (first.embedded, same.embedded, other.embedded) == (2, 0, 2)
 
 
 def test_float32_vectors_are_kept_until_the_index_changes(home, notes):
@@ -174,26 +271,6 @@ def test_search_works_while_another_process_is_indexing(home, notes):
     assert len(during) == 1                                           # the search mid-update did not fail
     hits, _, _ = s.find("đồi thông hồ xuân hương", k=1)
     assert hits and hits[0].path.endswith("new.md")
-
-
-def test_search_works_between_the_vectors_write_and_the_commit(home, notes, monkeypatch):
-    idx, s = make(home, notes)
-    idx.update([notes])
-    s.find("phở nước dùng", k=1)
-    (notes / "food.md").unlink()                                      # the other process drops a file's chunks
-    (notes / "new.md").write_text("# Đà Lạt\n\nĐồi thông và hồ Xuân Hương.\n")   # and adds one
-    other = Index(home, embedder=FakeEmbedder())
-    save, during = other._save_dense, []
-
-    def save_then_search(ids, vecs):
-        save(ids, vecs)
-        during.append(s.find("phở nước dùng xương bò", k=3))           # new vectors, old chunks still committed
-    monkeypatch.setattr(other, "_save_dense", save_then_search)
-    other.update([notes])
-    assert len(during) == 1
-    hits, _, _ = s.find("đồi thông hồ xuân hương", k=1)
-    assert hits and hits[0].path.endswith("new.md")
-
 
 
 def test_the_models_use_the_cpu_when_the_gpu_is_busy(monkeypatch):
@@ -262,3 +339,19 @@ def test_a_file_that_vanishes_while_it_is_checked_is_treated_as_gone(home, notes
     monkeypatch.setattr(search, "sha256", vanished)                  # exists() said yes, then the file went
     hits, _, stale = s.find("gradient descent", k=3)
     assert hits == [] and stale >= 1
+
+
+def test_a_folder_declared_inside_another_is_walked_once(home, tmp_path):
+    """The owner's config lists ~/projects and four projects inside it: their files were read twice, so the report
+    said 668 files added for 530 files and listed some copies twice."""
+    root = tmp_path / "projects"
+    (root / "a").mkdir(parents=True)
+    (root / "top.md").write_text("# Top\n\ntop note\n")
+    (root / "a" / "inner.md").write_text("# Inner\n\ninner note\n")
+    (root / "a" / "copy.md").write_text("# Top\n\ntop note\n")
+    idx, _ = make(home, root)
+    r = idx.update([root, root / "a"])
+    assert (r.added, r.unchanged) == (2, 0)
+    assert r.problems["duplicate"] == [f"{root / 'a' / 'copy.md'} (same as {root / 'top.md'})"]
+    r = idx.update([root / "a", root])
+    assert (r.added, r.unchanged) == (0, 2) and len(r.problems["duplicate"]) == 1

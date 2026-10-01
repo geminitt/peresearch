@@ -20,9 +20,11 @@ from pathlib import Path
 
 import numpy as np
 
+sys.path.insert(0, str(Path(__file__).parent))     # eval/tokenization.py
+from tokenization import legacy_tokenize  # noqa: E402
+
 from peresearch import guard
 from peresearch.zetokrag import search
-from peresearch.zetokrag.core import tokenize
 from peresearch.zetokrag import index as index_module
 from peresearch.zetokrag.index import Index
 from peresearch.zetokrag.search import Searcher
@@ -34,7 +36,9 @@ def strict(row, r) -> bool:
 
 
 def jaccard(a: str, b: str) -> float:
-    x, y = set(tokenize(a, folded=False)), set(tokenize(b, folded=False))
+    """Word overlap of two passages. The words are cut as ZetokRAG cut them when results/personal.md was first
+    measured, so the metric stays fixed when the retriever's own cut changes."""
+    x, y = set(legacy_tokenize(a, folded=False)), set(legacy_tokenize(b, folded=False))
     return len(x & y) / max(len(x | y), 1)
 
 
