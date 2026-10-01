@@ -13,3 +13,14 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.mutmut]
+# Mutation testing of ZetokRAG and the guard against their contract tests: `pixi run mutmut run`, then
+# `pixi run mutmut results`. A surviving mutant is a change to the code that no test notices.
+source_paths = ["src/peresearch/zetokrag/", "src/peresearch/guard.py"]
+also_copy = ["src/", "tests/", "eval/", "deploy/", "kaggle/", "pixi.toml", "pixi.lock", "pyproject.toml", "README.md"]
+pytest_add_cli_args_test_selection = ["tests/test_core.py", "tests/test_parse_chunk.py", "tests/test_index_search.py",
+                                      "tests/test_models.py", "tests/test_guard.py", "tests/test_canary.py"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]          # not mutants/, the copy mutation testing works in

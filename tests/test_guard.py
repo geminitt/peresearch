@@ -35,11 +35,13 @@ def test_every_credential_format_is_found_and_redacted(kind):
     clean, n = guard.redact(text)
     secret = CANARIES[kind].split("= ")[-1].strip("'")
     assert n >= 1 and secret not in clean and "some notes" in clean and "more notes" in clean
+    assert f"[REDACTED:{kind}]" in clean
 
 
 def test_ordinary_text_is_not_mistaken_for_a_secret():
     for text in ["token = tokenizer_config", "the password field must be hashed", "BPE merges ab and cd",
-                 "học máy và xử lý ngôn ngữ tự nhiên", "sk-learn is a typo for scikit-learn", "key: value"]:
+                 "học máy và xử lý ngôn ngữ tự nhiên", "sk-learn is a typo for scikit-learn", "key: value",
+                 "token = abc123abc123", "password = v2v2v2v2"]:          # digits and letters, but not random
         assert guard.find_secrets(text) == [], text
 
 
@@ -95,3 +97,80 @@ def test_roots_are_stored_outside_them(home, tmp_path):
     guard.set_roots([tmp_path / "a", tmp_path / "b", tmp_path / "a"])
     assert guard.roots() == [(tmp_path / "a").resolve(), (tmp_path / "b").resolve()]
     assert guard.config_path().parent == home
+
+
+# --- properties: what must hold for any text and any set of folders ----------------------------------------------
+
+from hypothesis import example, given, settings  # noqa: E402
+from hypothesis import strategies as st  # noqa: E402
+
+filler = st.text(alphabet="abc xyz 0123 học máy\n\t.,:=-_/'\"", max_size=30)
+leaky = st.lists(st.one_of(filler, st.sampled_from(sorted(CANARIES.values()))), max_size=8).map("".join)
+
+
+@pytest.mark.xfail(strict=True, reason="BUG found 2026-10-02: two secrets back to back overlap as matches; redact "
+                   "skips the second and leaves most of it in the text; fix awaits the owner's OK")
+@given(leaky)
+@settings(max_examples=300)
+@example(CANARIES["github-token"] + CANARIES["openai-key"])            # two secrets back to back
+@example("api_key = " + CANARIES["openai-key"])                         # one secret inside another's pattern
+def test_redacted_text_holds_no_secret(text):
+    clean, n = guard.redact(text)
+    assert guard.find_secrets(clean) == []
+    assert (n == 0) == (clean == text)
+    for _, a, b in guard.find_secrets(text):          # no stretch of 10 characters of any found secret is left
+        secret = text[a:b]
+        assert not any(secret[i:i + 10] in clean for i in range(max(1, len(secret) - 9))), secret
+
+
+@given(st.text(max_size=60))
+@example("ok \x1b[2J\x1b[H\x1b]0;fake title\x07\x1b[31mred\x1b[0m\x07\x08 done\r\n\ttab và tiếng Việt\x9b1m")
+def test_sanitized_text_has_no_control_characters_and_keeps_the_rest(text):
+    out = guard.sanitize(text)
+    assert not re.search(r"[\x00-\x08\x0b-\x1f\x7f-\x9f]", out)
+    if not re.search(r"[\x00-\x08\x0b-\x1f\x7f-\x9f]", text):
+        assert out == text
+
+
+@pytest.mark.xfail(strict=True, reason="BUG found 2026-10-02: a folder listed twice is kept twice (set_roots dedupes "
+                   "the config, so not reachable from it today); fix awaits the owner's OK")
+@given(st.lists(st.lists(st.sampled_from("abc"), max_size=3).map("/".join), max_size=6))
+def test_outermost_keeps_one_folder_per_tree_in_order(tmp_path_factory, rels):
+    base = tmp_path_factory.mktemp("roots")
+    roots = [base / r if r else base for r in rels]
+    out = guard.outermost(roots)
+    assert all(r in roots for r in out) and out == [r for r in roots if r in out]   # a subset, in order
+    assert not any(o != p and o in p.parents for o in out for p in out)            # none inside another
+    assert len(set(out)) == len(out)
+    assert all(any(o == r or o in r.parents for o in out) for r in roots)          # every folder still covered
+
+
+def test_everything_that_leaves_is_logged_with_counts_only(home):
+    def last():
+        entry = json.loads((home / "audit.jsonl").read_text().splitlines()[-1])
+        assert isinstance(entry.pop("time"), float)
+        return entry
+    guard.outbound("hello " + CANARIES["openai-key"], "model")
+    assert last() == {"event": "outbound", "channel": "model", "chars": len("hello [REDACTED:openai-key]"), "redacted": 1}
+    guard.outbound_query("bpe tokenizer", "web_search")
+    assert last() == {"event": "outbound", "channel": "web_search", "chars": 13, "redacted": 0}
+    with pytest.raises(guard.Refused, match="web_search: the text looks like it contains a secret"):
+        guard.outbound_query("x " + CANARIES["github-token"], "web_search")
+    assert last() == {"event": "refused", "channel": "web_search"}
+
+
+def test_the_home_and_the_declared_folders(tmp_path, monkeypatch):
+    home = tmp_path / "not" / "yet" / "made"
+    monkeypatch.setenv("PERESEARCH_HOME", str(home))
+    assert guard.home() == home and guard.config_path() == home / "config.json" and guard.roots() == []
+    guard.audit("first")                                         # the first write makes the home
+    assert (home / "audit.jsonl").exists()
+    guard.set_roots([tmp_path / "b", tmp_path / "a" / ".." / "a", tmp_path / "b"])
+    assert json.loads(guard.config_path().read_text()) == {"roots": [str(tmp_path / "a"), str(tmp_path / "b")]}
+    guard.set_roots([tmp_path / "b", tmp_path / "a"])            # saved again over the first
+    assert guard.roots() == [tmp_path / "a", tmp_path / "b"]
+    (tmp_path / "a").mkdir()
+    (tmp_path / "a" / "n.md").write_text("x")
+    assert guard.allowed(tmp_path / "a" / "n.md") and not guard.allowed(tmp_path / "c.md")   # the config's folders
+    monkeypatch.delenv("PERESEARCH_HOME")
+    assert guard.home() == Path.home() / ".local/share/peresearch"

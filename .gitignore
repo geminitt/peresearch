@@ -5,3 +5,6 @@ __pycache__/
 .vscode/
 /runs/
 /kaggle/*/build*/
+mutants/
+.hypothesis/
+.coverage

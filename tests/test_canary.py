@@ -44,7 +44,7 @@ def test_no_planted_secret_ever_leaves(home, planted):
         hits, _, _ = s.find(query, k=5)
         payload = query + "\n" + "\n".join(h.text + "\n" + "\n".join(h.neighbours) for h in hits)
         outbound.append(guard.outbound(payload, "model"))
-    stored = (home / "index.sqlite").read_bytes().decode("latin-1")
+    stored = "".join(f.read_bytes().decode("latin-1") for f in home.glob("index.sqlite*"))   # with its WAL
     log = (home / "audit.jsonl").read_text()
     for secret in SECRETS:
         assert secret not in stored, secret
