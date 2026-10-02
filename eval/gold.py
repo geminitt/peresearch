@@ -233,6 +233,36 @@ def add_evidence(home: Path, qid: str, file: str, quote: str, grade: int) -> dic
     return ev
 
 
+def split(questions: list[dict], share: float = 0.3, seed: int = 0) -> list[dict]:
+    """Put `share` of each language's questions in the test split (rounded), drawn with a seed, then make sure every
+    question type has one there (swapping within the language), the rest in dev. Done once: a second draw would let
+    the test split be chosen after looking at it, so it is refused."""
+    import random
+    if any(q.get("split") == "test" for q in questions):
+        raise SystemExit("a test split exists already: it is drawn once")
+    test = set()
+    for lang in LANGS:
+        ids = sorted(q["id"] for q in questions if q.get("lang") == lang)
+        if ids:
+            test |= set(random.Random(f"{seed}:{lang}").sample(ids, max(1, round(share * len(ids)))))
+    by_id = {q["id"]: q for q in questions}
+    for t in TYPES:
+        of_type = sorted(q["id"] for q in questions if q.get("type") == t)
+        if not of_type or any(i in test for i in of_type):
+            continue
+        for i in of_type:                       # swap a question of this type in for one of a type with spares
+            lang = by_id[i]["lang"]
+            spare = [j for j in sorted(test) if by_id[j]["lang"] == lang
+                     and sum(by_id[k]["type"] == by_id[j]["type"] for k in test) > 1]
+            if spare:
+                test.discard(spare[0])
+                test.add(i)
+                break
+    for q in questions:
+        q["split"] = "test" if q["id"] in test else "dev"
+    return questions
+
+
 # --- checking -----------------------------------------------------------------------------------------------------
 
 def check(questions: list[dict], corpus: Path, pools: dict[str, list[dict]], judgments: list[dict],
@@ -322,6 +352,7 @@ def main(argv=None) -> int:
     p = sub.add_parser("pool")
     p.add_argument("ids", nargs="*")
     sub.add_parser("check")
+    sub.add_parser("split")
     j = sub.add_parser("judge")
     j.add_argument("id")
     j.add_argument("grades", nargs="*", help="pool position=grade, e.g. 5=2 3=1; every other passage gets 0")
@@ -351,6 +382,11 @@ def main(argv=None) -> int:
         print(f"{args.id}: {ev['file']} {ev['unit']} {ev['start']}-{ev['end']} grade {ev['grade']}")
         return 0
     questions = load_jsonl(home / "questions.jsonl")
+    if args.cmd == "split":
+        qs = split(questions)
+        (home / "questions.jsonl").write_text("".join(json.dumps(q, ensure_ascii=False) + "\n" for q in qs))
+        print(f"test {sum(q['split'] == 'test' for q in qs)} of {len(qs)}")
+        return 0
     if args.cmd == "pool":
         from peresearch.zetokrag.search import Searcher
         index = Index(home / "index")

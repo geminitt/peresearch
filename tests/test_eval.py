@@ -439,3 +439,21 @@ def test_a_follow_up_is_searched_with_the_earlier_questions_of_its_conversation(
                                                        {"q": "Which failed?", "a": "none"}]}
     assert gold.pool_query(q) == "How many conditions ran? Which failed? And the other two?"
     assert gold.pool_query({"question": "Alone?"}) == "Alone?"
+
+
+@given(st.lists(st.tuples(st.sampled_from(gold.TYPES), st.sampled_from(gold.LANGS)), min_size=1, max_size=80),
+       st.integers(0, 3))
+@example([(t, "en") for t in gold.TYPES] * 3 + [("factoid", "vi")] * 10, 0)      # every type must reach the test split
+def test_the_test_split_is_a_seeded_share_of_every_language_with_every_type_drawn_once(items, seed):
+    qs = [{"id": f"q{i:03}", "type": t, "lang": lang} for i, (t, lang) in enumerate(items)]
+    out = gold.split([dict(q) for q in qs], 0.3, seed)
+    for lang in {lang for _, lang in items}:
+        n = sum(1 for _, x in items if x == lang)
+        assert sum(q["split"] == "test" for q in out if q["lang"] == lang) == max(1, round(0.3 * n))
+    tested = {q["type"] for q in out if q["split"] == "test"}
+    swappable = len(tested) < len({t for t, _ in items})
+    if not swappable:
+        assert tested == {t for t, _ in items}
+    assert gold.split([dict(q) for q in qs], 0.3, seed) == out                       # the same draw every time
+    with pytest.raises(SystemExit):
+        gold.split(out, 0.3, seed)                                                  # never drawn again
