@@ -19,6 +19,8 @@ from pathlib import Path
 
 import pytest
 
+import peresearch
+
 pty = pytest.importorskip("pty")
 fcntl = pytest.importorskip("fcntl")
 termios = pytest.importorskip("termios")
@@ -85,7 +87,9 @@ class Terminal:
         self.fd, tty = pty.openpty()
         fcntl.ioctl(tty, termios.TIOCSWINSZ, struct.pack("HHHH", 40, 110, 0, 0))
         self.proc = subprocess.Popen([sys.executable, str(app), str(self.out)], stdin=tty, stdout=tty, stderr=tty,
-                                     env={**os.environ, "TERM": "xterm-256color", "COLORTERM": "truecolor"},
+                                     # the code under test, not the installed copy (mutation runs copy it elsewhere)
+                                     env={**os.environ, "TERM": "xterm-256color", "COLORTERM": "truecolor",
+                                          "PYTHONPATH": str(Path(peresearch.__file__).parents[1])},
                                      start_new_session=True)
         os.close(tty)
         self.screen = b""

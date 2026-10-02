@@ -67,8 +67,8 @@ class Model:
 
 
 typed = st.text(alphabet="ab xyz09ư机", min_size=1, max_size=4)
-pasted = st.one_of(st.text(alphabet="pq r\n", min_size=1, max_size=12),
-                   st.just("one\r\ntwo\r\n"), st.just(f"copied [Pasted text #1 +2 lines]{MARK} back"),
+pasted = st.one_of(st.text(alphabet="pq rX\n\r", min_size=1, max_size=12),
+                   st.just("one\r\ntwo\r\n"), st.just("a\nb  \n"), st.just("old\rmac\rlines"), st.just(f"copied [Pasted text #1 +2 lines]{MARK} back"),
                    st.just(f"x{MARK}y"))
 ops = st.lists(st.one_of(st.tuples(st.just("type"), typed), st.tuples(st.just("paste"), pasted),
                          st.sampled_from([("key", "backspace"), ("key", "left"), ("key", "right"), ("key", "home"),
@@ -108,6 +108,10 @@ KEY_NAMES = {" ": "space"}
           ("key", "left"), ("key", "backspace"), ("key", "enter")])
 @example([("type", "typed [Pasted text #1 +3 lines] by hand"), ("key", "enter")])     # typed is not a marker
 @example([("paste", "a\nb\n"), ("paste", f"copied [Pasted text #1 +2 lines]{MARK} back")])   # a forged one is text
+@example([("paste", "a\nb"), ("key", "left"), ("type", "x"), ("key", "enter")])     # typed at its start: before it
+@example([("type", "s"), ("paste", "a\rb\rc"), ("type", "e"), ("key", "enter")])     # old Mac line ends
+@example([("type", "s"), ("paste", "a\nb  \n"), ("type", "e"), ("key", "enter")])    # spaces ending a paste stay
+@example([("type", "s"), ("paste", "a\nX\n"), ("type", "e"), ("key", "enter")])
 def test_the_input_box_keeps_its_contract_whatever_is_typed_or_pasted(ops):
     asyncio.run(drive(ops))
 

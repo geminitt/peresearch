@@ -1,5 +1,6 @@
 """Contracts of what the interface writes (peresearch.tui, no app running): an answer as Markdown, an error as the
-reader can act on it, the /resume rows, a source's place, and what a clicked link may open."""
+reader can act on it, the command menu's and /resume's rows, code colors, a source's place, and what a clicked link
+may open."""
 
 import re
 from types import SimpleNamespace as NS
@@ -8,11 +9,15 @@ import pytest
 from hypothesis import example, given, settings
 from hypothesis import strategies as st
 from rich.cells import cell_len
+from rich.console import Console
+from textual.highlight import highlight
+from textual.widgets._markdown import MarkdownFence
 
 from peresearch import tui
 from peresearch.agent import Answer, Check, Conversation
 from peresearch.tools import Source
-from peresearch.tui import REASONING_SHOWN, WHY, conversation_rows, explain, location, render
+from peresearch.tui import (COMMANDS, REASONING_SHOWN, WHY, CodeColors, Fence, command_row, conversation_rows, explain,
+                            location, render)
 
 CONTROL = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f]")
 ids = st.sampled_from(["N1", "N2", "W1", "W3"])
@@ -37,34 +42,48 @@ def test_an_answer_is_rendered_with_links_sources_checks_and_why_it_stopped(text
     answer = Answer(text, sources, Check(unknown, quotes, uncited), steps, tokens // 2, tokens - tokens // 2, stopped)
     out = render(answer)
     assert not CONTROL.search(out.replace("\n", "")), "terminal control characters must never be drawn"
-    body = tui.guard.sanitize(text or "_(no answer)_")
-    linked = tui._CITE.sub(lambda m: ", ".join(f"[{i.strip()}](source:{i.strip()})" for i in m.group(1).split(",")), body)
-    assert out.startswith(linked + "\n")                                  # every citation becomes a link, nothing else
-    assert not re.search(r"\[[NW]\d+\](?!\()", out.split("\n**Sources**")[0])
-    if sources:
-        listed = re.findall(r"^- \[([NW]\d+)\]\(source:\1\) ", out, re.M)
-        assert listed == list(sources)                                    # each source once, in order
-    else:
-        assert "**Sources**" not in out
-    assert ("cited but never retrieved: " + ", ".join(unknown) in out) == bool(unknown)
-    assert ("quotes not found in the cited sources" in out) == bool(quotes)
-    assert ("the answer cites no source" in out) == uncited
-    assert ("Answered without any source" in out) == (not sources and stopped != "cancelled")
+    assert not re.search(r"\[[NW]\d+\](?!\()", out.split("\n**Sources**")[0])    # every citation is a link
+    assert out == "\n".join(expected_render(text, srcs, unknown, quotes, uncited, stopped, steps, tokens))
+
+
+def expected_render(text, srcs, unknown, quotes, uncited, stopped, steps, tokens):
+    """The layout, line by line: the answer with its citations as links, a blank line, each source once in order
+    (with its title when it has one), what the check found, the no-source remark, why it stopped, the counts."""
+    clean = tui.guard.sanitize
+    lines = [tui._CITE.sub(lambda m: ", ".join(f"[{i.strip()}](source:{i.strip()})" for i in m.group(1).split(",")),
+                           clean(text or "_(no answer)_")), ""]
+    if srcs:
+        lines += ["**Sources**"] + [f"- [{k}](source:{k}) {clean(where)}" + (f" — {clean(title)}" if title else "")
+                                    for k, (where, title) in srcs.items()]
+    if unknown:
+        lines.append("\n> **Check:** cited but never retrieved: " + ", ".join(unknown))
+    if quotes:
+        lines.append("\n> **Check:** quotes not found in the cited sources: "
+                     + "; ".join(f"“{clean(q)[:80]}”" for q in quotes))
+    if uncited:
+        lines.append("\n> **Check:** the answer cites no source")
+    if not srcs and stopped != "cancelled":
+        lines.append("\n_Answered without any source: from the model's own knowledge._")
     why = {"steps": "the step limit was reached", "time": "the time limit was reached", "cancelled": "interrupted",
-           "length": "the answer was cut at the model's token limit", "odd": "odd"}
-    assert ("> stopped: " + why[stopped] in out) if stopped else ("stopped:" not in out)
-    assert out.endswith(f"<sub>{steps} model calls · {tokens:,} tokens</sub>")
-    assert "Reasoning" not in out
+           "length": "the answer was cut at the model's token limit"}
+    if stopped:
+        lines.append("\n> stopped: " + why.get(stopped, stopped))
+    return lines + [f"\n<sub>{steps} model calls · {tokens:,} tokens</sub>"]
 
 
 @given(st.text(alphabet="thought.\n\x1b", max_size=3 * REASONING_SHOWN), st.booleans())
 @settings(max_examples=40)
 @example("early thought. " * 2000 + "the last step before answering", True)
+@example("x" * REASONING_SHOWN, True)                     # exactly the limit: all of it, nothing said to be cut
+@example("y" + "x" * REASONING_SHOWN, True)               # one over: the first character goes
 def test_the_reasoning_is_shown_on_request_from_its_end(thought, shown):
     out = render(Answer("ok", {}, Check(), 1, reasoning=thought), reasoning=shown)
     clean = tui.guard.sanitize(thought)
     if not shown or not thought:
         assert "**Reasoning**" not in out
+        # an answer kept from an earlier session has no reasoning at all
+        bare = NS(text="ok", sources={}, check=Check(), stopped="", steps=1, prompt_tokens=0, completion_tokens=0)
+        assert render(bare, reasoning=True) == out
         return
     cut = len(clean) - REASONING_SHOWN
     head = out.split("\n\nok\n")[0]
@@ -88,6 +107,8 @@ def test_other_errors_keep_their_own_text_safe_and_short():
     from peresearch.llm import BudgetExceeded
     assert explain(BudgetExceeded("today's model spending is at $1.00")).startswith(
         "> **Error:** today's model spending is at $1.00 `/retry`")
+    assert explain(RuntimeError("disk full")) == ("> **Error:** disk full `/retry` asks again. "
+                                                  "<sub>(RuntimeError: disk full)</sub>")
     odd = explain(ValueError("weird \x1b[2J" + "y" * 400))
     assert "\x1b" not in odd and odd == f"> **Error:** weird {'y' * 294} `/retry` asks again. <sub>(ValueError: weird {'y' * 294})</sub>"
 
@@ -113,13 +134,48 @@ def test_resume_rows_line_up_fit_the_width_and_keep_one_line(convs, width):
             assert plain[len(head):] == first
         else:
             assert plain.endswith("…") and cell_len(plain) - cell_len(head) <= room
+        drawn = Console(width=width, color_system=None).render_lines(row, pad=False)
+        assert len(drawn) == 1                                           # drawn on one line, even when too wide
+        assert all(seg.style and seg.style.dim for seg in drawn[0][1:] if seg.text.strip())   # the question dimmed
     assert len(starts) <= 1
+
+
+@given(st.integers(24, 140))
+def test_a_command_row_keeps_its_description_in_one_column(width):
+    """The descriptions start two columns after the longest command; a wrapped one goes on under itself, with no
+    blank line; they are dimmed, the commands not."""
+    column = max(map(len, COMMANDS)) + 2
+    console = Console(width=width, color_system=None)
+    for command, description in COMMANDS.items():
+        lines = console.render_lines(command_row(command, description), pad=False)
+        plain = ["".join(seg.text for seg in line).rstrip() for line in lines]
+        assert plain[0].startswith(command.ljust(column)) and plain[0][column] != " "
+        assert all(p.startswith(" " * column) and p[column] != " " for p in plain[1:]), plain
+        assert " ".join(p[column:] for p in plain).split() == description.split()
+        for line in lines:
+            for seg in line:
+                if seg.text.strip():
+                    assert bool(seg.style and seg.style.dim) == (seg.text.strip() not in COMMANDS), (seg, plain)
+
+
+@pytest.mark.parametrize("language", ["python", "bash", ""])
+@pytest.mark.parametrize("ansi, dark", [(True, True), (True, False), (False, True), (False, False)])
+def test_code_is_colored_by_the_terminal_palette_when_the_theme_is(language, ansi, dark):
+    """With the terminal's palette (ANSI), code takes CodeColors and the fence's language (none: plain); otherwise
+    Textual's own colors."""
+    code = "def f(x):\n    return `ls` + 1  # c\n"
+    got = Fence.highlight(code, language, ansi=ansi, dark=dark)
+    want = (highlight(code, language=language or None, theme=CodeColors) if ansi
+            else MarkdownFence.highlight(code, language, ansi, dark))
+    assert [(sp.start, sp.end, str(sp.style)) for sp in got.spans] == [(sp.start, sp.end, str(sp.style)) for sp in want.spans]
+    assert str(got) == code.rstrip("\n")
 
 
 @pytest.mark.parametrize("where, want", [
     ("/n/bpe.md:L3-5", ("/n/bpe.md", 3)), ("/n/bpe.md:L7", ("/n/bpe.md", 7)), ("/n/a.pdf:p.3", ("/n/a.pdf", None)),
     ("/n/a.pdf:p.2-3", ("/n/a.pdf", None)), ("/n/b.ipynb:cell 4", ("/n/b.ipynb", None)),
     ("/n/b.ipynb:cell 6-10", ("/n/b.ipynb", None)), ("/n, /m (listing)", ("/n", None)),
+    ("/home/user/notes, /m (listing)", ("/home/user/notes", None)),
     ("https://example.org/a:L3", ("https://example.org/a", 3)), ("/weird:name.md", ("/weird:name.md", None)),
     ("plain", ("plain", None))])
 def test_a_sources_place_is_read_back_as_a_path_and_a_line(where, want):

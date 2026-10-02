@@ -1,7 +1,14 @@
-"""The terminal interface driven with Textual's test pilot: layout, commands, history, colors, permission
-dialog, pasting (the real terminal path is in test_tui_input.py)."""
+"""The terminal interface driven with Textual's test pilot: layout, the log and status line, history, colors,
+permission dialog, pasting (the real terminal path is in test_tui_input.py)."""
 
 import asyncio
+import itertools
+import threading
+import time
+from types import SimpleNamespace as NS
+
+from peresearch import tui
+from peresearch.agent import Answer, Check
 
 from peresearch.agent import Agent
 from peresearch.llm import Reply, ToolCall
@@ -32,20 +39,30 @@ def test_the_terminal_interface_shows_tools_answer_and_sources(home, notes):
     assert "Your notes cover it [N1](source:N1)." in shown and "**Sources**" in shown and "answer" in events
 
 
-def test_the_conversation_fills_the_screen(home, notes):
+def test_the_screen_at_start(home, notes):
+    """The log takes the screen and the input box the bottom: a heading on top, the box with its placeholder, no
+    line numbers, a long line wrapped inside it; Enter on the empty box does nothing."""
     from textual.containers import VerticalScroll
     from peresearch.tui import Prompt
 
-    from peresearch.tui import Chat
-
-    async def run():
-        app = Chat(lambda on_event: agent(home, notes, Reply("x [N1]."))[0])
-        async with app.run_test(size=(100, 40)) as pilot:
-            await pilot.pause()
-            log, ask = app.query_one("#log", VerticalScroll), app.query_one("#ask", Prompt)
-            return log.size.height, ask.region.bottom
-    height, bottom = asyncio.run(run())
-    assert height >= 30 and bottom == 40                   # the log takes the screen, the input the bottom line
+    async def steps(app, pilot):
+        await pilot.pause()
+        log, ask = app.query_one("#log", VerticalScroll), app.query_one("#ask", Prompt)
+        app.sizes = log.size.height, ask.region.bottom
+        app.lines = screen_lines(app)
+        app.heading = str(app.query_one("#heading").render())
+        await pilot.press("enter")
+        await pilot.pause()
+        app.after_enter = texts(app)
+        ask.value = "word " * 40
+        await pilot.pause()
+        app.box = (ask.gutter_width, ask.wrapped_document.height)
+    app = tui_run(lambda e: agent(home, notes, Reply("x [N1]."))[0], steps)
+    height, bottom = app.sizes
+    assert height >= 30 and bottom == 40
+    assert app.heading == "✻ peresearch" and "✻ peresearch" in app.lines[1]
+    assert app.lines[-2].strip("│ ") == "❯ Ask about your files or the web"
+    assert app.after_enter == "" and app.box[0] == 0 and app.box[1] > 1
 
 
 def test_slash_opens_the_command_menu_filters_it_and_runs_the_choice(home, notes):
@@ -56,7 +73,10 @@ def test_slash_opens_the_command_menu_filters_it_and_runs_the_choice(home, notes
         await pilot.pause()
         from peresearch.tui import COMMANDS
         assert menu.display and menu.option_count == len(COMMANDS)
-        await pilot.press("f", "o")
+        await pilot.press("backspace")                           # the box empties: the menu closes
+        await pilot.pause()
+        assert not menu.display
+        await pilot.press("/", "f", "o")
         await pilot.pause()
         assert menu.option_count == 1 and menu.get_option_at_index(0).id == "/folders"
         await pilot.press("enter")
@@ -69,21 +89,28 @@ def test_slash_opens_the_command_menu_filters_it_and_runs_the_choice(home, notes
     assert str(notes) in app.shown
 
 
-def test_command_descriptions_line_up_in_one_column(home, notes):
-    from peresearch.tui import COMMANDS
-
+def test_the_chosen_menu_row_is_reversed_and_the_one_under_the_mouse_bold(home, notes):
+    """Textual draws a list row from a style that drops `reverse`, so with the terminal's colors the chosen row
+    looked like every other (the descriptions' column is checked on the rows themselves in test_tui_text.py)."""
     async def steps(app, pilot):
         await pilot.pause()
         await pilot.press("slash")
         await pilot.pause()
         menu = app.query_one("#commands")
-        rows = ["".join(s.text for s in menu.render_line(y)) for y in range(menu.size.height)]
-        app.starts = {c: row.index(COMMANDS[c]) for row in rows for c in COMMANDS if f"{c} " in row and COMMANDS[c] in row}
-    app = tui_run(lambda e: agent(home, notes)[0], steps, size=(100, 40))
-    assert len(app.starts) >= 4 and len(set(app.starts.values())) == 1, app.starts
+        menu.highlighted, menu._mouse_hovering_over = 1, 2
+        await pilot.pause()
+        app.rows = []
+        for y in range(4):
+            strip = menu.render_line(y)
+            styles = [seg.style for seg in strip if seg.text.strip()]
+            app.rows.append(("".join(seg.text for seg in strip).split()[0],
+                             all(st.reverse for st in styles), all(st.bold for st in styles)))
+    app = tui_run(lambda e: agent(home, notes)[0], steps)
+    assert app.rows == [("/help", False, False), ("/keys", True, False), ("/add", False, True),
+                        ("/remove", False, False)], app.rows
 
 
-def test_up_recalls_earlier_questions_and_new_forgets_them(home, notes):
+def test_new_forgets_the_earlier_questions(home, notes):
     replies = [Reply("", [ToolCall("a", "search_notes", {"query": "BPE"})]), Reply("first [N1]."),
                Reply("", [ToolCall("b", "search_notes", {"query": "SuperBPE"})]), Reply("second [N1].")]
 
@@ -98,8 +125,6 @@ def test_up_recalls_earlier_questions_and_new_forgets_them(home, notes):
         prompt.value = "BPE merges pairs?"
         await pilot.press("enter")
         await settle(app, pilot, lambda: not app.busy and app.last is not None)
-        await pilot.press("up")
-        assert prompt.value == "BPE merges pairs?"
         prompt.value = "/new"
         await pilot.press("enter")
         await pilot.pause()
@@ -111,6 +136,151 @@ def test_up_recalls_earlier_questions_and_new_forgets_them(home, notes):
     assert app.last.sources, "the second question, run in another thread, must still search the files"
     second = make.llm.seen[-1][0]
     assert all(m["content"] != "BPE merges pairs?" for m in second if m["role"] == "user")   # history was reset
+
+
+class Instant:
+    """An agent that answers at once, and records what it was asked."""
+
+    def __init__(self):
+        self.asked, self.cancelled = [], threading.Event()
+
+    def ask(self, question):
+        self.asked.append(question)
+        return Answer("ok", {}, Check(), 1)
+
+    def cancel(self):
+        self.cancelled.set()
+
+
+def test_up_and_down_walk_through_the_questions_of_this_run(home, notes):
+    """↑ on the box's first line goes one question back (staying on the first), ↓ on its last line one forward, and
+    past the newest the box empties; on the other lines of a multi-line question they move the cursor. Checked on
+    every sequence of up to five presses against that rule."""
+    from peresearch.tui import Prompt
+    asked = ["one", "two\nlines", "three"]
+
+    async def steps(app, pilot):
+        prompt = app.query_one("#ask", Prompt)
+        await pilot.pause()
+        await pilot.press("up", "down")                               # nothing asked yet: nothing happens
+        app.before = prompt.value
+        app.agent = Instant()
+        for q in asked:
+            prompt.value = q
+            await pilot.press("enter")
+            await settle(app, pilot, lambda: not app.busy)
+        app.wrong = []
+        for n in range(1, 6):
+            for keys in itertools.product(("up", "down"), repeat=n):
+                app.recall, prompt.value = None, ""
+                pos, row = len(asked), 0                              # pos = len(asked): the fresh, empty box
+                for key in keys:
+                    await pilot.press(key)
+                    text = asked[pos] if pos < len(asked) else ""
+                    if key == "up" and row > 0 or key == "down" and row < text.count("\n"):
+                        row += -1 if key == "up" else 1
+                    elif key == "up" or pos < len(asked):
+                        pos = max(0, pos - 1) if key == "up" else pos + 1
+                        row = (asked[pos] if pos < len(asked) else "").count("\n")
+                    want = (asked[pos] if pos < len(asked) else "", row)
+                    if (prompt.value, prompt.cursor_location[0]) != want:
+                        app.wrong.append((keys, (prompt.value, prompt.cursor_location[0]), want))
+                        break
+    app = tui_run(lambda e: Instant(), steps)
+    assert app.before == "" and app.wrong == []
+
+
+def test_the_log_and_the_status_line_follow_what_the_agent_does(home, notes, monkeypatch):
+    """Each tool call is a `● call` line and its result a `⎿ result` line (control sequences stripped); the status
+    line names what runs after the tool (searching, looking through folders, noting what is missing, reading), the
+    model thinking or waiting, with a spinner frame per tick (about ten a second), the seconds since the question and
+    the tokens so far; the index update alone says questions can still be asked; when nothing runs, a short message
+    stays until its time is up."""
+    from peresearch.tui import SPINNER
+    clock = NS(now=1_000.0)
+    monkeypatch.setattr(tui, "time", NS(time=lambda: clock.now, strftime=time.strftime, localtime=time.localtime))
+    events = [("tool", 'search_notes("bpe")', "Searching"), ("result", "3 sources\x1b[31m", None),
+              ("tool", "grep(SuperBPE)", "Searching"), ("tool", "glob(*.md)", "Searching"),
+              ("tool", 'web_search("bpe")', "Searching"), ("tool", "tree(~/notes)", "Looking through folders"),
+              ("tool", "gaps(…)", "Noting what is missing"), ("tool", "read(bpe.md)", "Reading"),
+              ("tool", "fetch(https://e.org)", "Reading"), ("tokens", "12345", None), ("think", "", "Thinking"),
+              ("wait", "Waking the model up\x1b[2J", "Waking the model up"), ("result", "page read", None)]
+
+    async def steps(app, pilot):
+        await pilot.pause()
+        app.status_of = lambda: str(app.status.render())
+        app.seen, app.widgets = [], []
+        for kind, detail, doing in events:
+            app.on_agent_event(kind, detail)
+            app.seen.append((app.doing, app.tokens))
+            if kind in ("tool", "result"):
+                app.widgets.append((kind, ("● " if kind == "tool" else "  ⎿  ") + tui.guard.sanitize(detail)))
+        await pilot.pause()
+        app.logged = [(" ".join(sorted(w.classes)), str(w.render())) for w in app.query("#log > *")]
+        app.busy, app.started, app.indexing = True, clock.now - 42.4, "Indexing"
+        app.ticks = []
+        for tokens in (12345, 12345, 0):
+            app.tokens, frame = tokens, app.frame
+            app.tick()
+            app.ticks.append((app.status_of(), SPINNER[(frame + 1) % len(SPINNER)]))
+        app.busy = False
+        frame = app.frame
+        app.tick()
+        app.index_only = (app.status_of(), SPINNER[(frame + 1) % len(SPINNER)])
+        app.indexing = ""
+        app.say("copied 5 characters", seconds=2)
+        app.flashes = [app.status_of()]
+        clock.now += 2                                               # its time is up
+        app.tick()
+        app.flashes.append(app.status_of())
+        app.busy, frame = True, app.frame
+        await pilot.pause(1.0)
+        app.spun = app.frame - frame
+        app.busy = False
+    app = tui_run(lambda e: Instant(), steps)
+    doing, tokens = "", 0
+    for (kind, detail, label), got in zip(events, app.seen):
+        doing, tokens = label or doing, int(detail) if kind == "tokens" else tokens
+        assert got == (doing, tokens), (kind, detail, got)
+    assert app.logged == app.widgets
+    for (status, spin), tokens in zip(app.ticks, (12345, 12345, 0)):
+        extra = " · 12,345 tokens" if tokens else ""
+        assert status == f"{spin} Waking the model up… (42s{extra} · esc to interrupt)"
+    assert app.ticks[0][1] != app.ticks[1][1]                          # one frame per tick
+    assert app.index_only[0] == f"{app.index_only[1]} Indexing… (you can ask meanwhile)"
+    assert app.flashes == ["copied 5 characters", ""]
+    assert app.spun >= 2                                               # the spinner turns by itself
+
+
+def test_a_question_is_shown_as_typed_and_esc_stops_it(home, notes):
+    """The question goes in the log as typed (markup is not interpreted, control sequences are stripped) and the
+    status says it is starting; Esc asks the agent to stop and says so."""
+    from peresearch.tui import Prompt, SPINNER
+
+    class Waiting(Instant):
+        def ask(self, question):
+            self.asked.append(question)
+            self.cancelled.wait(10)
+            return Answer("_(interrupted)_", {}, Check(), 0, stopped="cancelled")
+
+    async def steps(app, pilot):
+        app.agent = Waiting()
+        app.query_one("#ask", Prompt).value = "is [b]this[/b] bold?\x1b[31m"
+        await pilot.press("enter")
+        await pilot.pause()
+        app.question = [(" ".join(sorted(w.classes)), str(w.render())) for w in app.query("#log > *")]
+        app.starting = app.doing
+        frame = app.frame
+        app.tick()
+        app.status_text = (str(app.status.render()), SPINNER[(frame + 1) % len(SPINNER)])
+        await pilot.press("escape")
+        app.stopping = (app.doing, app.agent.cancelled.is_set())
+        await settle(app, pilot, lambda: not app.busy)
+    app = tui_run(lambda e: Waiting(), steps)
+    assert app.question == [("question", "❯ is [b]this[/b] bold?")]
+    assert app.starting == "Starting" and app.status_text[0] == f"{app.status_text[1]} Starting… (0s · esc to interrupt)"
+    assert app.stopping == ("Interrupting", True)
+    assert "interrupted" in app.shown
 
 
 def test_escape_interrupts_a_running_question_at_once(home, notes):
@@ -160,13 +330,17 @@ def test_typing_after_a_click_on_the_conversation_still_goes_to_the_prompt(home,
         app.focus_after = app.focused
         log = app.query_one("#log")
         bottom = log.scroll_y
+        app.followed = bottom == log.max_scroll_y > 0                    # the log shows its newest line
         await pilot.press("pageup")
-        await pilot.pause()
-        app.scrolled = (bottom, log.scroll_y)
+        up = log.scroll_y
+        await pilot.press("pagedown")
+        app.scrolled = (bottom, up, log.scroll_y)
     app = tui_run(lambda e: agent(home, notes)[0], steps, size=(100, 30))
     assert app.typed == "xin"                                # the click had moved focus: keys were lost
     assert isinstance(app.focus_after, Prompt)
-    assert app.scrolled[1] < app.scrolled[0]                 # PageUp from the prompt scrolls the conversation
+    assert app.followed
+    bottom, up, down = app.scrolled
+    assert up < bottom and down == bottom                    # PageUp/PageDown scroll the conversation, at once
 
 
 def test_pasted_lines_reach_the_model_whole(home, notes):
@@ -391,14 +565,14 @@ def test_ctrl_c_copies_the_selection_and_ctrl_q_quits(home, notes):
         prompt.value = ""
         await pilot.press("ctrl+c")                                 # nothing selected: a reminder, no quitting
         await pilot.pause()
-        app.reminded = str(app.query_one("#status").render())
+        app.reminded = app.flash
         await pilot.press("ctrl+q")
         await pilot.pause()
         app.running_after_quit = app.is_running
     app = tui_run(lambda e: agent(home, notes)[0], steps)
     assert app.from_log.startswith("SuperBPE") and app.running_after_copy
     assert app.from_prompt == "copy me"
-    assert "ctrl+q" in app.reminded
+    assert app.reminded == "select text with the mouse to copy it · ctrl+q quits"
     assert not app.running_after_quit
 
 
@@ -458,6 +632,7 @@ def test_ctrl_r_shows_and_hides_the_models_reasoning(home, notes):
         await pilot.press("ctrl+r")
         await settle(app, pilot, lambda: "first I recall" in texts(app))
         app.shown_once = texts(app)
+        app.said = [app.flash]
         app.last = None
         prompt.value = "And SuperBPE?"
         await pilot.press("enter")
@@ -466,7 +641,10 @@ def test_ctrl_r_shows_and_hides_the_models_reasoning(home, notes):
         app.shown_both = texts(app)
         await pilot.press("ctrl+r")
         await settle(app, pilot, lambda: "first I recall" not in texts(app))
+        app.said.append(app.flash)
     app = tui_run(make, steps)
+    assert app.said == ["the model's reasoning is shown (ctrl+r hides it)",
+                        "the model's reasoning is hidden (ctrl+r shows it)"]
     assert "first I recall" not in app.hidden and "BPE merges pairs" in app.hidden
     assert "first I recall the notes" in app.shown_once and "Reasoning" in app.shown_once
     assert "then SuperBPE" in app.shown_both                         # new answers follow the setting
@@ -490,11 +668,14 @@ def test_a_question_asked_while_the_folders_are_checked_is_answered(home, notes)
     async def steps(app, pilot):
         from peresearch.tui import Prompt
         await pilot.pause(0.1)                                       # the check has started
+        app.tick()
+        app.checking = str(app.status.render())[2:]
         app.query_one("#ask", Prompt).value = "How does BPE work?"
         await pilot.press("enter")
         await settle(app, pilot, lambda: app.last is not None and "Index up to date" in texts(app), tries=300)
     app = tui_run(lambda e: agent(home, notes, Reply("BPE merges pairs [N1]."))[0], steps,
                   workspace=SlowWorkspace(), index_on_start=True)
+    assert app.checking == "Checking your folders for changes… (you can ask meanwhile)"
     assert "still working" not in app.shown
     assert app.last is not None and app.last.text == "BPE merges pairs [N1]."
     assert "Index up to date: 7 chunks" in app.shown                   # and the check still finished
@@ -554,20 +735,6 @@ def test_no_key_hints_line_and_keys_lists_them(home, notes):
     assert app.lines[-1].startswith("╰"), app.lines[-3:]               # the prompt's border is the last line
     for key in ("Enter", "Ctrl+Enter", "Esc", "Ctrl+R", "Ctrl+C", "Ctrl+Q", "PgUp"):
         assert key in app.shown, key
-
-
-def test_a_wrapped_command_description_stays_in_its_column(home, notes):
-    async def steps(app, pilot):
-        await pilot.pause()
-        await pilot.press("slash")
-        await pilot.pause()
-        menu = app.query_one("#commands")
-        app.rows = ["".join(s.text for s in menu.render_line(y)) for y in range(menu.size.height)]
-    app = tui_run(lambda e: agent(home, notes)[0], steps, size=(60, 40))
-    column = app.rows[0].index("the commands")
-    add = next(i for i, row in enumerate(app.rows) if row.lstrip().startswith("/add"))
-    assert app.rows[add + 1].rstrip() and not app.rows[add + 1].lstrip().startswith("/"), app.rows   # it wrapped
-    assert len(app.rows[add + 1]) - len(app.rows[add + 1].lstrip()) == column, app.rows
 
 
 def test_a_long_code_line_wraps_instead_of_being_cut(home, notes):
@@ -648,6 +815,8 @@ def test_the_cursor_never_stops_inside_a_paste_marker(home, notes):
         seen.append(("click near the start", prompt.cursor_location))
         await pilot.click("#ask", offset=(2 + end - 2, 1))
         seen.append(("click near the end", prompt.cursor_location))
+        await pilot.click("#ask", offset=(2 + (start + end) // 2, 1))   # the marker is 26 wide: a tie
+        seen.append(("click in the middle", prompt.cursor_location))
         prompt.selection = Selection((0, 1), (0, start + 5))
         seen.append(("select into it", prompt.selection))
         prompt.selection = Selection((0, end - 2), (0, 1))
@@ -660,5 +829,6 @@ def test_the_cursor_never_stops_inside_a_paste_marker(home, notes):
     got = dict(app.seen[16:])
     assert got["up near the start"] == (0, start) and got["up near the end"] == (0, end), (app.span, got)
     assert got["click near the start"] == (0, start) and got["click near the end"] == (0, end), (app.span, got)
+    assert got["click in the middle"] == (0, start), (app.span, got)       # a tie goes to the start
     assert tuple(got["select into it"]) == ((0, 1), (0, end)), (app.span, got)
     assert tuple(got["select back into it"]) == ((0, end), (0, 1)), (app.span, got)
