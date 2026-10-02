@@ -81,6 +81,7 @@ def build(script):
 
 @given(replies, st.integers(1, 6), st.integers(0, 3), st.integers(0, 3), st.booleans(), st.booleans())
 @hsettings(max_examples=300, deadline=None)
+@example([("calls", [("fetch", {"q": 1}), ("tree", {}), ("fetch", {"q": 2})])], 6, 0, 1, True, False)  # pages counted
 def test_the_loop_keeps_its_rules_whatever_the_model_does(tmp_path_factory, script, steps, webs, pages, web, record):
     import os
     home, saved = tmp_path_factory.mktemp("h"), os.environ.get("PERESEARCH_HOME")

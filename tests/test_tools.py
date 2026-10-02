@@ -24,7 +24,7 @@ from peresearch.tools import Sources, Toolbox
 from tests.test_guard import CANARIES
 
 SECRET = CANARIES["github-token"]
-NEVER = ("MARK_DOTCONFIG", "MARK_ENV", "MARK_OWN", "MARK_OUTSIDE", "MARK_KEY", SECRET)
+NEVER = ("MARK_DOTCONFIG", "MARK_ENV", "MARK_OWN", "MARK_OUTSIDE", "MARK_KEY", "MARK_DENIED", SECRET)
 
 
 def make_world(base: Path) -> dict:
@@ -49,6 +49,8 @@ def make_world(base: Path) -> dict:
     os.symlink(private / "p.md", notes / "link.md")
     os.symlink(outside, notes / "linkdir")
     os.symlink(user / ".config" / "c.md", private / "innocent.md")      # a link in an allowed folder, to a hidden file
+    (private / "secrets.toml").write_text("MARK_DENIED\n")
+    os.symlink(private / "secrets.toml", private / "settings.md")       # ... and to a protected one
     return {"user": user, "notes": notes, "private": private, "own": own, "outside": outside}
 
 
@@ -62,16 +64,18 @@ def spellings(w):
         str(w["own"]), str(w["outside"] / "o.md"), str(w["outside"]), "/etc/hostname", "~/notes/sub", "~/notes", "notes",
         "**/*", "**/*.md", "*", "~/private/*", "~/private/**/*.md", "~/.config/*", "~/pehome/*", str(w["outside"]) + "/*",
         "../**", "/etc/*", "~/private/deep", "~", "~/*", "~/**/*", "~/private/.cache/x.md", "~/private/innocent.md",
+        "~/private/settings.md", "~/private/secrets.toml",
     ]
 
 
-tool_calls = st.lists(st.tuples(st.sampled_from(["read", "grep", "glob", "tree"]), st.integers(0, 42)),  # 43 spellings
+tool_calls = st.lists(st.tuples(st.sampled_from(["read", "grep", "glob", "tree"]), st.integers(0, 44)),  # 45 spellings
                       min_size=1, max_size=6)
 
 
 @given(tool_calls, st.sampled_from([None, "no", "once", "session"]))
 @settings(max_examples=150, deadline=None, suppress_health_check=[HealthCheck.too_slow])
 @example([("read", 14)], "session")                                     # ~/private/p.md, allowed by the user
+@example([("read", 43)], "once")             # a link outside the declared folders to a protected file: refused
 
 def test_tools_show_only_what_they_may_whatever_the_path_and_the_answer(calls, answer):
     base = Path(tempfile.mkdtemp())

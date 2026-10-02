@@ -459,6 +459,8 @@ def test_a_clicked_link_shows_a_source_or_opens_only_what_is_safe(home, notes, m
         return a
 
     async def steps(app, pilot):
+        app.system_opened = []
+        app.open_url = lambda url, **kw: app.system_opened.append(url)       # Textual's own opener: never reached
         await say(app, pilot, "How does BPE work?")
         await settle(app, pilot, lambda: not app.busy and app.last is not None)
         page = app.pages[-1][0]
@@ -475,4 +477,5 @@ def test_a_clicked_link_shows_a_source_or_opens_only_what_is_safe(home, notes, m
     assert app.after == ["N9: no such source", f"opened {path}", "opened https://example.org/bpe",
                          "opened https://ok.example/a", "not opened: refused here",
                          "not opened: only web links (http, https) and your own files open"]
+    assert app.system_opened == []
     assert f"**N1** {path}:L2-4 — bpe.md" in app.shown_source and "[open the file](open:N1)" in app.shown_source

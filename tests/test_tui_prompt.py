@@ -156,3 +156,26 @@ async def drive(ops):
             assert prompt.text == model.shown(), (kind, value)
             assert prompt.cursor_location == model.location(), (kind, value)
             assert prompt.text.count(MARK) == sum(isinstance(a, Marker) for a in model.atoms)
+
+
+def test_keys_arriving_in_one_burst_keep_their_order():
+    """A terminal read can deliver typed characters and keys bound to an action (Ctrl+U, arrows, Enter, Backspace)
+    together; Textual inserted the characters at once and ran the actions later, so "abc ⌃U xyz" came out empty and
+    an input method's "chao ⌫⌫ ào" as "chaoào". The same bursts through the real driver are in test_tui_input.py;
+    here they are posted in process, where mutation runs can see them."""
+    bursts = [["a", "b", "c", "ctrl+u", "x", "y", "z", "enter"], ["a", "b", "left", "c", "enter"],
+              ["o", "n", "e", "enter", "t", "w", "o", "enter"],
+              ["c", "h", "a", "o", "backspace", "backspace", "à", "o", "enter"]]
+
+    async def run():
+        app = Box()
+        async with app.run_test() as pilot:
+            prompt = app.query_one(Prompt)
+            await pilot.pause()
+            for burst in bursts:
+                for k in burst:
+                    prompt.post_message(events.Key(k, k if len(k) == 1 else None))
+                await pilot.pause()
+                await pilot.pause()
+        return app.sent
+    assert asyncio.run(run()) == ["xyz", "acb", "one", "two", "chào"]

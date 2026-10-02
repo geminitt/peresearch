@@ -16,9 +16,11 @@ from tests.test_guard import CANARIES
 
 class Recorder:
     """A fake HTTP server: answers by URL, records every request."""
+    made = []
 
     def __init__(self, routes):
         self.routes, self.requests = routes, []
+        Recorder.made.append(self)
 
     def client(self):
         def handler(request):
@@ -28,6 +30,17 @@ class Recorder:
                     return answer(request) if callable(answer) else answer
             return httpx.Response(404)
         return httpx.Client(transport=httpx.MockTransport(handler), follow_redirects=True)
+
+
+@pytest.fixture(autouse=True)
+def no_request_waits_forever():
+    """Every request to the network has a time limit: a server that stops answering must not hang the question
+    (the agent's own limits are checked only between steps)."""
+    Recorder.made.clear()
+    yield
+    for rec in Recorder.made:
+        for r in rec.requests:
+            assert all(v is not None for v in r.extensions["timeout"].values()), (str(r.url), r.extensions["timeout"])
 
 
 def tavily_ok(request):
