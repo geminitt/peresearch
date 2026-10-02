@@ -2,9 +2,11 @@
 eval/tokenization.py): every metric against its textbook definition, the confidence intervals against the binomial
 tails they solve, the work split, the retries, and the run files that let an interrupted evaluation resume."""
 
+import hashlib
 import importlib.util
 import json
 import math
+import shutil
 import sys
 from pathlib import Path
 from types import SimpleNamespace as NS
@@ -205,3 +207,235 @@ def test_a_sample_is_a_fixed_subset_or_everything(n, seed):
 ])
 def test_an_injection_counts_as_obeyed_when_the_agent_tried_what_it_asked(calls, text, actions):
     assert research.attack_succeeded(NS(calls=calls, text=text)) == {"success": bool(actions), "actions": actions}
+
+
+# --- the gold set (eval/gold.py) -----------------------------------------------------------------------------------
+
+gold = module("gold")
+
+
+def gold_world(tmp_path):
+    """A user's home with a few files of each unit kind, a project that must stay out, and its live index."""
+    from peresearch.zetokrag.index import Index
+    from tests.conftest import FakeEmbedder
+    user = tmp_path / "user"
+    (user / "notes").mkdir(parents=True)
+    (user / "other").mkdir()
+    (user / "notes" / "bpe.md").write_text("# BPE\n\nByte pair encoding merges the most frequent pair.\n\n"
+                                           "## SuperBPE\n\nSuperBPE lets merges cross spaces in a second stage.\n")
+    (user / "notes" / "pho.md").write_text("# Phở\n\nNước dùng hầm xương bò trong nhiều giờ.\n")
+    (user / "notes" / "run.ipynb").write_text(json.dumps({"cells": [
+        {"cell_type": "markdown", "source": "# Training\nThe learning rate was 3e-4."},
+        {"cell_type": "code", "source": "lr = 3e-4\nsteps = 1000", "outputs": []}]}))
+    (user / "other" / "secret-project.md").write_text("# Other\n\nNot to be frozen.\n")
+    live = Index(tmp_path / "live", embedder=FakeEmbedder())
+    live.update([user / "notes", user / "other"])
+    return user, live
+
+
+def test_freezing_copies_every_read_file_but_the_excluded_once_with_its_hash(tmp_path):
+    user, live = gold_world(tmp_path)
+    home = tmp_path / "gold"
+    manifest = gold.freeze(live, home, user, ["*/other/*"])
+    assert [m["file"] for m in manifest] == ["notes/bpe.md", "notes/pho.md", "notes/run.ipynb"]
+    for m in manifest:
+        frozen = home / "corpus" / m["file"]
+        assert frozen.read_bytes() == (user / m["file"]).read_bytes()
+        assert m["sha256"] == hashlib.sha256(frozen.read_bytes()).hexdigest() and m["size"] == frozen.stat().st_size
+    assert json.loads((home / "manifest.json").read_text()) == manifest
+    assert not (home / "corpus" / "other").exists()
+    with pytest.raises(SystemExit):                                   # the ground under the labels never moves
+        gold.freeze(live, home, user, [])
+
+
+def test_a_file_gone_since_indexing_is_skipped_and_a_failed_freeze_leaves_nothing(tmp_path, monkeypatch):
+    user, live = gold_world(tmp_path)
+    (user / "notes" / "pho.md").unlink()                              # deleted after the index read it
+    home = tmp_path / "gold"
+    manifest = gold.freeze(live, home, user, ["*/other/*"])
+    assert [m["file"] for m in manifest] == ["notes/bpe.md", "notes/run.ipynb"]
+    assert json.loads((home / "missing.json").read_text()) == ["notes/pho.md"]
+    home2 = tmp_path / "gold2"
+    real_copy = gold.shutil.copy2
+    calls = []
+
+    def failing(src, dst):
+        calls.append(src)
+        if len(calls) == 2:
+            raise OSError("disk full")
+        return real_copy(src, dst)
+    monkeypatch.setattr(gold.shutil, "copy2", failing)
+    with pytest.raises(OSError):
+        gold.freeze(live, home2, user, [])
+    assert not (home2 / "corpus").exists() and not (home2 / "manifest.json").exists()
+    monkeypatch.setattr(gold.shutil, "copy2", real_copy)
+    assert len(gold.freeze(live, home2, user, ["*/other/*"])) == 2   # and it can be tried again
+
+
+def test_a_passage_is_the_text_of_its_units_as_the_index_reads_them(tmp_path):
+    user, _ = gold_world(tmp_path)
+    corpus = user
+    lines = (corpus / "notes" / "bpe.md").read_text().split("\n")
+    for start in range(1, len(lines)):
+        for end in range(start, len(lines)):
+            got = gold.passage(corpus, {"file": "notes/bpe.md", "unit": "line", "start": start, "end": end})
+            assert got == "\n".join(lines[start - 1:end])
+    assert gold.passage(corpus, {"file": "notes/run.ipynb", "unit": "cell", "start": 2, "end": 2}) == "lr = 3e-4\nsteps = 1000"
+    for bad in ({"file": "notes/bpe.md", "unit": "line", "start": 2, "end": 99},       # past the end
+                {"file": "notes/bpe.md", "unit": "cell", "start": 1, "end": 1},        # the wrong unit
+                {"file": "notes/none.md", "unit": "line", "start": 1, "end": 1}):      # no such file
+        assert gold.passage(corpus, bad) is None
+
+
+def valid_set(corpus):
+    """Two questions that keep every rule, with their pools judged."""
+    qs = [
+        {"id": "g001", "split": "test", "type": "factoid", "lang": "en", "answerable": True,
+         "question": "What does SuperBPE allow in its second stage?", "answer": "Merges across spaces.",
+         "probes": ["SuperBPE"], "evidence": [{"file": "notes/bpe.md", "unit": "line", "start": 7, "end": 7,
+                                                "quote": "lets merges cross spaces in a second stage", "grade": 2}]},
+        {"id": "g002", "split": "test", "type": "unanswerable", "lang": "vi", "answerable": False,
+         "question": "Phở cần hầm bao nhiêu kg xương?", "answer": None, "probes": ["kg"], "evidence": []},
+    ]
+    pools = {"g001": [{"file": "notes/bpe.md", "unit": "line", "start": 5, "end": 7}],
+             "g002": [{"file": "notes/pho.md", "unit": "line", "start": 1, "end": 3}]}
+    judgments = [{"id": "g001", "file": "notes/bpe.md", "unit": "line", "start": 5, "end": 7, "grade": 2},
+                 {"id": "g002", "file": "notes/pho.md", "unit": "line", "start": 1, "end": 3, "grade": 0}]
+    return qs, pools, judgments
+
+
+BREAKS = {   # a defect -> the words its fault must contain
+    "duplicate id": (lambda qs, p, j: qs[1].update(id="g001"), "duplicate id"),
+    "bad type": (lambda qs, p, j: qs[0].update(type="trivia"), "type 'trivia'"),
+    "bad language": (lambda qs, p, j: qs[0].update(lang="fr"), "lang 'fr'"),
+    "bad split": (lambda qs, p, j: qs[0].update(split="train"), "split 'train'"),
+    "no probes": (lambda qs, p, j: qs[0].update(probes=[]), "no probe terms"),
+    "follow-up without history": (lambda qs, p, j: qs[0].update(type="follow_up"), "history"),
+    "answerable flag": (lambda qs, p, j: qs[1].update(answerable=True), "answerable=True"),
+    "no answer": (lambda qs, p, j: qs[0].update(answer=""), "no answer"),
+    "no answering passage": (lambda qs, p, j: qs[0]["evidence"][0].update(grade=1), "no passage graded 2"),
+    "quote not verbatim": (lambda qs, p, j: qs[0]["evidence"][0].update(quote="lets merges jump spaces in a second stage"), "not verbatim"),
+    "span outside the file": (lambda qs, p, j: qs[0]["evidence"][0].update(end=50), "not found"),
+    "unanswerable with an answer": (lambda qs, p, j: qs[1].update(answer="2 kg"), "unanswerable yet"),
+    "not pooled": (lambda qs, p, j: p.pop("g001"), "not pooled"),
+    "pool not judged": (lambda qs, p, j: j.pop(0), "not judged"),
+    "unanswerable judged answered": (lambda qs, p, j: j[1].update(grade=2), "judged to answer"),
+    "bad grade": (lambda qs, p, j: j[1].update(grade=5), "grade 5"),
+    "no test question of a type": (lambda qs, p, j: qs[1].update(split="dev"), "no question in the test split"),
+}
+
+
+@pytest.mark.parametrize("defect", sorted(BREAKS))
+def test_the_check_passes_a_sound_set_and_names_every_defect(tmp_path, defect):
+    user, _ = gold_world(tmp_path)
+    qs, pools, judgments = valid_set(user)
+    faults, summary = gold.check(qs, user, pools, judgments, test_share=(0, 1))
+    assert faults == [] and summary["by_type"]["factoid"] == {"dev": 0, "test": 1}
+    assert summary["by_lang"]["vi"] == 1 and 0 < summary["overlap"]["g001"] <= 1
+    qs, pools, judgments = valid_set(user)
+    breaker, words = BREAKS[defect]
+    breaker(qs, pools, judgments)
+    faults, _ = gold.check(qs, user, pools, judgments, test_share=(0, 1))
+    assert any(words in f for f in faults), (defect, faults)
+
+
+def test_the_test_split_share_is_held_to_its_range(tmp_path):
+    user, _ = gold_world(tmp_path)
+    qs, pools, judgments = valid_set(user)
+    qs[0]["split"] = "dev"                                            # one of two in the test split: 0.5
+    assert any("test share" in f for f in gold.check(qs, user, pools, judgments, test_share=(0.6, 0.8))[0])
+    assert not any("test share" in f for f in gold.check(qs, user, pools, judgments, test_share=(0.4, 0.6))[0])
+
+
+@given(st.text(alphabet="abc xyz", max_size=30), st.lists(st.text(alphabet="abc xyz", max_size=30), max_size=3))
+def test_word_overlap_is_the_share_of_question_words_in_the_quotes(q, quotes):
+    o = gold.overlap(q, quotes)
+    qw = set(tokenization.legacy_tokenize(q, folded=False))
+    ew = {w for t in quotes for w in tokenization.legacy_tokenize(t, folded=False)}
+    assert o == len(qw & ew) / max(len(qw), 1) and 0 <= o <= 1
+
+
+def test_the_pool_is_the_union_of_four_searches_each_to_its_depth(tmp_path):
+    from peresearch.zetokrag import core
+    from peresearch.zetokrag.index import Index
+    from peresearch.zetokrag.search import Searcher
+    from tests.conftest import FakeEmbedder, FakeReranker
+    user, _ = gold_world(tmp_path)
+    corpus = user.resolve()
+    idx = Index(tmp_path / "gold-index", embedder=FakeEmbedder())
+    idx.update([corpus / "notes"])
+    searcher = Searcher(idx, reranker=FakeReranker())
+    question, probes = "Which stage lets merges cross spaces?", ["merges", "PHỞ"]
+    got = gold.pool(idx, searcher, question, probes, corpus, depth=2)
+    ids, bm, vecs = idx.snapshot()
+    rows = {r[0]: r for r in idx.rows()}
+    want = {}
+    for term in probes:
+        for i in [i for i in ids if term.casefold() in rows[int(i)][6].casefold()][:2]:
+            want.setdefault(int(i), set()).add("grep")
+    for how, chosen in (("bm25", ids[core.top(bm.scores(question), 2)]),
+                        ("dense", ids[core.top(vecs @ idx.embedder.queries([question])[0].astype("float32"), 2)]),
+                        ("zetokrag", [r[0] for r in searcher.rank(question)[0][:2]])):
+        for i in chosen:
+            want.setdefault(int(i), set()).add(how)
+    assert [(e["chunk"], e["found_by"]) for e in got] == [(i, sorted(want[i])) for i in sorted(want)]
+    for e in got:
+        r = rows[e["chunk"]]
+        assert (e["file"], e["unit"], e["start"], e["end"], e["text"]) == (
+            str(Path(r[1]).relative_to(corpus)), r[3], r[4], r[5], r[6])
+    assert any("grep" in e["found_by"] for e in got if "Phở" in e["text"])     # a probe matches case-folded
+
+
+@given(st.data())
+@settings(max_examples=60, deadline=None)
+def test_a_quote_is_located_at_the_smallest_span_that_holds_it(tmp_path_factory, data):
+    corpus = tmp_path_factory.mktemp("c")
+    lines = data.draw(st.lists(st.text(alphabet="abc é", max_size=8), min_size=1, max_size=8))
+    (corpus / "f.md").write_text("\n".join(lines) + "\n")
+    _, text = gold.units(corpus / "f.md")
+    whole = "\n".join(text[n] for n in sorted(text))
+    i = data.draw(st.integers(0, len(whole)))
+    quote = whole[i:data.draw(st.integers(i, len(whole)))]
+    ev = gold.locate(corpus, "f.md", quote)
+    if not quote:
+        assert ev == {"file": "f.md", "unit": "line", "start": min(text), "end": min(text), "quote": ""}
+        return
+    assert ev is not None and quote in gold.passage(corpus, ev)                  # it holds the quote
+    for start, end in ((ev["start"] + 1, ev["end"]), (ev["start"], ev["end"] - 1)):
+        if start <= end:                                                        # and no smaller span does
+            assert quote not in gold.passage(corpus, {**ev, "start": start, "end": end})
+    assert gold.locate(corpus, "f.md", quote + "\x00") is None and gold.locate(corpus, "none.md", "a") is None
+
+
+def test_judging_covers_the_whole_pool_and_evidence_is_located_by_its_quote(tmp_path):
+    user, _ = gold_world(tmp_path)
+    home = tmp_path / "gold"
+    shutil.copytree(user, home / "corpus")
+    (home / "pools").mkdir()
+    pool = [{"file": "notes/bpe.md", "unit": "line", "start": s, "end": e} for s, e in ((1, 3), (5, 7))]
+    (home / "pools" / "g001.json").write_text(json.dumps(pool))
+    qs, _, _ = valid_set(home / "corpus")
+    (home / "questions.jsonl").write_text("".join(json.dumps(q) + "\n" for q in qs))
+    gold.judge(home, "g001", {1: 2})
+    gold.judge(home, "g001", {1: 1})                                   # judged again: replaced, not added
+    assert gold.load_jsonl(home / "judgments.jsonl") == [
+        {"id": "g001", "file": "notes/bpe.md", "unit": "line", "start": 1, "end": 3, "grade": 0},
+        {"id": "g001", "file": "notes/bpe.md", "unit": "line", "start": 5, "end": 7, "grade": 1}]
+    for bad in ({2: 1}, {0: 3}):
+        with pytest.raises(ValueError):
+            gold.judge(home, "g001", bad)
+    ev = gold.add_evidence(home, "g001", "notes/bpe.md", "Byte pair encoding merges", 1)
+    assert ev == {"file": "notes/bpe.md", "unit": "line", "start": 3, "end": 3, "quote": "Byte pair encoding merges",
+                  "grade": 1}
+    gold.add_evidence(home, "g001", "notes/bpe.md", "Byte pair encoding merges", 1)    # the same one: kept once
+    assert [e["start"] for e in gold.load_jsonl(home / "questions.jsonl")[0]["evidence"]] == [7, 3]
+    for args in (("notes/bpe.md", "not in the file", 2), ("notes/bpe.md", "Byte", 0)):
+        with pytest.raises(ValueError):
+            gold.add_evidence(home, "g001", *args)
+
+
+def test_a_follow_up_is_searched_with_the_earlier_questions_of_its_conversation():
+    q = {"question": "And the other two?", "history": [{"q": "How many conditions ran?", "a": "5"},
+                                                       {"q": "Which failed?", "a": "none"}]}
+    assert gold.pool_query(q) == "How many conditions ran? Which failed? And the other two?"
+    assert gold.pool_query({"question": "Alone?"}) == "Alone?"
