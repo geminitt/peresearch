@@ -155,6 +155,7 @@ def cmd_setup(args, ask=input, secret=getpass.getpass):
             current[name] = value
     path.parent.mkdir(parents=True, exist_ok=True)
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    os.fchmod(fd, 0o600)                       # a file found readable by others is closed before the keys go in
     with os.fdopen(fd, "w") as f:
         f.write("".join(f"{k}={v}\n" for k, v in current.items()))
     os.chmod(path, 0o600)

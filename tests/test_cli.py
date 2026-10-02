@@ -174,25 +174,6 @@ def test_setup_declares_folders_indexes_and_saves_the_keys_privately(home, notes
     assert sorted(env) == sorted(["EXA_API_KEY=old-exa", "OTHER=kept", "PERESEARCH_LLM_URL=http://localhost:8000/v1",
                                   "TAVILY_API_KEY=tvly-" + "x" * 24])
     assert stat.S_IMODE((home / "settings.env").stat().st_mode) == 0o600
-    (home / "settings.env").unlink()                                      # a first setup: the file is new
-    answers, secrets = iter(["", ""]), iter(["", "", ""])
-    cli.cmd_setup(None, ask=lambda p: next(answers), secret=lambda p: next(secrets))
-    assert modes[-1] == 0o600                      # a new file is never readable by others, not even before chmod
-
-
-@pytest.mark.xfail(strict=True, reason="bug found 2026-10-02: an existing settings.env keeps its mode while the keys "
-                                       "are written, until the final chmod; the fix awaits the owner's approval")
-def test_setup_never_writes_keys_into_a_file_others_can_read(home, monkeypatch):
-    modes = []
-    real_fdopen = cli.os.fdopen
-    monkeypatch.setattr(cli.os, "fdopen", lambda fd, *a, **kw: (modes.append(stat.S_IMODE(os.fstat(fd).st_mode)),
-                                                                real_fdopen(fd, *a, **kw))[1])
-    home.mkdir(parents=True, exist_ok=True)
-    (home / "settings.env").write_text("OTHER=kept\n")
-    (home / "settings.env").chmod(0o644)                                  # e.g. written by hand
-    answers, secrets = iter(["", ""]), iter(["", "", ""])
-    cli.cmd_setup(None, ask=lambda p: next(answers), secret=lambda p: next(secrets))
-    assert modes == [0o600]
     assert prompts == ["Add a folder (empty to go on): "] * 3 + [
         "model endpoint (…/v1), e.g. http://localhost:8000/v1 or the URL `modal deploy` prints []: ",
         "model key (a Modal proxy token wk-….ws-…; empty for a local server) []: ",
@@ -203,6 +184,10 @@ def test_setup_never_writes_keys_into_a_file_others_can_read(home, monkeypatch):
     cli.cmd_setup(None, ask=lambda p: shown.append(p) or "", secret=lambda p: shown.append(p) or "")
     assert shown[1].endswith("[http://localhost:8000/v1]: ") and shown[3].endswith("[(set)]: ")   # a URL is shown, a key not
     assert Index(home, embedder=FakeEmbedder()).rows()
+    (home / "settings.env").unlink()                                      # a first setup: the file is new
+    cli.cmd_setup(None, ask=lambda p: "", secret=lambda p: "")
+    # never readable by others while the keys go in: the file found at 0o644, the one kept, a new one
+    assert modes == [0o600] * 3
 
 
 def test_setup_without_folders_indexes_nothing(tmp_path, monkeypatch, capsys):
