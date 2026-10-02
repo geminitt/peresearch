@@ -65,7 +65,8 @@ def test_the_modal_file_defines_its_app_when_modal_is_there():
         import modal  # noqa: F401
         python = sys.executable
     except ImportError:
-        candidate = Path.home() / ".pixi/envs/modal-client/bin/python"
+        from tests.conftest import REAL_HOME                   # tests run in a sandbox home; this only reads
+        candidate = REAL_HOME / ".pixi/envs/modal-client/bin/python"
         python = str(candidate) if candidate.exists() else shutil.which("python-modal")
     if not python:
         pytest.skip("Modal's library is not installed here")

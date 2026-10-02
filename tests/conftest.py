@@ -1,8 +1,45 @@
-"""Small stand-ins for the GPU models, so every test runs on CPU (as in CI)."""
-import hashlib
+"""The sandbox every test runs in, and small stand-ins for the GPU models, so every test runs on CPU (as in CI).
 
-import numpy as np
-import pytest
+Sandbox: tests (and mutation runs, which execute deliberately broken code) once wrote into the owner's real data
+folder — a broken home path fell back to ~/.local/share/peresearch and replaced the real index with a test one.
+Every test therefore runs with HOME, PERESEARCH_HOME and the eval output folders inside a temporary folder, set
+here before anything is imported, and the session fails if the owner's real places changed while it ran."""
+import hashlib
+import os
+import tempfile
+from pathlib import Path
+
+REAL_HOME = Path(os.path.expanduser("~"))
+REAL_PLACES = [Path(os.environ.get("PERESEARCH_HOME", REAL_HOME / ".local/share/peresearch")),
+               Path(__file__).resolve().parent.parent / "results"]
+
+
+def _state(places):
+    """Every file under the places, with its size and modification time."""
+    out = {}
+    for place in places:
+        for dirpath, _, names in os.walk(place):
+            for name in names:
+                p = Path(dirpath) / name
+                try:
+                    st = p.stat()
+                except OSError:
+                    continue
+                out[str(p)] = (st.st_size, st.st_mtime_ns)
+    return out
+
+
+BEFORE = _state(REAL_PLACES)
+
+SANDBOX = Path(tempfile.mkdtemp(prefix="peresearch-tests-"))
+os.environ.setdefault("HF_HOME", str(REAL_HOME / ".cache" / "huggingface"))   # models stay where they were fetched
+for name, sub in (("HOME", "user"), ("PERESEARCH_HOME", "data"), ("PERESEARCH_RUNS", "runs"),
+                  ("PERESEARCH_RESULTS", "results")):
+    (SANDBOX / sub).mkdir()
+    os.environ[name] = str(SANDBOX / sub)
+
+import numpy as np  # noqa: E402
+import pytest  # noqa: E402
 
 from peresearch.zetokrag.core import tokenize
 
@@ -39,3 +76,11 @@ def home(tmp_path, monkeypatch):
     h = tmp_path / "home"
     monkeypatch.setenv("PERESEARCH_HOME", str(h))
     return h
+
+
+def pytest_sessionfinish(session, exitstatus):
+    after = _state(REAL_PLACES)
+    changed = sorted(p for p in set(BEFORE) | set(after) if BEFORE.get(p) != after.get(p))
+    if changed:
+        print("\nTESTS CHANGED THE OWNER'S REAL FILES:\n  " + "\n  ".join(changed))
+        session.exitstatus = pytest.ExitCode.TESTS_FAILED
