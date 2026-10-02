@@ -86,8 +86,6 @@ def test_fold_drops_vietnamese_diacritics():
 
 # --- BM25 ---------------------------------------------------------------------------------------------------------
 
-@pytest.mark.xfail(strict=True, reason="BUG found 2026-10-02: a query with no terms ('', '?!', an emoji) raises "
-                   "IndexError inside bm25s; fix awaits the owner's OK")
 @given(st.lists(texts, min_size=1, max_size=8), texts)
 @settings(deadline=None)
 def test_bm25_scores_every_text_and_only_shared_terms_count(docs, query):
@@ -117,8 +115,6 @@ def ref_top(s, n):
     return sorted(finite, key=lambda i: (-s[i], i))[:n]
 
 
-@pytest.mark.xfail(strict=True, reason="BUG found 2026-10-02: among equal scores at the n-th place, top() keeps "
-                   "whichever argpartition picks, not the earliest text; fix awaits the owner's OK")
 @given(scores, st.integers(0, 40))
 @example([0.5, -np.inf, 0.9, 0.1], 10)                   # an excluded text (-inf) was still ranked
 def test_top_is_the_n_best_finite_scores_ties_by_position(s, n):
@@ -140,7 +136,7 @@ def ref_minmax_fusion(lex, den, rho, n):
     fused = {}
     for weight, s in ((rho, lex), (1 - rho, den)):
         idx = ref_top(s, n)
-        if s is lex and (not idx or s[idx[0]] <= 0):
+        if not idx or (s is lex and s[idx[0]] <= 0):              # a view with nothing to give is left out
             continue
         vals = np.array([s[i] for i in idx], dtype=np.float32)
         norm = np.ones_like(vals) if len(vals) and vals.max() == vals.min() else (vals - vals.min()) / (vals.max() - vals.min())
@@ -154,9 +150,9 @@ pairs = st.integers(1, 25).flatmap(lambda k: st.tuples(
     st.lists(st.one_of(st.floats(-1, 1, allow_nan=False, width=32), st.just(-np.inf)), min_size=k, max_size=k)))
 
 
-@pytest.mark.xfail(strict=False, reason="follows from the top() tie bug: fails only when scores tie at the n-th place")
 @given(pairs, st.sampled_from([0.0, 0.3, 0.5, 1.0]), st.integers(1, 30))
 @example(([0.0] * 5, [0.1, 0.2, 0.3, 0.4, 0.5]), 0.5, 3)   # all-zero BM25 got rho for every text (results/multilingual.md)
+@example(([0.0], [-np.inf]), 0.0, 1)                        # every dense score excluded: fusion used to raise
 def test_minmax_fusion_matches_its_definition(pair, rho, n):
     lex, den = (np.array(x, dtype=np.float32) for x in pair)
     ids, fused = core.fuse_minmax(lex, den, rho, n)
@@ -166,7 +162,6 @@ def test_minmax_fusion_matches_its_definition(pair, rho, n):
     assert all(fused[i] >= fused[i + 1] for i in range(len(fused) - 1))
 
 
-@pytest.mark.xfail(strict=True, reason="follows from the top() tie bug above")
 @given(pairs, st.integers(1, 30), st.integers(1, 100))
 def test_rrf_matches_its_definition(pair, n, k):
     lex, den = (np.array(x, dtype=np.float32) for x in pair)

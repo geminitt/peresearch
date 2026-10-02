@@ -286,6 +286,7 @@ class Agent:
                     steps += 1
                     prompt, completion = prompt + again.prompt_tokens, completion + again.completion_tokens
                     thoughts += [again.reasoning.strip()] if again.reasoning.strip() else []
+                    self.on_event("tokens", str(prompt + completion))
                     text, reply = again.text, again
                 if reply.finish == "length":    # cut at max_tokens: say so rather than pass it off as complete
                     stopped = stopped or "length"

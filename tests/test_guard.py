@@ -105,14 +105,17 @@ from hypothesis import example, given, settings  # noqa: E402
 from hypothesis import strategies as st  # noqa: E402
 
 filler = st.text(alphabet="abc xyz 0123 học máy\n\t.,:=-_/'\"", max_size=30)
-leaky = st.lists(st.one_of(filler, st.sampled_from(sorted(CANARIES.values()))), max_size=8).map("".join)
+# A secret with a distinctive prefix is found even glued to letters or to another secret; one with a short, generic
+# prefix (ak-, ws-) only after a non-alphanumeric character, so that ordinary words are not taken for secrets.
+GENERIC = {CANARIES["modal-token"], CANARIES["modal-proxy-token"]}
+leaky = st.lists(st.one_of(filler, st.sampled_from(sorted(CANARIES.values()))), max_size=8).map(
+    lambda parts: "".join((" " + x) if x in GENERIC else x for x in parts))
 
 
-@pytest.mark.xfail(strict=True, reason="BUG found 2026-10-02: two secrets back to back overlap as matches; redact "
-                   "skips the second and leaves most of it in the text; fix awaits the owner's OK")
 @given(leaky)
 @settings(max_examples=300)
 @example(CANARIES["github-token"] + CANARIES["openai-key"])            # two secrets back to back
+@example("abc" + CANARIES["google-api-key"] + CANARIES["google-api-key"])   # glued to letters and to each other
 @example("api_key = " + CANARIES["openai-key"])                         # one secret inside another's pattern
 def test_redacted_text_holds_no_secret(text):
     clean, n = guard.redact(text)
@@ -132,14 +135,12 @@ def test_sanitized_text_has_no_control_characters_and_keeps_the_rest(text):
         assert out == text
 
 
-@pytest.mark.xfail(strict=True, reason="BUG found 2026-10-02: a folder listed twice is kept twice (set_roots dedupes "
-                   "the config, so not reachable from it today); fix awaits the owner's OK")
 @given(st.lists(st.lists(st.sampled_from("abc"), max_size=3).map("/".join), max_size=6))
 def test_outermost_keeps_one_folder_per_tree_in_order(tmp_path_factory, rels):
     base = tmp_path_factory.mktemp("roots")
     roots = [base / r if r else base for r in rels]
     out = guard.outermost(roots)
-    assert all(r in roots for r in out) and out == [r for r in roots if r in out]   # a subset, in order
+    assert all(r in roots for r in out) and out == list(dict.fromkeys(r for r in roots if r in out))   # in order
     assert not any(o != p and o in p.parents for o in out for p in out)            # none inside another
     assert len(set(out)) == len(out)
     assert all(any(o == r or o in r.parents for o in out) for r in roots)          # every folder still covered

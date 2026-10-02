@@ -70,8 +70,6 @@ def test_qwen_calls_win_over_hermes_ones_and_broken_json_is_skipped():
     assert strip_text_calls(None) == "" and parse_text_calls(hermes("n", None))[0].args == {}
 
 
-@pytest.mark.xfail(strict=True, reason="BUG found 2026-10-02: a broken Hermes call followed by a valid one is read as one "
-                   "match running across both tags, so the valid call is lost; fix awaits the owner's OK")
 def test_a_broken_text_call_does_not_hide_the_next_one():
     assert parse_text_calls('<tool_call>{broken</tool_call><tool_call>{"name": "b", "arguments": {}}</tool_call>') == \
         [ToolCall("text-0", "b", {})]
@@ -232,12 +230,11 @@ def error(name):
        st.integers(1, 5), st.booleans())
 @hsettings(max_examples=150, deadline=None)
 @example(["APIConnectionError", "APIConnectionError", "ok"], 5, True)     # nothing listening here: 2 tries
+@example(["APITimeoutError", "APITimeoutError", "APIConnectionError"], 3, True)   # refused at the last try: raised
+@example(["APIConnectionError"], 1, True)                                 # one try: its error, not UnboundLocalError
 def test_retries_follow_one_policy(outcomes, retries, local):
-    """Retryable errors are tried again after wait × 2^attempt seconds (2 s on a refused local server, which gets one
-    more try only); any other error, or the last try, raises at once."""
-    if local:                                         # a refusal after the second try: see the bug test below
-        retries = max(retries, 2)
-        outcomes = outcomes[:2] + [o for o in outcomes[2:] if o != "APIConnectionError"] or ["ok"]
+    """Retryable errors are tried again after wait × 2^attempt seconds; a refused local server gets one more try
+    (after 2 s), and a second refusal raises; any other error, or the last try, raises at once."""
     tries, waits, slept = [], [], []
 
     def create(**kw):
@@ -261,14 +258,15 @@ def test_retries_follow_one_policy(outcomes, retries, local):
     finally:
         llm_module.time.time, llm_module.time.sleep = real_time, real_sleep
     # the reference policy
-    want_tries, want_waits, pauses = [], [], []
+    want_tries, want_waits, pauses, refusals = [], [], [], 0
     for attempt in range(retries):
         o = outcomes[min(attempt, len(outcomes) - 1)]
         want_tries.append(o)
         if o == "ok":
             break
         refused_here = local and o == "APIConnectionError"
-        if o == "ValueError" or attempt == (1 if refused_here else retries - 1):
+        refusals += refused_here
+        if o == "ValueError" or attempt == retries - 1 or refusals == 2:
             break
         pause = 2.0 if refused_here else 2.0 * 2 ** attempt
         pauses.append(pause)
@@ -282,9 +280,6 @@ def test_retries_follow_one_policy(outcomes, retries, local):
     assert abs(sum(slept) - sum(pauses)) < 1e-6 and all(0 < x <= 0.1 for x in slept)   # waited in steps of 0.1 s
 
 
-@pytest.mark.xfail(strict=True, reason="BUG found 2026-10-02: a refused local server is raised only at exactly the second "
-                   "try; refused at the first of one try, or after other errors at a later try, the retry loop runs out "
-                   "and UnboundLocalError comes out instead of the real error; fix awaits the owner's OK")
 @pytest.mark.parametrize("seq, retries", [(["APIConnectionError"], 1),
                                           (["APITimeoutError", "APITimeoutError", "APIConnectionError"], 3)])
 def test_a_refused_local_server_always_raises_the_real_error(seq, retries):

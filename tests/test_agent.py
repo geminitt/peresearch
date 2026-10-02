@@ -164,15 +164,12 @@ def check_loop(home, script, steps, webs, pages, web, record):
     # events and history
     assert [e for e in events if e[0] in ("think", "tool", "result")] == ref_events
     assert events[-1] == ("answer", "")
-    main = sum(kind != "again" for kind, _ in requests)
-    assert [d for k, d in events if k == "tokens"] == [str(5 * min(i, len(script))) for i in range(1, main + 1)]
+    assert [d for k, d in events if k == "tokens"] == [str(5 * min(i, len(script))) for i in range(1, len(requests) + 1)]
     path = history_file("default")
     lines = path.read_text().splitlines() if path.exists() else []
     assert len(lines) == record and (not record or json.loads(lines[0])["question"] == "the question")
 
 
-@pytest.mark.xfail(strict=True, reason="BUG found 2026-10-02: after an empty answer is asked again, no tokens event is sent, "
-                   "so the interface shows the count from before the second call; fix awaits the owner's OK")
 def test_the_token_count_shown_includes_the_second_call_after_an_empty_answer(home):
     events = []
     Agent(FakeModel([Reply("", prompt_tokens=3, completion_tokens=2), Reply("ok", prompt_tokens=4, completion_tokens=1)]),

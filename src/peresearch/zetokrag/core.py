@@ -84,16 +84,22 @@ class BM25:
         self.model.index([tokenize(t, folded) or ["∅"] for t in texts], show_progress=False)
 
     def scores(self, query: str) -> np.ndarray:
-        return np.asarray(self.model.get_scores(tokenize(query, self.folded)), dtype=np.float32)
+        terms = tokenize(query, self.folded)
+        if not terms:                                  # "?!" or an emoji: no word to match (bm25s would raise)
+            return np.zeros(self.model.scores["num_docs"], dtype=np.float32)
+        return np.asarray(self.model.get_scores(terms), dtype=np.float32)
 
 
 def top(scores: np.ndarray, n: int) -> np.ndarray:
-    """Indices of the n highest scores, best first; a score of -inf marks an excluded text, never returned."""
+    """Indices of the n highest scores, best first, equal scores by position (so a ranking never depends on how a
+    partition split them); a score of -inf marks an excluded text, never returned."""
     n = min(n, int((scores > -np.inf).sum()))
     if n == 0:
         return np.zeros(0, dtype=np.int64)
-    idx = np.argpartition(-scores, n - 1)[:n]
-    return idx[np.argsort(-scores[idx], kind="stable")]
+    cut = scores[np.argpartition(-scores, n - 1)[n - 1]]          # the n-th best score
+    above = np.flatnonzero(scores > cut)
+    idx = np.concatenate([above, np.flatnonzero(scores == cut)[:n - len(above)]])
+    return idx[np.lexsort((idx, -scores[idx]))]
 
 
 def minmax(values: np.ndarray) -> np.ndarray:
@@ -109,7 +115,7 @@ def fuse_minmax(lexical: np.ndarray, dense: np.ndarray, rho: float = 0.5, n: int
     fused: dict[int, float] = {}
     for weight, scores in ((rho, lexical), (1 - rho, dense)):
         idx = top(scores, n)
-        if scores is lexical and (len(idx) == 0 or float(scores[idx[0]]) <= 0):
+        if len(idx) == 0 or (scores is lexical and float(scores[idx[0]]) <= 0):   # a view with nothing to give
             continue
         for i, s in zip(idx, minmax(scores[idx])):
             fused[int(i)] = fused.get(int(i), 0.0) + weight * float(s)

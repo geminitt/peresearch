@@ -39,7 +39,7 @@ class Reply:
 
 _QWEN_XML = re.compile(r"<tool_call>\s*<function=([\w\-.]+)>(.*?)</function>\s*</tool_call>", re.S)
 _QWEN_PARAM = re.compile(r"<parameter=([\w\-.]+)>\n?(.*?)\n?</parameter>", re.S)
-_HERMES_JSON = re.compile(r"<tool_call>\s*(\{.*?\})\s*</tool_call>", re.S)
+_HERMES_JSON = re.compile(r"<tool_call>\s*(\{(?:(?!</tool_call>).)*?\})\s*</tool_call>", re.S)   # within one tag
 
 
 def _value(v: str):
@@ -259,6 +259,7 @@ class LLM:
         """`stop()`, polled every 0.1 s, interrupts the request in flight or the wait before a retry."""
         sent = [_outbound(m) for m in messages]
         thinking = self.thinking if thinking is None else thinking
+        refusals = 0
         for attempt in range(self.retries):
             if self.budget:
                 self.budget.check()
@@ -282,10 +283,12 @@ class LLM:
                 if type(e).__name__ == "BadRequestError" and self.usage_option:   # one without usage in streams
                     self.usage_option = False
                     continue
-                # Nothing listening on this machine will not start listening by waiting: fail after one more try
-                # instead of 2.5 minutes of retries (a remote endpoint may be waking up, so it keeps them).
+                # Nothing listening on this machine will not start listening by waiting: a refusal gets one more
+                # try, not 2.5 minutes of retries (a remote endpoint may be waking up, so it keeps them). The last
+                # try always raises: a loop that runs out would have no reply to return.
                 refused_here = self.local and type(e).__name__ == "APIConnectionError"
-                if type(e).__name__ not in self.RETRYABLE or attempt == (1 if refused_here else self.retries - 1):
+                refusals += refused_here
+                if type(e).__name__ not in self.RETRYABLE or attempt == self.retries - 1 or refusals == 2:
                     raise
                 pause = 2.0 if refused_here else self.wait * 2 ** attempt
                 self.on_wait(f"model not ready ({type(e).__name__}); retrying in {pause:.0f} s")

@@ -27,7 +27,7 @@ SECRET = CANARIES["github-token"]
 NEVER = ("MARK_DOTCONFIG", "MARK_ENV", "MARK_OWN", "MARK_OUTSIDE", "MARK_KEY", SECRET)
 
 
-def make_world(base: Path, link_to_hidden: bool = False) -> dict:
+def make_world(base: Path) -> dict:
     """A home folder with a declared folder and every kind of place a tool must not, or may only with leave, show."""
     user, outside = base / "user", base / "outside"
     notes, private, own = user / "notes", user / "private", user / "pehome"
@@ -48,8 +48,7 @@ def make_world(base: Path, link_to_hidden: bool = False) -> dict:
     (outside / "o.md").write_text("MARK_OUTSIDE\n")
     os.symlink(private / "p.md", notes / "link.md")
     os.symlink(outside, notes / "linkdir")
-    if link_to_hidden:
-        os.symlink(user / ".config" / "c.md", private / "innocent.md")
+    os.symlink(user / ".config" / "c.md", private / "innocent.md")      # a link in an allowed folder, to a hidden file
     return {"user": user, "notes": notes, "private": private, "own": own, "outside": outside}
 
 
@@ -62,11 +61,11 @@ def spellings(w):
         str(w["private"] / "deep" / "q.md"), "~/private", "~/.config/c.md", str(u / ".config"), "~/pehome/config.json",
         str(w["own"]), str(w["outside"] / "o.md"), str(w["outside"]), "/etc/hostname", "~/notes/sub", "~/notes", "notes",
         "**/*", "**/*.md", "*", "~/private/*", "~/private/**/*.md", "~/.config/*", "~/pehome/*", str(w["outside"]) + "/*",
-        "../**", "/etc/*", "~/private/deep",
-    ]   # the whole home (~, ~/*) is left to its own test below while its bug is open
+        "../**", "/etc/*", "~/private/deep", "~", "~/*", "~/**/*", "~/private/.cache/x.md", "~/private/innocent.md",
+    ]
 
 
-tool_calls = st.lists(st.tuples(st.sampled_from(["read", "grep", "glob", "tree"]), st.integers(0, 37)),
+tool_calls = st.lists(st.tuples(st.sampled_from(["read", "grep", "glob", "tree"]), st.integers(0, 42)),  # 43 spellings
                       min_size=1, max_size=6)
 
 
@@ -90,9 +89,7 @@ def test_tools_show_only_what_they_may_whatever_the_path_and_the_answer(calls, a
                     "glob": {"pattern": arg}, "tree": {"path": arg, "depth": 4}}[tool]
             out = tb.call(tool, args)
             assert isinstance(out, str)
-            assert not any(m in out for m in NEVER), (tool, arg, out)
-            if answer != "session":                       # with "session" it leaks: see the bug test below
-                assert "MARK_PRIVHIDDEN" not in out, (tool, arg, out)
+            assert not any(m in out for m in NEVER + ("MARK_PRIVHIDDEN",)), (tool, arg, out)
             if "MARK_PRIVATE" in out:
                 assert answer in ("once", "session") and asked, (tool, arg)
         for p in asked:                                                  # only ever asked about the user's own,
@@ -105,10 +102,8 @@ def test_tools_show_only_what_they_may_whatever_the_path_and_the_answer(calls, a
         shutil.rmtree(base, ignore_errors=True)
 
 
-@pytest.mark.xfail(strict=True, reason="BUG found 2026-10-02: in a folder the user allowed (here the whole home, once), a "
-                   "symlink to a hidden file is followed: its name is checked, not its target; fix awaits the owner's OK")
 def test_a_link_in_an_allowed_folder_does_not_open_a_hidden_file(tmp_path, monkeypatch):
-    w = make_world(tmp_path, link_to_hidden=True)
+    w = make_world(tmp_path)
     monkeypatch.setenv("HOME", str(w["user"]))
     monkeypatch.setenv("PERESEARCH_HOME", str(w["own"]))
     tb = Toolbox(None, None, roots=[w["notes"]], ask=lambda tool, path: "once")
@@ -116,9 +111,6 @@ def test_a_link_in_an_allowed_folder_does_not_open_a_hidden_file(tmp_path, monke
     assert "MARK_DOTCONFIG" not in tb.call("read", {"path": "~/private/innocent.md"})
 
 
-@pytest.mark.xfail(strict=True, reason="BUG found 2026-10-02: once the user allows the whole home for the session, grep "
-                   "and glob over it list hidden folders (~/.config…): a granted folder is searched with hidden entries; "
-                   "fix awaits the owner's OK")
 def test_allowing_the_whole_home_does_not_open_its_hidden_folders(tmp_path, monkeypatch):
     w = make_world(tmp_path)
     monkeypatch.setenv("HOME", str(w["user"]))
@@ -230,7 +222,7 @@ def test_grep_reports_every_matching_line_where_it_is_in_walk_order(tmp_path_fac
         (root / name).parent.mkdir(parents=True, exist_ok=True)
         (root / name).write_text("\n".join(lines))
     want = []
-    for p in tools._files([root]):
+    for p in tools._files([(root, True)]):
         for i, line in enumerate((root / p).read_text().splitlines(), 1):
             if re.search(pattern, line, re.I):
                 want.append(f"{p}:L{i}: {line.strip()[:300]}")

@@ -40,23 +40,27 @@ SKIP_DIRS = {".git", ".hg", ".svn", ".pixi", ".venv", "venv", "node_modules", "_
              ".pytest_cache", ".ipynb_checkpoints", ".cache", ".local", ".Trash", "site-packages", "third_party",
              "runs", "data", "datasets", "checkpoints", "wandb", "outputs", "build", "dist", ".hadoop-lib"}
 
+# A distinctive prefix (ghp_, sk-proj-, hf_…) is matched even right after a letter or digit: a secret glued to the
+# text before it, or to another secret, is still found. Short or generic prefixes (sk-, ak-, wk-, rk_live_) keep a
+# word boundary before them, so that ordinary words ending in them are not taken for secrets. No pattern needs a
+# boundary after it (a secret followed by "_", "é" or another secret was missed when one was required).
 SECRET_PATTERNS = {
     "private-key": r"-----BEGIN [A-Z ]*PRIVATE KEY-----",
-    "aws-access-key": r"\bAKIA[0-9A-Z]{16}\b",
-    "github-token": r"\bgh[pousr]_[A-Za-z0-9]{36,}\b|\bgithub_pat_[A-Za-z0-9_]{22,}\b",
-    "huggingface-token": r"\bhf_[A-Za-z0-9]{30,}\b",
-    "anthropic-key": r"\bsk-ant-[A-Za-z0-9_\-]{20,}",
-    "openai-key": r"\bsk-(?:proj-)?[A-Za-z0-9_\-]{20,}",
-    "google-api-key": r"\bAIza[0-9A-Za-z_\-]{35}\b",
-    "slack-token": r"\bxox[abprs]-[A-Za-z0-9\-]{10,}",
-    "stripe-key": r"\b[rs]k_live_[0-9A-Za-z]{20,}\b",
-    "modal-token": r"\ba[ks]-[A-Za-z0-9]{20,}\b",
-    "modal-proxy-token": r"\bw[ks]-[A-Za-z0-9]{20,}\b",
-    "tavily-key": r"\btvly-[A-Za-z0-9\-]{20,}\b",
-    "groq-key": r"\bgsk_[A-Za-z0-9]{40,}\b",
-    "cerebras-key": r"\bcsk-[A-Za-z0-9]{30,}\b",
-    "jina-key": r"\bjina_[A-Za-z0-9_\-]{40,}\b",
-    "jwt": r"\beyJ[A-Za-z0-9_\-]{10,}\.eyJ[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}",
+    "aws-access-key": r"AKIA[0-9A-Z]{16}",                        # always 20 characters
+    "github-token": r"gh[pousr]_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{22,}",
+    "huggingface-token": r"hf_[A-Za-z0-9]{30,}",
+    "anthropic-key": r"sk-ant-[A-Za-z0-9_\-]{20,}",
+    "openai-key": r"sk-proj-[A-Za-z0-9_\-]{20,}|\bsk-[A-Za-z0-9_\-]{20,}",
+    "google-api-key": r"AIza[0-9A-Za-z_\-]{35}",                # always 39 characters
+    "slack-token": r"xox[abprs]-[A-Za-z0-9\-]{10,}",
+    "stripe-key": r"\b[rs]k_live_[0-9A-Za-z]{20,}",
+    "modal-token": r"\ba[ks]-[A-Za-z0-9]{20,}",
+    "modal-proxy-token": r"\bw[ks]-[A-Za-z0-9]{20,}",
+    "tavily-key": r"tvly-[A-Za-z0-9\-]{20,}",
+    "groq-key": r"gsk_[A-Za-z0-9]{40,}",
+    "cerebras-key": r"csk-[A-Za-z0-9]{30,}",
+    "jina-key": r"jina_[A-Za-z0-9_\-]{40,}",
+    "jwt": r"eyJ[A-Za-z0-9_\-]{10,}\.eyJ[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}",
 }
 _SECRET_RE = [(kind, re.compile(p)) for kind, p in SECRET_PATTERNS.items()]
 # key = "value" assignments whose value looks random enough to be a credential
@@ -84,8 +88,8 @@ def roots() -> list[Path]:
 def outermost(roots: list[Path]) -> list[Path]:
     """The declared folders without those inside another one, which would list their files twice."""
     real = [Path(os.path.realpath(r)) for r in roots]
-    return [r for r, rr in zip(roots, real) if not any(o != rr and o in rr.parents for o in real)
-            and rr not in real[:real.index(rr)]]
+    return [r for i, (r, rr) in enumerate(zip(roots, real)) if not any(o != rr and o in rr.parents for o in real)
+            and rr not in real[:i]]
 
 
 def set_roots(paths: list[Path]) -> None:
@@ -114,7 +118,12 @@ def _entropy(s: str) -> float:
 
 def find_secrets(text: str) -> list[tuple[str, int, int]]:
     """(kind, start, end) of everything that looks like a credential."""
-    hits = [(kind, m.start(), m.end()) for kind, rx in _SECRET_RE for m in rx.finditer(text)]
+    hits = []
+    for kind, rx in _SECRET_RE:          # overlapping matches too: one secret's match may run into the next one
+        m = rx.search(text)
+        while m:
+            hits.append((kind, m.start(), m.end()))
+            m = rx.search(text, m.start() + 1)
     for m in _ASSIGN_RE.finditer(text):
         value = m.group(2)
         # random-looking: mixes letters and digits (identifiers such as tokenizer_config do not)
@@ -124,11 +133,17 @@ def find_secrets(text: str) -> list[tuple[str, int, int]]:
 
 
 def redact(text: str) -> tuple[str, int]:
+    """Every found secret replaced. Matches that overlap (two secrets written back to back: one pattern's match runs
+    into the next secret) are redacted as one stretch, so no part of either is left behind."""
     hits = find_secrets(text)
+    spans: list[list] = []
+    for kind, a, b in hits:                       # sorted by start
+        if spans and a < spans[-1][2]:
+            spans[-1][2] = max(spans[-1][2], b)
+        else:
+            spans.append([kind, a, b])
     out, last = [], 0
-    for kind, a, b in hits:
-        if a < last:
-            continue
+    for kind, a, b in spans:
         out += [text[last:a], f"[REDACTED:{kind}]"]
         last = b
     return "".join(out) + text[last:], len(hits)

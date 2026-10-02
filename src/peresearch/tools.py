@@ -65,16 +65,24 @@ def _match(rel: str, pattern: str) -> bool:
             or ("/" not in pattern and fnmatch.fnmatch(rel.rsplit("/", 1)[-1], pattern)))
 
 
-def _files(roots: list[Path], pattern: str = "**/*", hidden: bool = True):
-    """Files under `roots` matching `pattern`; `hidden=False` also skips hidden files and folders."""
-    for root in roots:
+def _hidden_in_home(path: Path) -> bool:
+    """The real place of `path` lies in a hidden folder (or is a hidden file) of the home folder."""
+    real, user = Path(os.path.realpath(path)), Path(os.path.realpath(Path.home()))
+    return (real == user or user in real.parents) and any(part.startswith(".") for part in real.relative_to(user).parts)
+
+
+def _files(roots, pattern: str = "**/*"):
+    """Files matching `pattern` under each (root, hidden allowed) pair. Where hidden entries are not allowed (a folder
+    the user allowed outside the declared ones), a hidden name is skipped, and so is a link whose target is hidden."""
+    every = [r for r, _ in roots]
+    for root, hidden in roots:
         for dirpath, dirnames, filenames in os.walk(root):
             dirnames[:] = sorted(d for d in dirnames if d not in guard.SKIP_DIRS and not guard.denied(Path(dirpath) / d)
                                  and not os.path.islink(Path(dirpath) / d) and (hidden or not d.startswith(".")))
             for f in sorted(filenames):
                 p = Path(dirpath) / f
-                if ((hidden or not f.startswith(".")) and _match(p.relative_to(root).as_posix(), pattern)
-                        and guard.allowed(p, roots)):
+                if ((hidden or not (f.startswith(".") or _hidden_in_home(p)))
+                        and _match(p.relative_to(root).as_posix(), pattern) and guard.allowed(p, every)):
                     yield p
 
 
@@ -107,6 +115,8 @@ class Toolbox:
             raise guard.Refused(f"{p}: hidden or protected")
         if not real.exists():
             raise guard.Refused(f"{p}: not found")
+        if any(g == real or g in real.parents for g in self.granted):     # in a folder allowed for this session
+            return real
         if self.ask is None:
             raise guard.Refused(f"{p}: outside the declared folders; the user can allow it when asked in "
                                 "peresearch chat, or declare it with /add")
@@ -125,27 +135,28 @@ class Toolbox:
             if not hits:
                 raise guard.Refused(f"{path}: not found in the declared folders")
             p = hits[0]
-        if guard.allowed(p, self._readable()):
+        if guard.allowed(p, self.roots):
             return p, self._readable()
-        real = self._outside(tool, p)
+        real = self._outside(tool, p)                   # hidden, protected or own data refused; else allowed or asked
         return real, self._readable() + [real if real.is_dir() else real.parent]
 
-    def _scope(self, pattern: str, tool: str) -> tuple[list[Path], str, bool]:
-        """Where a glob pattern looks: the readable folders for a relative pattern, or the folder a path names
-        (~/x/*.py, /abs/dir); the last value says whether hidden entries may be listed."""
+    def _scope(self, pattern: str, tool: str) -> tuple[list[tuple[Path, bool]], str]:
+        """Where a glob pattern looks, as (folder, hidden entries allowed) pairs: the declared folders (hidden entries
+        allowed: they were declared whole) and the folders allowed this session (not) for a relative pattern, or the
+        folder a path names (~/x/*.py, /abs/dir)."""
         pattern = pattern.strip()
         if not pattern.startswith(("/", "~")):
-            return self._readable(), pattern, True
+            return [(r, True) for r in self.roots] + [(g, False) for g in self.granted], pattern
         full = Path(pattern).expanduser()
         if full.is_dir():
             full = full / "*"                               # a folder: the files directly in it
         base = next((b for b in full.parents if b.is_dir()), None)
         if base is None:
-            return [], "", True
+            return [], ""
         rel = full.relative_to(base).as_posix()
-        if any(base == r or r in base.parents for r in self._readable()):
-            return [base], rel, True
-        return [self._outside(tool, base)], rel, False
+        if any(base == r or r in base.parents for r in self.roots):
+            return [(base, True)], rel
+        return [(self._outside(tool, base), False)], rel
 
     # --- the tools ---
 
@@ -231,8 +242,8 @@ class Toolbox:
         except re.error as e:
             return f"invalid regular expression: {e}"
         out = []
-        roots, glob, hidden = self._scope(glob, "grep")
-        for p in _files(roots, glob, hidden):
+        roots, glob = self._scope(glob, "grep")
+        for p in _files(roots, glob):
             doc = parse.read(p)
             if doc.status != "ok":
                 continue
@@ -249,8 +260,8 @@ class Toolbox:
 
     def glob(self, pattern: str, max_results: int = 100) -> str:
         found = []
-        roots, pattern, hidden = self._scope(pattern, "glob")
-        for p in _files(roots, pattern, hidden):
+        roots, pattern = self._scope(pattern, "glob")
+        for p in _files(roots, pattern):
             found.append(str(p))
             if len(found) >= max_results:
                 break
