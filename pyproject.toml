@@ -19,11 +19,13 @@ where = ["src"]
 # change to the code that no test notices. Each module listed here is tested by contract (tests/test_<module>.py);
 # a module joins the list when its tests are rewritten that way.
 source_paths = ["src/peresearch/zetokrag/", "src/peresearch/guard.py", "src/peresearch/tools.py",
-                "src/peresearch/web.py", "src/peresearch/workspace.py", "src/peresearch/settings.py"]
+                "src/peresearch/web.py", "src/peresearch/workspace.py", "src/peresearch/settings.py",
+                "src/peresearch/llm.py", "src/peresearch/agent.py"]
 also_copy = ["src/", "tests/", "eval/", "deploy/", "kaggle/", "pixi.toml", "pixi.lock", "pyproject.toml", "README.md"]
 pytest_add_cli_args_test_selection = ["tests/test_core.py", "tests/test_parse_chunk.py", "tests/test_index_search.py",
                                       "tests/test_models.py", "tests/test_guard.py", "tests/test_canary.py",
-                                      "tests/test_tools.py", "tests/test_web.py", "tests/test_workspace.py"]
+                                      "tests/test_tools.py", "tests/test_web.py", "tests/test_workspace.py",
+                                      "tests/test_llm.py", "tests/test_agent.py"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]          # not mutants/, the copy mutation testing works in
