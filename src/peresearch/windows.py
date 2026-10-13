@@ -543,6 +543,10 @@ class ModelWindow(Window):
         return self.query_one("#model-roles", TabbedContent).active.removeprefix("role-")
 
     def on_mount(self) -> None:
+        try:
+            connections.adopt_saved_selection()
+        except (ValueError, OSError) as error:
+            self.message(str(error))
         self.refresh_models()
         self.query_one("#models-chat", SelectList).focus()
 
@@ -550,7 +554,7 @@ class ModelWindow(Window):
         self._generation += 1
         if self.is_mounted:
             self.query_one("#models-" + self.role, SelectList).focus()
-            self.message("" if self.choices.get(self.role) else "No API connected for this role. Press a to add one.")
+            self.message(self.role_note())
 
     def refresh_models(self, prefer: str | None = None) -> None:
         try:
@@ -574,8 +578,21 @@ class ModelWindow(Window):
                 listing.add_option(Option(row(title), id=str(i)))
             if pairs:
                 listing.highlighted = next((i for i, (entry, _) in enumerate(pairs) if entry.id == prefer), 0)
-        if not self.choices.get(self.role):
-            self.message("No API connected for this role. Press a to add one.")
+        note = self.role_note()
+        if note:                                       # a message already shown (an override, an error) stays
+            self.message(note)
+
+    def role_note(self) -> str:
+        """What the message line says of this role: an endpoint in use that no saved row shows (it comes from the
+        environment, which is never saved), or that nothing is connected yet."""
+        prefix = connections.ROLES[self.role][1]
+        url = settings.get(prefix + "_URL")
+        shown = any(entry.url == url for entry, _ in self.choices.get(self.role, []))
+        if url and not shown:
+            model = settings.get(prefix + "_MODEL")
+            return ("In use from the environment: " + connections.host(url) + (" · " + model if model else "") +
+                    ". Press a to connect another.")
+        return "" if self.choices.get(self.role) else "No API connected for this role. Press a to add one."
 
     def selected(self):
         pairs = self.choices.get(self.role, [])

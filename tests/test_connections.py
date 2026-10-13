@@ -18,7 +18,9 @@ def test_catalog_is_private_and_selection_changes_only_its_role(home):
     assert entry.url == "http://embed.test/v1"
     assert (home / "models.json").stat().st_mode & 0o777 == 0o600
     assert home.stat().st_mode & 0o777 == 0o700
-    assert len(connections.load()) == 2
+    # the catalog holds what was saved; the chat endpoint in use stays in settings.env, its key not copied here
+    assert [e.role for e in connections.load()] == ["embedding"]
+    assert "synthetic-chat-key" not in (home / "models.json").read_text()
     assert connections.selection(entry, "another-id") == {
         "PERESEARCH_EMBED_URL": entry.url, "PERESEARCH_EMBED_MODEL": "another-id",
         "PERESEARCH_EMBED_KEY": entry.key}

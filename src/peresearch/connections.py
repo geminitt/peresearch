@@ -61,11 +61,27 @@ def load() -> list[Connection]:
                 entries.append(entry)
         except (TypeError, KeyError, ValueError) as error:
             raise ValueError("The saved model catalog is invalid; correct models.json before changing connections.") from error
-    for role, (_, prefix) in ROLES.items():
-        url, model, key = (settings.get(prefix + suffix) for suffix in ("_URL", "_MODEL", "_KEY"))
-        if url and not any(entry.role == role and entry.url == url and entry.key == key for entry in entries):
-            entries.append(Connection("current-" + role, role, host(url), url, key, [model] if model else []))
     return entries
+
+
+def adopt_saved_selection() -> None:
+    """Save once, as a connection, an endpoint the settings file selects but the catalog does not hold yet (set before
+    the catalog existed, or by the command line). The catalog then lists every connection and settings.env says which
+    one is in use. A value from the environment is never written here: it stays the environment's."""
+    entries, saved, added = load(), settings.saved(), False
+    for role, (_, prefix) in ROLES.items():
+        url, model, key = (saved.get(prefix + suffix, "") for suffix in ("_URL", "_MODEL", "_KEY"))
+        if not url or any(os.environ.get(prefix + suffix) for suffix in ("_URL", "_KEY")):
+            continue
+        try:
+            url = validate_url(url)
+        except ValueError:
+            continue
+        if not any(entry.role == role and entry.url == url and entry.key == key for entry in entries):
+            entries.append(Connection(uuid.uuid4().hex, role, host(url), url, key, [model] if model else []))
+            added = True
+    if added:
+        save(entries)
 
 
 def save(entries: list[Connection]) -> None:
@@ -98,14 +114,8 @@ def add(role: str, name: str, url: str, key: str, model: str = "") -> Connection
 def connect(role: str, name: str, url: str, key: str) -> Connection:
     """The saved connection for this role, endpoint and key, or a new one: connecting again does not add a copy."""
     url = validate_url(url)
-    entries = load()
-    found = next((entry for entry in entries if entry.role == role and entry.url == url and entry.key == key), None)
-    if found is None:
-        return add(role, name, url, key)
-    if found.id.startswith("current-"):        # the active endpoint, shown but not saved yet: saved now, once
-        found.id, found.name = uuid.uuid4().hex, name.strip() or found.name
-        save(entries)
-    return found
+    found = next((entry for entry in load() if entry.role == role and entry.url == url and entry.key == key), None)
+    return found or add(role, name, url, key)
 
 
 def selection(entry: Connection, model: str) -> dict[str, str]:

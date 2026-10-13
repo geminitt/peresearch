@@ -177,3 +177,40 @@ def test_connecting_the_endpoint_already_in_use_does_not_list_it_twice(home):
     connections.update_models(entry.id, ["qwen3-8b"], entry)
     chat = [e for e in connections.load() if e.role == "chat"]
     assert len(chat) == 1 and chat[0].url == "http://127.0.0.1:8000/v1"
+
+
+def test_the_catalog_holds_only_saved_connections(home):
+    """One source of truth: models.json lists what was saved; the active settings are not mixed into it."""
+    settings.save({"PERESEARCH_LLM_URL": "http://127.0.0.1:8000/v1", "PERESEARCH_LLM_MODEL": "qwen3-8b"})
+    assert connections.load() == []
+
+
+def test_opening_models_saves_the_endpoint_in_use_once_but_never_a_key_from_the_environment(home, monkeypatch):
+    settings.save({"PERESEARCH_LLM_URL": "http://127.0.0.1:8000/v1", "PERESEARCH_LLM_MODEL": "qwen3-8b"})
+    monkeypatch.setenv("PERESEARCH_EMBED_URL", "https://embed.test/v1")
+    monkeypatch.setenv("PERESEARCH_EMBED_KEY", "synthetic-environment-key")
+
+    async def steps(app, pilot):
+        for _ in range(2):                                            # opened twice: still one row
+            await submit(app, pilot, "/model")
+            listing = app.screen.query_one("#models-chat")
+            app.rows = listing.option_count
+            await pilot.press("escape")
+            await pilot.pause()
+
+    app = tui_run(lambda event: None, steps)
+    saved = connections.load()
+    assert app.rows == 1 and [(e.role, e.url, e.models) for e in saved] == [
+        ("chat", "http://127.0.0.1:8000/v1", ["qwen3-8b"])]
+    assert "synthetic-environment-key" not in (home / "models.json").read_text()
+
+
+def test_an_endpoint_from_the_environment_is_named_as_in_use(home, monkeypatch):
+    monkeypatch.setenv("PERESEARCH_LLM_URL", "https://env-model.test/v1")
+    monkeypatch.setenv("PERESEARCH_LLM_MODEL", "env-model")
+
+    async def steps(app, pilot):
+        await submit(app, pilot, "/model")
+        app.said = str(app.screen.query_one("#window-message").render())
+    app = tui_run(lambda event: None, steps)
+    assert "env-model.test" in app.said and "environment" in app.said and "No API connected" not in app.said
