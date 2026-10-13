@@ -1,0 +1,34 @@
+{
+  "description": "Retained Unicode excerpt recorded before mutation coverage additions, 2026-10-11",
+  "results": [
+    {
+      "ref": "R1",
+      "tool": "web_search",
+      "args": {},
+      "text": "[W1] BPE ghép các cặp ký hiệu."
+    }
+  ],
+  "source_versions": [
+    {
+      "id": "W1",
+      "kind": "web",
+      "where": "https://example.org/ghi-chu",
+      "title": "Ghi chú",
+      "version": "c78f51e8b914a59fc532ccec506e7dc6a3fcb8b410c41fd7605081941e0c33a4",
+      "ref": "R1",
+      "parts": [
+        [
+          5,
+          30
+        ]
+      ]
+    }
+  ],
+  "expected": {
+    "id": "W1",
+    "kind": "web",
+    "where": "https://example.org/ghi-chu",
+    "title": "Ghi chú",
+    "text": "BPE ghép các cặp ký hiệu."
+  }
+}

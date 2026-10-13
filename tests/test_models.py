@@ -10,7 +10,8 @@ from peresearch.zetokrag import models  # noqa: E402
 
 
 class FakeSentenceTransformer:
-    """Records how it is called; returns float32 rows of the text lengths."""
+    """Records how it is called; returns float32 rows from the text lengths, unit length when asked to normalize
+    (as the real model does with normalize_embeddings=True)."""
 
     def __init__(self, *args, device=None, **kwargs):
         self.max_seq_length, self.calls, self.device = None, [], device
@@ -18,7 +19,8 @@ class FakeSentenceTransformer:
     def encode(self, texts, **kwargs):
         self.calls.append((list(texts), kwargs))
         import numpy as np
-        return np.array([[len(t), 1.0] for t in texts], dtype=np.float32)
+        rows = np.array([[len(t), 1.0] for t in texts], dtype=np.float32)
+        return rows / np.linalg.norm(rows, axis=1, keepdims=True) if kwargs.get("normalize_embeddings") else rows
 
 
 class WordTokenizer:
@@ -54,6 +56,46 @@ class FakeCrossEncoder:
             self.seen.append(t)
             out.append(1.0 if "needle" in t.split() else 0.0)
         return out
+
+
+def test_a_model_on_this_machine_is_loaded_from_it_and_nothing_is_asked_online(monkeypatch, tmp_path):
+    """Loading by name from the Hub checks the pinned revision's files online at every start (27 requests to
+    huggingface.co each run, end to end, 2026-10-05): when that revision is on this machine it is loaded from there,
+    the cache only asked locally; not here, or a copy that does not load (a download stopped midway), from the Hub,
+    at its pinned revision."""
+    import huggingface_hub
+    loaded, asked, here, broken = [], [], {}, set()
+
+    def recording(fake):
+        class Recording(fake):
+            def __init__(self, source, revision=None, **kw):
+                loaded.append((source, revision))
+                if source in broken:
+                    raise OSError("a file of the copy is missing")
+                super().__init__(**kw)
+        return Recording
+
+    def cached(repo, revision=None, local_files_only=False, **kw):
+        asked.append(local_files_only)
+        if repo in here:
+            return here[repo]
+        raise FileNotFoundError(f"{repo}@{revision} is not on this machine")
+    monkeypatch.setattr(sentence_transformers, "SentenceTransformer", recording(FakeSentenceTransformer))
+    monkeypatch.setattr(sentence_transformers, "CrossEncoder", recording(FakeCrossEncoder))
+    monkeypatch.setattr(huggingface_hub, "snapshot_download", cached)
+    qwen, rer = models.EMBEDDERS["qwen3-embedding-0.6b"], models.RERANKER
+    here.update({qwen["repo"]: str(tmp_path / "qwen"), rer["repo"]: str(tmp_path / "reranker")})
+    models.Embedder("qwen3-embedding-0.6b"), models.Reranker()
+    assert loaded == [(str(tmp_path / "qwen"), None), (str(tmp_path / "reranker"), None)] and set(asked) == {True}
+    loaded.clear()
+    here.clear()
+    models.Embedder("qwen3-embedding-0.6b"), models.Reranker()
+    assert loaded == [(qwen["repo"], qwen["revision"]), (rer["repo"], rer["revision"])]
+    loaded.clear()
+    here[qwen["repo"]] = str(tmp_path / "qwen")
+    broken.add(str(tmp_path / "qwen"))
+    models.Embedder("qwen3-embedding-0.6b")
+    assert loaded == [(str(tmp_path / "qwen"), None), (qwen["repo"], qwen["revision"])]
 
 
 def test_the_embedder_reads_whole_chunks_unless_told_otherwise(monkeypatch):
@@ -131,3 +173,24 @@ def test_without_windows_the_reranker_scores_the_texts_as_given(monkeypatch):
     short = models.Reranker()
     short.scores("q", ["a  needle   spaced"])
     assert short.model.seen == ["a  needle   spaced"]                       # a text that fits is passed untouched
+
+
+def test_windows_that_would_never_move_on_fail_at_once(monkeypatch):
+    """windows() advanced by size - overlap: with overlap = size it looped for ever, growing ~560 MiB/s (measured
+    2026-10-03). A query of 444+ tokens left the reranker 64 tokens per window, its overlap: windows() now fails at
+    once on such a size, and the reranker cuts the query so that a window always has room."""
+    for size, overlap in ((64, 64), (10, 20)):
+        with pytest.raises(AssertionError, match="never move on"):
+            models.windows(100, size, overlap)
+    monkeypatch.setattr(sentence_transformers, "CrossEncoder", FakeCrossEncoder)
+    monkeypatch.setattr(models, "_device", lambda: "cpu")
+    r = models.Reranker()                                 # a long query is cut to QUERY_MAX_TOKENS for the reranker
+    for n in (450, 2000):
+        query = " ".join(f"q{i}" for i in range(n))
+        assert r.scores(query, [" ".join(["w"] * 1000), "short"]).shape == (2,)
+        pairs, _ = r._pairs(query, [" ".join(["w"] * 1000)])
+        tok = r.model.tokenizer
+        assert all(len(tok.encode(q)) <= models.QUERY_MAX_TOKENS for q, _ in pairs)
+        assert all(len(tok.encode(q)) + len(tok.encode(t)) + models.SPECIAL_TOKENS <= models.RERANKER_MAX_TOKENS
+                   for q, t in pairs)
+        assert pairs[0][0].split()[0] == "q0"                                         # its start is kept

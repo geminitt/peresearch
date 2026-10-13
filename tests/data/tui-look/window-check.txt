@@ -1,0 +1,30 @@
+
+
+
+
+
+
+
+
+
+
+
+  ╭──────────────────────────────────────────────────────────────────────────────────────────────╮
+  │ Connection checks                                                                            │
+  │                                                                                              │
+  │ Running sends test requests to the configured model and search services. Remote usage may be │
+  │ charged. Your documents are not sent.                                                        │
+  │                                                                                              │
+  │ r run checks · esc close                                                                     │
+  ╰──────────────────────────────────────────────────────────────────────────────────────────────╯
+
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,90 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="980" viewBox="0 0 1500 980">
+<defs><marker id="arrow-flow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#55554F"/></marker><marker id="arrow-back" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#8A877C"/></marker><marker id="arrow-error" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#C94343"/></marker><marker id="arrow-exit" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#C94343"/></marker></defs>
+<rect width="1500" height="980" fill="#FCFCFA"/>
+<text x="28.0" y="42.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#1F1F1F" text-anchor="start">Storage frame: what peresearch keeps, and for whom</text>
+<text x="28.0" y="68.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" fill="#5A5A55" text-anchor="start">Everything lives in $PERESEARCH_HOME (default ~/.local/share/peresearch), a folder only the user may enter (guard.ensure_home, at every command). working tree on 5ca550a, 2026-10-12.</text>
+<rect x="20" y="92" width="1460" height="640" rx="16" fill="none" stroke="#B5B3AA" stroke-width="1.4" stroke-dasharray="9 6"/>
+<text x="36.0" y="116.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14" font-weight="700" fill="#6B6963" text-anchor="start">$PERESEARCH_HOME  (0700)</text>
+<rect x="40" y="130" width="460" height="166" rx="10" fill="#F0EFEA" stroke="#8A877C" stroke-width="1.4"/>
+<text x="52.0" y="153.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#3D3B35" text-anchor="start">Sessions</text>
+<text x="52.0" y="171.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#8A877C" text-anchor="start">sessions/&lt;project&gt;.jsonl (0600)</text>
+<text x="52.0" y="194.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">turn: answer, source versions, locations, scope;</text>
+<text x="52.0" y="211.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">conversation, usage; inherits replayed file scope;</text>
+<text x="52.0" y="228.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">a line per name (the last one wins);</text>
+<text x="52.0" y="245.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">/sessions: resume, new, rename; /status: usage</text>
+<rect x="40" y="336" width="460" height="148" rx="10" fill="#F0EFEA" stroke="#8A877C" stroke-width="1.4"/>
+<text x="52.0" y="359.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#3D3B35" text-anchor="start">Tool-result store</text>
+<text x="52.0" y="377.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#8A877C" text-anchor="start">sessions/&lt;project&gt;/&lt;conv&gt;.jsonl (0600)</text>
+<text x="52.0" y="400.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">every result redacted, with accessed path scope;</text>
+<text x="52.0" y="417.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">R refs; excerpt ranges + hashes verify resume;</text>
+<text x="52.0" y="434.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">restorable compression; originals retained</text>
+<rect x="540" y="130" width="440" height="148" rx="10" fill="#E3F4EC" stroke="#2E9467" stroke-width="1.4"/>
+<text x="552.0" y="153.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#155A3B" text-anchor="start">Index</text>
+<text x="552.0" y="171.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#2E9467" text-anchor="start">index.sqlite (+ text/: 0700, 0600)</text>
+<text x="552.0" y="194.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">files, chunks, vectors, what was left out;</text>
+<text x="552.0" y="211.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">the extracted text of PDFs, notebooks, documents</text>
+<rect x="540" y="318" width="440" height="96" rx="10" fill="#E4F4F7" stroke="#2A8FA6" stroke-width="1.4"/>
+<text x="552.0" y="341.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#12505E" text-anchor="start">Web cache</text>
+<text x="552.0" y="359.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#2A8FA6" text-anchor="start">web/</text>
+<text x="552.0" y="382.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">pages read, by address</text>
+<rect x="1020" y="130" width="440" height="148" rx="10" fill="#FCE8E8" stroke="#C94343" stroke-width="1.4"/>
+<text x="1032.0" y="153.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#7D1F1F" text-anchor="start">Configuration and keys</text>
+<text x="1032.0" y="171.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#C94343" text-anchor="start">config.json · settings.env · models.json</text>
+<text x="1032.0" y="194.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">declared folders, exclude / include;</text>
+<text x="1032.0" y="211.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">active settings and saved model connections</text>
+<text x="1032.0" y="228.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">catalog: atomic replace, mode 0600</text>
+<rect x="1020" y="318" width="440" height="96" rx="10" fill="#FCE8E8" stroke="#C94343" stroke-width="1.4"/>
+<text x="1032.0" y="341.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#7D1F1F" text-anchor="start">Audit log</text>
+<text x="1032.0" y="359.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#C94343" text-anchor="start">audit.jsonl</text>
+<text x="1032.0" y="382.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">what left the machine: counts only</text>
+<rect x="540" y="454" width="440" height="96" rx="10" fill="#E8F0FE" stroke="#3B6FD8" stroke-width="1.4"/>
+<text x="552.0" y="477.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#1A3D8F" text-anchor="start">Exports</text>
+<text x="552.0" y="495.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#3B6FD8" text-anchor="start">/sessions → Export (user destination)</text>
+<text x="552.0" y="518.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">a conversation as Markdown, outside this folder</text>
+<rect x="1020" y="454" width="440" height="130" rx="10" fill="#EDEDED" stroke="#6B6B6B" stroke-width="1.4"/>
+<text x="1032.0" y="477.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#2B2B2B" text-anchor="start">Writes that survive a crash</text>
+<text x="1032.0" y="495.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#6B6B6B" text-anchor="start">agent._append_private</text>
+<text x="1032.0" y="518.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">one line appended at a time; a line a crash</text>
+<text x="1032.0" y="535.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">cut (mid-character too) is ended first and</text>
+<text x="1032.0" y="552.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">skipped when read: that line alone is lost</text>
+<rect x="40" y="780" width="460" height="96" rx="10" fill="#F1ECFB" stroke="#7A55C9" stroke-width="1.4"/>
+<text x="52.0" y="803.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#45288A" text-anchor="start">Agent</text>
+<text x="52.0" y="821.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#7A55C9" text-anchor="start">agent.py</text>
+<text x="52.0" y="844.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">writes turns, names, tool results</text>
+<rect x="540" y="780" width="440" height="96" rx="10" fill="#E8F0FE" stroke="#3B6FD8" stroke-width="1.4"/>
+<text x="552.0" y="803.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#1A3D8F" text-anchor="start">Interface</text>
+<text x="552.0" y="821.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#3B6FD8" text-anchor="start">tui.py · windows.py · cli.py</text>
+<text x="552.0" y="844.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">reads them for /sessions, /status</text>
+<path d="M 40.0 828.0 L 28.0 828.0 L 28.0 250.0 L 40.0 250.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<text x="36.0" y="600.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" fill="#55554F" text-anchor="start">turns, names</text>
+<path d="M 385.0 780.0 L 385.0 484.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<path d="M 628.0 780.0 L 628.0 620.0 L 520.0 620.0 L 520.0 250.0 L 500.0 250.0" fill="none" stroke="#8A877C" stroke-width="1.5" stroke-dasharray="6 4" marker-end="url(#arrow-back)"/>
+<path d="M 804.0 780.0 L 804.0 550.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<text x="1020.0" y="760.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" font-weight="700" fill="#3D3B35" text-anchor="start">Legend</text>
+<rect x="1020" y="772" width="22" height="14" rx="3" fill="#E8F0FE" stroke="#3B6FD8"/>
+<text x="1050.0" y="783.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">interface</text>
+<rect x="1020" y="793" width="22" height="14" rx="3" fill="#F1ECFB" stroke="#7A55C9"/>
+<text x="1050.0" y="804.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">agent and tools</text>
+<rect x="1020" y="814" width="22" height="14" rx="3" fill="#E3F4EC" stroke="#2E9467"/>
+<text x="1050.0" y="825.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">ZetokRAG</text>
+<rect x="1020" y="835" width="22" height="14" rx="3" fill="#E4F4F7" stroke="#2A8FA6"/>
+<text x="1050.0" y="846.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">web</text>
+<rect x="1020" y="856" width="22" height="14" rx="3" fill="#FCE8E8" stroke="#C94343"/>
+<text x="1050.0" y="867.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">guard: access, redaction, checks</text>
+<rect x="1240" y="772" width="22" height="14" rx="3" fill="#F0EFEA" stroke="#8A877C"/>
+<text x="1270.0" y="783.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">files on disk</text>
+<path d="M 1240 800 L 1262 800" stroke="#55554F" stroke-width="1.8" marker-end="url(#arrow-flow)"/>
+<text x="1270.0" y="804.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">call or data</text>
+<path d="M 1240 821 L 1262 821" stroke="#8A877C" stroke-width="1.8" stroke-dasharray="6 4" marker-end="url(#arrow-back)"/>
+<text x="1270.0" y="825.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">returns, next round</text>
+<path d="M 1240 842 L 1262 842" stroke="#C94343" stroke-width="1.8" stroke-dasharray="6 4" marker-end="url(#arrow-error)"/>
+<text x="1270.0" y="846.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">error path</text>
+<path d="M 1240 863 L 1262 863" stroke="#C94343" stroke-width="1.8" marker-end="url(#arrow-exit)"/>
+<text x="1270.0" y="867.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">leaves the machine</text>
+<rect x="401.6" y="614.0" width="46.8" height="17" rx="4" fill="#FCFCFA" fill-opacity="0.92"/>
+<text x="425.0" y="626.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" fill="#3D3B35" text-anchor="middle">results</text>
+<rect x="553.9" y="602.0" width="40.1" height="17" rx="4" fill="#FCFCFA" fill-opacity="0.92"/>
+<text x="574.0" y="614.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" fill="#3D3B35" text-anchor="middle">reads</text>
+<rect x="817.2" y="647.0" width="45.6" height="17" rx="4" fill="#FCFCFA" fill-opacity="0.92"/>
+<text x="840.0" y="659.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" fill="#3D3B35" text-anchor="middle">Export</text>
+</svg>

@@ -1,0 +1,218 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1660" height="1430" viewBox="0 0 1660 1430">
+<defs><marker id="arrow-flow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#55554F"/></marker><marker id="arrow-back" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#8A877C"/></marker><marker id="arrow-error" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#C94343"/></marker><marker id="arrow-exit" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#C94343"/></marker></defs>
+<rect width="1660" height="1430" fill="#FCFCFA"/>
+<text x="28.0" y="42.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#1F1F1F" text-anchor="start">peresearch: system overview</text>
+<text x="28.0" y="68.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" fill="#5A5A55" text-anchor="start">One flow: interface → agent loop → model + tools, with guard on every way in and out. Details in the other diagrams. working tree on 5ca550a, 2026-10-12.</text>
+<rect x="20" y="92" width="1255" height="1035" rx="16" fill="none" stroke="#B5B3AA" stroke-width="1.4" stroke-dasharray="9 6"/>
+<text x="36.0" y="116.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14" font-weight="700" fill="#6B6963" text-anchor="start">This machine</text>
+<rect x="45" y="130" width="300" height="62" rx="10" fill="#FFFFFF" stroke="#9A9A94" stroke-width="1.4" stroke-dasharray="7 5"/>
+<text x="57.0" y="153.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#3D3B35" text-anchor="start">User</text>
+<text x="57.0" y="176.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">works in a terminal: TUI or CLI</text>
+<rect x="45" y="228" width="300" height="148" rx="10" fill="#E8F0FE" stroke="#3B6FD8" stroke-width="1.4"/>
+<text x="57.0" y="251.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#1A3D8F" text-anchor="start">TUI</text>
+<text x="57.0" y="269.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#3B6FD8" text-anchor="start">tui.py · windows.py</text>
+<text x="57.0" y="292.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">Textual; grouped floating windows</text>
+<text x="57.0" y="309.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">folders, models, settings, sessions</text>
+<text x="57.0" y="326.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">daemon agent/index; permission dialog</text>
+<text x="57.0" y="343.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">untrusted text: guard.sanitize</text>
+<rect x="45" y="400" width="300" height="96" rx="10" fill="#E8F0FE" stroke="#3B6FD8" stroke-width="1.4"/>
+<text x="57.0" y="423.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#1A3D8F" text-anchor="start">CLI</text>
+<text x="57.0" y="441.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#3B6FD8" text-anchor="start">cli.py: main</text>
+<text x="57.0" y="464.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">no subcommand: opens the TUI</text>
+<text x="57.0" y="481.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">optional CLI: setup, find, ask, index</text>
+<rect x="45" y="520" width="300" height="96" rx="10" fill="#F1ECFB" stroke="#7A55C9" stroke-width="1.4"/>
+<text x="57.0" y="543.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#45288A" text-anchor="start">Declared folders</text>
+<text x="57.0" y="561.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#7A55C9" text-anchor="start">workspace.py: Workspace</text>
+<text x="57.0" y="584.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">TUI /folders: add, remove, index</text>
+<text x="57.0" y="601.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">CLI add, remove: run index after</text>
+<rect x="45" y="690" width="330" height="190" rx="10" fill="#F0EFEA" stroke="#8A877C" stroke-width="1.4"/>
+<text x="57.0" y="713.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#3D3B35" text-anchor="start">$PERESEARCH_HOME</text>
+<text x="57.0" y="731.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#8A877C" text-anchor="start">~/.local/share/peresearch</text>
+<text x="57.0" y="754.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">config.json      declared folders</text>
+<text x="57.0" y="771.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">settings.env     active keys (0600)</text>
+<text x="57.0" y="788.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">models.json      saved APIs and IDs</text>
+<text x="57.0" y="805.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">index.sqlite     files, chunks, vectors</text>
+<text x="57.0" y="822.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">sessions/*.jsonl  turns per project</text>
+<text x="57.0" y="839.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">web/             page cache</text>
+<text x="57.0" y="856.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">audit.jsonl      crossings (counts only)</text>
+<rect x="410" y="200" width="370" height="180" rx="10" fill="#F1ECFB" stroke="#7A55C9" stroke-width="1.4"/>
+<text x="422.0" y="223.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#45288A" text-anchor="start">Agent loop</text>
+<text x="422.0" y="241.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#7A55C9" text-anchor="start">assembly.py → agent.py: Agent.ask</text>
+<text x="422.0" y="264.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">product/eval: shared assembly and limits</text>
+<text x="422.0" y="281.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">tool results wrapped as untrusted</text>
+<text x="422.0" y="298.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">citations and quotes checked</text>
+<text x="422.0" y="315.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">writes sessions/&lt;project&gt;.jsonl</text>
+<rect x="410" y="440" width="370" height="182" rx="10" fill="#F1ECFB" stroke="#7A55C9" stroke-width="1.4"/>
+<text x="422.0" y="463.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#45288A" text-anchor="start">Tools</text>
+<text x="422.0" y="481.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#7A55C9" text-anchor="start">tools.py: Toolbox.call</text>
+<text x="422.0" y="504.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">tree · search_notes · overview · grep · glob · read</text>
+<text x="422.0" y="521.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">grep on ripgrep; files.walk&#x27;s rules (tools.svg)</text>
+<text x="422.0" y="538.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">gaps, then web_search / search_papers, fetch</text>
+<text x="422.0" y="555.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">sources N1…, W1… for citations</text>
+<rect x="410" y="685" width="370" height="96" rx="10" fill="#FCE8E8" stroke="#C94343" stroke-width="1.4"/>
+<text x="422.0" y="708.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#7D1F1F" text-anchor="start">Reading rule</text>
+<text x="422.0" y="726.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#C94343" text-anchor="start">guard.allowed · Toolbox._path</text>
+<text x="422.0" y="749.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">declared folders: read; protected: refused</text>
+<text x="422.0" y="766.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">elsewhere under ~: ask the user</text>
+<rect x="410" y="840" width="370" height="80" rx="10" fill="#F0EFEA" stroke="#8A877C" stroke-width="1.4"/>
+<text x="422.0" y="863.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#3D3B35" text-anchor="start">Declared folders on disk</text>
+<text x="422.0" y="886.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">the user&#x27;s notes, projects, courses</text>
+<rect x="870" y="200" width="290" height="162" rx="10" fill="#FDF0E2" stroke="#C9741A" stroke-width="1.4"/>
+<text x="882.0" y="223.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#7A4205" text-anchor="start">Model client</text>
+<text x="882.0" y="241.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#C9741A" text-anchor="start">llm.py: LLM.chat</text>
+<text x="882.0" y="264.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">streamed; stop() within 0.1 s</text>
+<text x="882.0" y="281.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">retries a cold or dropped server</text>
+<text x="882.0" y="298.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">tool calls recovered from text</text>
+<text x="882.0" y="315.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">model profile; tools via the prompt</text>
+<rect x="870" y="420" width="290" height="120" rx="10" fill="#E3F4EC" stroke="#2E9467" stroke-width="1.4"/>
+<text x="882.0" y="443.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#155A3B" text-anchor="start">ZetokRAG search</text>
+<text x="882.0" y="461.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#2E9467" text-anchor="start">zetokrag/search.py</text>
+<text x="882.0" y="484.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">BM25 + dense → fuse → rerank</text>
+<text x="882.0" y="501.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">copies folded, all ranked</text>
+<text x="882.0" y="518.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">reads a snapshot of index.sqlite</text>
+<rect x="870" y="580" width="290" height="130" rx="10" fill="#E4F4F7" stroke="#2A8FA6" stroke-width="1.4"/>
+<text x="882.0" y="603.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#12505E" text-anchor="start">Web client</text>
+<text x="882.0" y="621.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#2A8FA6" text-anchor="start">web.py: Web</text>
+<text x="882.0" y="644.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">search: the user&#x27;s MCP server (mcp.py)</text>
+<text x="882.0" y="661.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">fetch: httpx + trafilatura</text>
+<text x="882.0" y="678.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">Jina Reader: with the user&#x27;s key</text>
+<rect x="870" y="770" width="290" height="140" rx="10" fill="#E3F4EC" stroke="#2E9467" stroke-width="1.4"/>
+<text x="882.0" y="793.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#155A3B" text-anchor="start">ZetokRAG index</text>
+<text x="882.0" y="811.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#2E9467" text-anchor="start">zetokrag/index.py: Index</text>
+<text x="882.0" y="834.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">walk, filter data, chunk, embed</text>
+<text x="882.0" y="851.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">secret paragraphs withheld</text>
+<text x="882.0" y="868.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">commits every 60 s: resumable</text>
+<rect x="870" y="960" width="290" height="112" rx="10" fill="#E3F4EC" stroke="#2E9467" stroke-width="1.4"/>
+<text x="882.0" y="983.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#155A3B" text-anchor="start">Search endpoints</text>
+<text x="882.0" y="1001.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#2E9467" text-anchor="start">zetokrag/embed.py</text>
+<text x="882.0" y="1024.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">the user&#x27;s /embeddings, /rerank</text>
+<text x="882.0" y="1041.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">texts redacted, audited</text>
+<text x="882.0" y="1058.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">none set: words alone (BM25)</text>
+<rect x="1195" y="240" width="160" height="96" rx="10" fill="#FCE8E8" stroke="#C94343" stroke-width="1.4"/>
+<text x="1207.0" y="263.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#7D1F1F" text-anchor="start">Exit: model</text>
+<text x="1207.0" y="281.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#C94343" text-anchor="start">guard.outbound</text>
+<text x="1207.0" y="304.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">secrets redacted,</text>
+<text x="1207.0" y="321.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">crossing audited</text>
+<rect x="1195" y="600" width="160" height="96" rx="10" fill="#FCE8E8" stroke="#C94343" stroke-width="1.4"/>
+<text x="1207.0" y="623.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#7D1F1F" text-anchor="start">Exit: web</text>
+<text x="1207.0" y="641.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#C94343" text-anchor="start">outbound_query</text>
+<text x="1207.0" y="664.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">a query or URL with</text>
+<text x="1207.0" y="681.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">a secret: refused</text>
+<rect x="1390" y="205" width="250" height="168" rx="10" fill="#FFFFFF" stroke="#9A9A94" stroke-width="1.4" stroke-dasharray="7 5"/>
+<text x="1402.0" y="228.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#3D3B35" text-anchor="start">Model endpoint</text>
+<text x="1402.0" y="246.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#9A9A94" text-anchor="start">any OpenAI-compatible API</text>
+<text x="1402.0" y="269.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">a provider&#x27;s, or the user&#x27;s</text>
+<text x="1402.0" y="286.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">own server: Ollama, llama.cpp,</text>
+<text x="1402.0" y="303.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">LM Studio, vLLM…</text>
+<rect x="1390" y="585" width="250" height="125" rx="10" fill="#FFFFFF" stroke="#9A9A94" stroke-width="1.4" stroke-dasharray="7 5"/>
+<text x="1402.0" y="608.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#3D3B35" text-anchor="start">Web</text>
+<text x="1402.0" y="631.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">the user&#x27;s search MCP server</text>
+<text x="1402.0" y="648.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">web pages over HTTPS</text>
+<text x="1402.0" y="665.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">r.jina.ai (the user&#x27;s key)</text>
+<rect x="1390" y="985" width="250" height="80" rx="10" fill="#FFFFFF" stroke="#9A9A94" stroke-width="1.4" stroke-dasharray="7 5"/>
+<text x="1402.0" y="1008.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#3D3B35" text-anchor="start">The user&#x27;s servers</text>
+<text x="1402.0" y="1031.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">Ollama, llama.cpp, vLLM, a provider</text>
+<path d="M 195.0 192.0 L 195.0 228.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)" marker-start="url(#arrow-flow)"/>
+<path d="M 345.0 272.4 L 410.0 272.4" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<path d="M 410.0 319.8 L 345.0 319.8" fill="none" stroke="#8A877C" stroke-width="1.5" stroke-dasharray="6 4" marker-end="url(#arrow-back)"/>
+<path d="M 345.0 438.4 L 385.0 438.4 L 385.0 360.0 L 410.0 360.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<path d="M 345.0 568.0 L 390.0 568.0 L 390.0 640.0 L 835.0 640.0 L 835.0 810.0 L 870.0 810.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<path d="M 780.0 254.0 L 870.0 254.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<path d="M 870.0 317.0 L 780.0 317.0" fill="none" stroke="#8A877C" stroke-width="1.5" stroke-dasharray="6 4" marker-end="url(#arrow-back)"/>
+<path d="M 1160.0 264.8 L 1195.0 264.8" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<path d="M 1355.0 278.4 L 1390.0 278.4" fill="none" stroke="#C94343" stroke-width="2.2" marker-end="url(#arrow-exit)"/>
+<path d="M 539.5 380.0 L 539.5 440.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<path d="M 669.0 440.0 L 669.0 380.0" fill="none" stroke="#8A877C" stroke-width="1.5" stroke-dasharray="6 4" marker-end="url(#arrow-back)"/>
+<path d="M 780.0 480.0 L 870.0 480.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<path d="M 780.0 594.7 L 870.0 594.7" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<path d="M 595.0 622.0 L 595.0 685.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<path d="M 595.0 781.0 L 595.0 840.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<path d="M 1160.0 645.0 L 1195.0 648.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<path d="M 1355.0 643.2 L 1390.0 643.2" fill="none" stroke="#C94343" stroke-width="2.2" marker-end="url(#arrow-exit)"/>
+<path d="M 1160.0 498.0 L 1177.0 498.0 L 1177.0 880.0 L 1160.0 880.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<path d="M 780.0 880.0 L 870.0 880.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<path d="M 1015.0 910.0 L 1015.0 960.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<path d="M 1160.0 1027.2 L 1390.0 1027.2" fill="none" stroke="#C94343" stroke-width="2.2" marker-end="url(#arrow-exit)"/>
+<text x="40.0" y="1165.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" font-weight="700" fill="#3D3B35" text-anchor="start">Legend</text>
+<rect x="40" y="1177" width="22" height="14" rx="3" fill="#E8F0FE" stroke="#3B6FD8"/>
+<text x="70.0" y="1188.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">interface</text>
+<rect x="40" y="1198" width="22" height="14" rx="3" fill="#F1ECFB" stroke="#7A55C9"/>
+<text x="70.0" y="1209.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">agent and tools</text>
+<rect x="40" y="1219" width="22" height="14" rx="3" fill="#FDF0E2" stroke="#C9741A"/>
+<text x="70.0" y="1230.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">model client</text>
+<rect x="40" y="1240" width="22" height="14" rx="3" fill="#E3F4EC" stroke="#2E9467"/>
+<text x="70.0" y="1251.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">ZetokRAG</text>
+<rect x="40" y="1261" width="22" height="14" rx="3" fill="#E4F4F7" stroke="#2A8FA6"/>
+<text x="70.0" y="1272.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">web</text>
+<rect x="275" y="1177" width="22" height="14" rx="3" fill="#FCE8E8" stroke="#C94343"/>
+<text x="305.0" y="1188.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">guard: access, redaction, checks</text>
+<rect x="275" y="1198" width="22" height="14" rx="3" fill="#F0EFEA" stroke="#8A877C"/>
+<text x="305.0" y="1209.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">files on disk</text>
+<rect x="275" y="1219" width="22" height="14" rx="3" fill="#FFFFFF" stroke="#9A9A94" stroke-dasharray="4 3"/>
+<text x="305.0" y="1230.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">outside this machine</text>
+<rect x="275" y="1240" width="22" height="14" rx="3" fill="#FFF6D6" stroke="#B8960B"/>
+<text x="305.0" y="1251.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">decision</text>
+<path d="M 275 1268 L 297 1268" stroke="#55554F" stroke-width="1.8" marker-end="url(#arrow-flow)"/>
+<text x="305.0" y="1272.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">call or data</text>
+<path d="M 510 1184 L 532 1184" stroke="#8A877C" stroke-width="1.8" stroke-dasharray="6 4" marker-end="url(#arrow-back)"/>
+<text x="540.0" y="1188.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">returns, next round</text>
+<path d="M 510 1205 L 532 1205" stroke="#C94343" stroke-width="1.8" stroke-dasharray="6 4" marker-end="url(#arrow-error)"/>
+<text x="540.0" y="1209.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">error path</text>
+<path d="M 510 1226 L 532 1226" stroke="#C94343" stroke-width="1.8" marker-end="url(#arrow-exit)"/>
+<text x="540.0" y="1230.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">leaves the machine</text>
+<text x="780.0" y="1165.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" font-weight="700" fill="#7D1F1F" text-anchor="start">Open items (numbers on the boxes)</text>
+<text x="780.0" y="1182.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#7D1F1F" text-anchor="start">working tree on 5ca550a, 2026-10-12; their state is kept in STATUS.md</text>
+<circle cx="789" cy="1206" r="9" fill="#C94343"/>
+<text x="789.0" y="1210.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="700" fill="#FFFFFF" text-anchor="middle">5</text>
+<text x="806.0" y="1210.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">the embedding and rerank endpoints are the user&#x27;s (no model runs in peresearch, 2026-10-08): their speed and quality are theirs;</text>
+<text x="806.0" y="1227.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">checked on Ollama, llama.cpp and vLLM (runs/serve/endpoints-2026-10-08.json); in RAM: vectors 4 KiB per chunk (1,024 dimensions); a</text>
+<text x="806.0" y="1244.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">corpus far larger than the owner&#x27;s not measured</text>
+<circle cx="789" cy="1260" r="9" fill="#C94343"/>
+<text x="789.0" y="1264.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="700" fill="#FFFFFF" text-anchor="middle">8</text>
+<text x="806.0" y="1264.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">grep walks the folders on every call (files.walk: 1.1–1.4 s of 2.2 s for 13,402 files on the owner&#x27;s machine); speed on a large corpus and</text>
+<text x="806.0" y="1281.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">on macOS or Windows not measured</text>
+<circle cx="789" cy="1297" r="9" fill="#C94343"/>
+<text x="789.0" y="1301.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="700" fill="#FFFFFF" text-anchor="middle">9</text>
+<text x="806.0" y="1301.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">the endpoint is the user&#x27;s (any OpenAI-compatible API); checked with small models on Ollama 0.32.15, llama.cpp and vLLM 0.29</text>
+<text x="806.0" y="1318.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">(2026-10-06, recorded in tests/data/servers); LM Studio and a provider&#x27;s API not yet run</text>
+<circle cx="766" cy="454" r="10" fill="#C94343"/>
+<text x="766.0" y="458.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="700" fill="#FFFFFF" text-anchor="middle">8</text>
+<circle cx="1146" cy="974" r="10" fill="#C94343"/>
+<text x="1146.0" y="978.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="700" fill="#FFFFFF" text-anchor="middle">5</text>
+<circle cx="1626" cy="219" r="10" fill="#C94343"/>
+<text x="1626.0" y="223.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="700" fill="#FFFFFF" text-anchor="middle">9</text>
+<rect x="348.7" y="254.4" width="57.7" height="17" rx="4" fill="#FCFCFA" fill-opacity="0.92"/>
+<text x="377.5" y="266.4" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" fill="#3D3B35" text-anchor="middle">question</text>
+<rect x="354.1" y="301.8" width="46.7" height="17" rx="4" fill="#FCFCFA" fill-opacity="0.92"/>
+<text x="377.5" y="313.8" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" fill="#3D3B35" text-anchor="middle">events</text>
+<rect x="349.2" y="420.4" width="27.7" height="17" rx="4" fill="#FCFCFA" fill-opacity="0.92"/>
+<text x="363.0" y="432.4" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" fill="#3D3B35" text-anchor="middle">ask</text>
+<rect x="793.0" y="721.5" width="84.0" height="17" rx="4" fill="#FCFCFA" fill-opacity="0.92"/>
+<text x="835.0" y="733.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" fill="#3D3B35" text-anchor="middle">Index.update</text>
+<rect x="799.0" y="235.0" width="52.0" height="17" rx="4" fill="#FCFCFA" fill-opacity="0.92"/>
+<text x="825.0" y="247.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" fill="#3D3B35" text-anchor="middle">request</text>
+<rect x="806.4" y="299.0" width="37.1" height="17" rx="4" fill="#FCFCFA" fill-opacity="0.92"/>
+<text x="825.0" y="311.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" fill="#3D3B35" text-anchor="middle">reply</text>
+<rect x="1350.0" y="260.4" width="44.9" height="17" rx="4" fill="#FCFCFA" fill-opacity="0.92"/>
+<text x="1372.5" y="272.4" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" fill="#B23A3A" text-anchor="middle">HTTPS</text>
+<rect x="475.9" y="392.0" width="59.2" height="17" rx="4" fill="#FCFCFA" fill-opacity="0.92"/>
+<text x="505.5" y="404.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" fill="#3D3B35" text-anchor="middle">tool calls</text>
+<rect x="675.6" y="392.0" width="46.8" height="17" rx="4" fill="#FCFCFA" fill-opacity="0.92"/>
+<text x="699.0" y="404.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" fill="#3D3B35" text-anchor="middle">results</text>
+<rect x="782.9" y="461.0" width="84.1" height="17" rx="4" fill="#FCFCFA" fill-opacity="0.92"/>
+<text x="825.0" y="473.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" fill="#3D3B35" text-anchor="middle">search_notes</text>
+<rect x="793.4" y="575.7" width="63.2" height="17" rx="4" fill="#FCFCFA" fill-opacity="0.92"/>
+<text x="825.0" y="587.7" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" fill="#3D3B35" text-anchor="middle">web tools</text>
+<rect x="599.6" y="653.5" width="130.7" height="17" rx="4" fill="#FCFCFA" fill-opacity="0.92"/>
+<text x="665.0" y="665.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" fill="#3D3B35" text-anchor="middle">tree, grep, glob, read</text>
+<rect x="601.0" y="792.5" width="88.0" height="17" rx="4" fill="#FCFCFA" fill-opacity="0.92"/>
+<text x="645.0" y="804.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" fill="#3D3B35" text-anchor="middle">allowed paths</text>
+<rect x="1350.0" y="625.2" width="44.9" height="17" rx="4" fill="#FCFCFA" fill-opacity="0.92"/>
+<text x="1372.5" y="637.2" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" fill="#B23A3A" text-anchor="middle">HTTPS</text>
+<rect x="807.9" y="862.0" width="34.2" height="17" rx="4" fill="#FCFCFA" fill-opacity="0.92"/>
+<text x="825.0" y="874.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" fill="#3D3B35" text-anchor="middle">read</text>
+<rect x="1019.0" y="917.0" width="48.0" height="17" rx="4" fill="#FCFCFA" fill-opacity="0.92"/>
+<text x="1043.0" y="929.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" fill="#3D3B35" text-anchor="middle">embed</text>
+<rect x="1248.0" y="1009.2" width="53.9" height="17" rx="4" fill="#FCFCFA" fill-opacity="0.92"/>
+<text x="1275.0" y="1021.2" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" fill="#B23A3A" text-anchor="middle">HTTP(S)</text>
+</svg>

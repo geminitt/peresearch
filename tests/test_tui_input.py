@@ -20,6 +20,7 @@ from pathlib import Path
 import pytest
 
 import peresearch
+from peresearch import mascot
 
 pty = pytest.importorskip("pty")
 fcntl = pytest.importorskip("fcntl")
@@ -88,7 +89,9 @@ class Terminal:
         fcntl.ioctl(tty, termios.TIOCSWINSZ, struct.pack("HHHH", 40, 110, 0, 0))
         self.proc = subprocess.Popen([sys.executable, str(app), str(self.out)], stdin=tty, stdout=tty, stderr=tty,
                                      # the code under test, not the installed copy (mutation runs copy it elsewhere)
-                                     env={**os.environ, "TERM": "xterm-256color", "COLORTERM": "truecolor",
+                                     env={**{k: v for k, v in os.environ.items()
+                                             if k not in ("NO_COLOR", "FORCE_COLOR", "CLICOLOR", "CLICOLOR_FORCE")},
+                                          "TERM": "xterm-256color", "COLORTERM": "truecolor",
                                           "PYTHONPATH": str(Path(peresearch.__file__).parents[1])},
                                      start_new_session=True)
         os.close(tty)
@@ -168,9 +171,12 @@ def test_every_color_comes_from_the_terminal_scheme(terminal):
                  "wants to read", "esc stops the question"):
         assert part in shown, part                        # every kind of element was drawn
     codes = re.findall(rb"\x1b\[([0-9;:]*)m", terminal.screen)
-    fixed = {c.decode() for c in codes if re.search(rb"(^|;)(38|48)[;:](2|5)[;:]", c)}
-    assert codes and not fixed, sorted(fixed)[:5]
-    params = [c.decode().split(";") for c in codes]
+    # Fixed colors: the mascot's own and nothing else (the owner's sketch, the one exception to the palette rule)
+    sketch = {c.get_truecolor() for c in mascot.COLORS.values()}
+    fixed = re.findall(rb"(?:^|;)(?:38|48)[;:]2[;:](\d+)[;:](\d+)[;:](\d+)", b";".join(codes))
+    assert codes and {tuple(map(int, f)) for f in fixed} == sketch                 # all five drawn, no other
+    assert not [c for c in codes if re.search(rb"(^|;)(38|48)[;:]5[;:]", c)]      # no 256-color
+    params = [re.sub(r"(^|;)(38|48)[;:]2[;:]\d+[;:]\d+[;:]\d+", "", c.decode()).split(";") for c in codes]  # not RGB
     unsafe = {"30", "37", "40", "47"} | {str(n) for n in range(90, 98)} | {str(n) for n in range(100, 108)}
     near_background = {";".join(p) for p in params if unsafe & set(p)}
     assert not near_background, sorted(near_background)[:5]
@@ -187,16 +193,19 @@ def test_every_color_comes_from_the_terminal_scheme(terminal):
 
 def test_the_chosen_command_stands_out_in_the_menu(terminal):
     """The menu never has the focus (typing stays on the prompt), so its highlight is the blurred one; it must
-    still show which command Enter or Tab would take."""
+    still show which command Enter or Tab would take: as in Claude Code, the `❯` pointer and the accent color
+    (blue, 34), never a reversed bar."""
     def style_of(name: bytes) -> set[bytes]:
         found = re.findall(rb"\x1b\[([0-9;]*)m" + re.escape(name) + rb"\b", terminal.screen)
         return set(found[-1].split(b";")) if found else set()
     terminal.write("/")
     terminal.read(0.8)
-    assert b"7" in style_of(b"/help") and b"7" not in style_of(b"/keys")
+    assert b"34" in style_of(b"/help") and b"34" not in style_of(b"/folders")
+    assert b"7" not in style_of(b"/help")
+    assert re.search(rb"\xe2\x9d\xaf [^/]{0,40}/help", terminal.screen)          # "❯ " before the chosen command
     terminal.write("\x1b[B")                              # ↓ moves the choice
     terminal.read(0.8)
-    assert b"7" in style_of(b"/keys") and b"7" not in style_of(b"/help")
+    assert b"34" in style_of(b"/folders") and b"34" not in style_of(b"/help")
 
 
 def test_editing_keys_keep_their_place_among_typed_text(terminal):

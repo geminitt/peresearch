@@ -221,7 +221,9 @@ def rank(index_terms: list[list[str]], query_terms: list[list[str]]) -> list[lis
     model.index([t or ["∅"] for t in index_terms], show_progress=False)
     ids, scores = model.retrieve([q or ["∅"] for q in query_terms], k=min(TOP, len(index_terms)), show_progress=False,
                                  n_threads=WORKERS)
-    return [[int(i) for i, s in zip(row, srow) if s > 0] for row, srow in zip(ids, scores)]
+    out = [[int(i) for i, s in zip(row, srow) if s > 0] for row, srow in zip(ids, scores)]
+    assert len(out) == len(query_terms), "one ranking per query"
+    return out
 
 
 def orders_path(lang: str, variant: str) -> Path:
@@ -230,6 +232,7 @@ def orders_path(lang: str, variant: str) -> Path:
 
 def save_orders(lang: str, variant: str, orders: list[list[int]]) -> None:
     """The top-100 of every query (-1 pads), kept so that fusions can be computed without ranking again."""
+    assert all(len(o) <= TOP for o in orders), f"a ranking longer than {TOP}"
     a = np.full((len(orders), TOP), -1, dtype=np.int32)
     for r, o in enumerate(orders):
         a[r, :len(o)] = o
@@ -242,6 +245,7 @@ def load_orders(lang: str, variant: str) -> list[list[int]]:
 
 
 def rrf(a: list[list[int]], b: list[list[int]], k: int = 60) -> list[list[int]]:
+    assert len(a) == len(b), "two rankings of the same queries"
     out = []
     for x, y in zip(a, b):
         score: dict[int, float] = {}
@@ -274,8 +278,10 @@ def run_language(lang: str, variants, finished: dict) -> None:
             terms = plain
         else:
             terms = cut_all(variant, texts)
+            assert len(terms) == len(texts), f"{variant}: {len(terms)} term lists for {len(texts)} texts"
             t_cut = time.time() - t
             orders = rank(terms, cut_all(variant, qtexts))
+        assert len(orders) == len(qtexts), f"{variant}: {len(orders)} rankings for {len(qtexts)} queries"
         if not variant.startswith("rrf:"):
             save_orders(lang, variant, orders)
         per_query = [metrics([doc_ids[i] for i in o], r) for o, r in zip(orders, rels)]

@@ -1,0 +1,151 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="2170" viewBox="0 0 1500 2170">
+<defs><marker id="arrow-flow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#55554F"/></marker><marker id="arrow-back" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#8A877C"/></marker><marker id="arrow-error" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#C94343"/></marker><marker id="arrow-exit" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#C94343"/></marker></defs>
+<rect width="1500" height="2170" fill="#FCFCFA"/>
+<text x="28.0" y="42.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#1F1F1F" text-anchor="start">ZetokRAG: building the index</text>
+<text x="28.0" y="68.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" fill="#5A5A55" text-anchor="start">zetokrag/index.py: Index.update. Run when the TUI opens (folders declared), on /index, /add, /remove, by `peresearch index` and `setup`. working tree on 5ca550a, 2026-10-12.</text>
+<rect x="470" y="100" width="460" height="78" rx="10" fill="#E3F4EC" stroke="#2E9467" stroke-width="1.4"/>
+<text x="482.0" y="123.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#155A3B" text-anchor="start">Index.update(roots)</text>
+<text x="482.0" y="141.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#2E9467" text-anchor="start">zetokrag/index.py</text>
+<text x="482.0" y="164.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">_write_lock: one update at a time, own writer connection</text>
+<rect x="470" y="218" width="460" height="130" rx="10" fill="#FFF6D6" stroke="#B8960B" stroke-width="1.4"/>
+<text x="482.0" y="241.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#5E4B00" text-anchor="start">First commit: what the index was built with</text>
+<text x="482.0" y="264.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">another embedder → its vectors deleted (chunks kept)</text>
+<text x="482.0" y="281.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">another chunking or context → every file marked</text>
+<text x="482.0" y="298.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">to be read again; old chunks kept, searchable</text>
+<text x="482.0" y="315.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">meta: embedder, chunking, context written</text>
+<rect x="470" y="388" width="460" height="130" rx="10" fill="#E3F4EC" stroke="#2E9467" stroke-width="1.4"/>
+<text x="482.0" y="411.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#155A3B" text-anchor="start">Walk and hash (no transaction)</text>
+<text x="482.0" y="429.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#2E9467" text-anchor="start">Index._files → files.walk</text>
+<text x="482.0" y="452.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">guard.outermost: a nested root walked once</text>
+<text x="482.0" y="469.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">rules of local-documents.svg; left out → `skipped`</text>
+<text x="482.0" y="486.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">hash current bytes even with unchanged metadata</text>
+<rect x="470" y="558" width="460" height="78" rx="10" fill="#FFF6D6" stroke="#B8960B" stroke-width="1.4"/>
+<text x="482.0" y="581.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#5E4B00" text-anchor="start">Same sha256 as an earlier path?</text>
+<text x="482.0" y="604.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">yes → status &#x27;duplicate&#x27;, its chunks dropped</text>
+<rect x="470" y="676" width="460" height="96" rx="10" fill="#FFF6D6" stroke="#B8960B" stroke-width="1.4"/>
+<text x="482.0" y="699.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#5E4B00" text-anchor="start">sha256 unchanged (and verdict kept)?</text>
+<text x="482.0" y="722.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">yes → &#x27;unchanged&#x27;; if its declared folder changed,</text>
+<text x="482.0" y="739.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">its place is updated and embedded again</text>
+<rect x="470" y="812" width="460" height="112" rx="10" fill="#E3F4EC" stroke="#2E9467" stroke-width="1.4"/>
+<text x="482.0" y="835.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#155A3B" text-anchor="start">parse.read(path)</text>
+<text x="482.0" y="853.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#2E9467" text-anchor="start">zetokrag/parse.py</text>
+<text x="482.0" y="876.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">md, text, code → lines · PDF → pages · ipynb → cells</text>
+<text x="482.0" y="893.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">too_large: text &gt; 20 MiB, PDF &gt; 20 M characters</text>
+<text x="482.0" y="910.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">binary · needs_ocr · error → reported, no chunks</text>
+<rect x="470" y="964" width="460" height="112" rx="10" fill="#FFF6D6" stroke="#B8960B" stroke-width="1.4"/>
+<text x="482.0" y="987.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#5E4B00" text-anchor="start">is_data(doc): datafilter.reason</text>
+<text x="482.0" y="1005.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#B8960B" text-anchor="start">zetokrag/datafilter.py</text>
+<text x="482.0" y="1028.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">plain text: URLs/numbers, JSON, table, log, word list</text>
+<text x="482.0" y="1045.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">code: generated or minified; .sql: a dump</text>
+<text x="482.0" y="1062.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">yes → status &#x27;data&#x27; + reason: not chunked</text>
+<rect x="470" y="1116" width="460" height="112" rx="10" fill="#E3F4EC" stroke="#2E9467" stroke-width="1.4"/>
+<text x="482.0" y="1139.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#155A3B" text-anchor="start">chunk.chunk(doc, keep = no secret, whole)</text>
+<text x="482.0" y="1157.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#2E9467" text-anchor="start">zetokrag/chunk.py: DEFAULT blocks+code-defs</text>
+<text x="482.0" y="1180.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">tables, code blocks, lists kept whole (≤ 6,000)</text>
+<text x="482.0" y="1197.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">.py cut at top-level definitions; else ≤ 1,500</text>
+<text x="482.0" y="1214.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">checked: each chunk verbatim at its lines</text>
+<rect x="470" y="1268" width="460" height="78" rx="10" fill="#F0EFEA" stroke="#8A877C" stroke-width="1.4"/>
+<text x="482.0" y="1291.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#3D3B35" text-anchor="start">Replace the file&#x27;s chunks and row</text>
+<text x="482.0" y="1314.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">chunks carry their place (declared folder + path)</text>
+<rect x="470" y="1386" width="460" height="112" rx="10" fill="#E3F4EC" stroke="#2E9467" stroke-width="1.4"/>
+<text x="482.0" y="1409.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#155A3B" text-anchor="start">Index.embed, after every file is committed</text>
+<text x="482.0" y="1427.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#2E9467" text-anchor="start">zetokrag/embed.py: Embedder (the user&#x27;s endpoint)</text>
+<text x="482.0" y="1450.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">64 chunks a request, each batch committed, fp16;</text>
+<text x="482.0" y="1467.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">stoppable, resumable; endpoint down → said, words</text>
+<text x="482.0" y="1484.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">meanwhile; a text too long → embedded by its head</text>
+<rect x="470" y="1538" width="460" height="112" rx="10" fill="#F0EFEA" stroke="#8A877C" stroke-width="1.4"/>
+<text x="482.0" y="1561.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#3D3B35" text-anchor="start">60 s since the last commit? → COMMIT</text>
+<text x="482.0" y="1584.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">checked: no vector without its chunk;</text>
+<text x="482.0" y="1601.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">extracted-text store synced (_sync_texts)</text>
+<text x="482.0" y="1618.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">stopped → this batch rolled back, the rest kept</text>
+<rect x="470" y="1690" width="460" height="96" rx="10" fill="#F0EFEA" stroke="#8A877C" stroke-width="1.4"/>
+<text x="482.0" y="1713.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#3D3B35" text-anchor="start">After the last file (last commit)</text>
+<text x="482.0" y="1736.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">files not found dropped; `skipped` rewritten;</text>
+<text x="482.0" y="1753.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">meta.datafilter written (all files judged)</text>
+<rect x="470" y="1826" width="460" height="96" rx="10" fill="#F0EFEA" stroke="#8A877C" stroke-width="1.4"/>
+<text x="482.0" y="1849.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#3D3B35" text-anchor="start">_sync_texts + COMMIT</text>
+<text x="482.0" y="1867.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#8A877C" text-anchor="start">text/&lt;sha&gt;.txt + table texts</text>
+<text x="482.0" y="1890.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">the extracted-text store made to match the files:</text>
+<text x="482.0" y="1907.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">missing texts written, anything else removed</text>
+<rect x="470" y="1962" width="460" height="78" rx="10" fill="#EDEDED" stroke="#6B6B6B" stroke-width="1.4"/>
+<text x="482.0" y="1985.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#2B2B2B" text-anchor="start">Report + guard.audit(&#x27;index&#x27;, counts)</text>
+<text x="482.0" y="2008.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">the largest files (≥ 100 chunks) named</text>
+<path d="M 700.0 178.0 L 700.0 218.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<path d="M 700.0 348.0 L 700.0 388.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<path d="M 700.0 518.0 L 700.0 558.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<path d="M 700.0 636.0 L 700.0 676.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<path d="M 700.0 772.0 L 700.0 812.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<path d="M 700.0 924.0 L 700.0 964.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<path d="M 700.0 1076.0 L 700.0 1116.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<path d="M 700.0 1228.0 L 700.0 1268.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<path d="M 700.0 1346.0 L 700.0 1386.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<path d="M 700.0 1498.0 L 700.0 1538.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<path d="M 700.0 1650.0 L 700.0 1690.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<path d="M 700.0 1786.0 L 700.0 1826.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<path d="M 700.0 1922.0 L 700.0 1962.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<path d="M 470.0 597.0 L 445.0 597.0" fill="none" stroke="#8A877C" stroke-width="1.5" stroke-dasharray="6 4" marker-end="url(#arrow-back)"/>
+<path d="M 470.0 724.0 L 445.0 724.0" fill="none" stroke="#8A877C" stroke-width="1.5" stroke-dasharray="6 4" marker-end="url(#arrow-back)"/>
+<path d="M 470.0 1020.0 L 445.0 1020.0" fill="none" stroke="#8A877C" stroke-width="1.5" stroke-dasharray="6 4" marker-end="url(#arrow-back)"/>
+<path d="M 470.0 1594.0 L 445.0 1594.0 L 445.0 597.0 L 470.0 597.0" fill="none" stroke="#8A877C" stroke-width="1.5" stroke-dasharray="6 4" marker-end="url(#arrow-back)"/>
+<rect x="990" y="218" width="480" height="236" rx="10" fill="#F0EFEA" stroke="#8A877C" stroke-width="1.4"/>
+<text x="1002.0" y="241.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#3D3B35" text-anchor="start">index.sqlite</text>
+<text x="1002.0" y="259.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#8A877C" text-anchor="start">PRAGMA user_version = 2, WAL</text>
+<text x="1002.0" y="282.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">files(path, size, mtime, sha, status, note,</text>
+<text x="1002.0" y="299.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">      withheld, reason)</text>
+<text x="1002.0" y="316.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">chunks(id, path, section, unit, start, end,</text>
+<text x="1002.0" y="333.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">       text, sha, place)   — ids never reused</text>
+<text x="1002.0" y="350.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">vectors(id = chunks.id, vec fp16 BLOB)</text>
+<text x="1002.0" y="367.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">meta(embedder, chunking, context, secrets, datafilter)</text>
+<text x="1002.0" y="384.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">skipped(path, reason, note) — rewritten each update</text>
+<text x="1002.0" y="401.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">texts(sha, units) — the extracted-text store</text>
+<rect x="990" y="494" width="480" height="130" rx="10" fill="#F0EFEA" stroke="#8A877C" stroke-width="1.4"/>
+<text x="1002.0" y="517.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#3D3B35" text-anchor="start">files.status</text>
+<text x="1002.0" y="540.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">ok · duplicate · data (reason) · too_large</text>
+<text x="1002.0" y="557.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">binary · needs_ocr · error</text>
+<text x="1002.0" y="574.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">older layout (user_version &lt; 2): emptied,</text>
+<text x="1002.0" y="591.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">rebuilt by the next update</text>
+<rect x="990" y="664" width="480" height="112" rx="10" fill="#E3F4EC" stroke="#2E9467" stroke-width="1.4"/>
+<text x="1002.0" y="687.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#155A3B" text-anchor="start">Readers</text>
+<text x="1002.0" y="710.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">see only committed data (WAL, separate connection):</text>
+<text x="1002.0" y="727.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">during a long update, each committed file;</text>
+<text x="1002.0" y="744.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">Searcher&#x27;s snapshot: zetokrag-search.svg</text>
+<rect x="990" y="816" width="480" height="96" rx="10" fill="#F0EFEA" stroke="#8A877C" stroke-width="1.4"/>
+<text x="1002.0" y="839.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#3D3B35" text-anchor="start">_connect</text>
+<text x="1002.0" y="862.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">lock wait 30 s set first; WAL switch retried ≤ 30 s,</text>
+<text x="1002.0" y="879.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">then a clear error (a drive without WAL)</text>
+<rect x="990" y="952" width="480" height="130" rx="10" fill="#EDEDED" stroke="#6B6B6B" stroke-width="1.4"/>
+<text x="1002.0" y="975.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#2B2B2B" text-anchor="start">What the report names</text>
+<text x="1002.0" y="998.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">added, changed, unchanged, removed, denied, largest</text>
+<text x="1002.0" y="1015.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">problems: duplicate, data_file, too_large, binary,</text>
+<text x="1002.0" y="1032.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">needs_ocr, error; withheld; tool_made, hidden,</text>
+<text x="1002.0" y="1049.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">user_excluded, large_folder, unreadable, special_file,</text>
+<text x="1002.0" y="1066.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">symlinked_folder, unsupported, data_type</text>
+<text x="1000.0" y="1130.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" font-weight="700" fill="#3D3B35" text-anchor="start">Legend</text>
+<rect x="1000" y="1142" width="22" height="14" rx="3" fill="#E3F4EC" stroke="#2E9467"/>
+<text x="1030.0" y="1153.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">ZetokRAG</text>
+<rect x="1000" y="1163" width="22" height="14" rx="3" fill="#F0EFEA" stroke="#8A877C"/>
+<text x="1030.0" y="1174.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">files on disk</text>
+<rect x="1000" y="1184" width="22" height="14" rx="3" fill="#FFF6D6" stroke="#B8960B"/>
+<text x="1030.0" y="1195.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">decision</text>
+<path d="M 1000 1212 L 1022 1212" stroke="#55554F" stroke-width="1.8" marker-end="url(#arrow-flow)"/>
+<text x="1030.0" y="1216.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">call or data</text>
+<path d="M 1000 1233 L 1022 1233" stroke="#8A877C" stroke-width="1.8" stroke-dasharray="6 4" marker-end="url(#arrow-back)"/>
+<text x="1030.0" y="1237.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">returns, next round</text>
+<path d="M 1000 1254 L 1022 1254" stroke="#C94343" stroke-width="1.8" stroke-dasharray="6 4" marker-end="url(#arrow-error)"/>
+<text x="1030.0" y="1258.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">error path</text>
+<path d="M 1000 1275 L 1022 1275" stroke="#C94343" stroke-width="1.8" marker-end="url(#arrow-exit)"/>
+<text x="1030.0" y="1279.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">leaves the machine</text>
+<text x="990.0" y="1400.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" font-weight="700" fill="#7D1F1F" text-anchor="start">Open items (numbers on the boxes)</text>
+<text x="990.0" y="1417.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#7D1F1F" text-anchor="start">working tree on 5ca550a, 2026-10-12; their state is kept in STATUS.md</text>
+<circle cx="999" cy="1441" r="9" fill="#C94343"/>
+<text x="999.0" y="1445.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="700" fill="#FFFFFF" text-anchor="middle">5</text>
+<text x="1016.0" y="1445.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">the embedding and rerank endpoints are the user&#x27;s (no model runs in</text>
+<text x="1016.0" y="1462.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">peresearch, 2026-10-08): their speed and quality are theirs; checked on</text>
+<text x="1016.0" y="1479.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">Ollama, llama.cpp and vLLM (runs/serve/endpoints-2026-10-08.json); in</text>
+<text x="1016.0" y="1496.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">RAM: vectors 4 KiB per chunk (1,024 dimensions); a corpus far larger than</text>
+<text x="1016.0" y="1513.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">the owner&#x27;s not measured</text>
+<circle cx="916" cy="1400" r="10" fill="#C94343"/>
+<text x="916.0" y="1404.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="700" fill="#FFFFFF" text-anchor="middle">5</text>
+<rect x="377.6" y="1077.5" width="54.8" height="17" rx="4" fill="#FCFCFA" fill-opacity="0.92"/>
+<text x="405.0" y="1089.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" fill="#3D3B35" text-anchor="middle">next file</text>
+</svg>

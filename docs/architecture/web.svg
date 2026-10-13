@@ -1,0 +1,132 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="1310" viewBox="0 0 1500 1310">
+<defs><marker id="arrow-flow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#55554F"/></marker><marker id="arrow-back" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#8A877C"/></marker><marker id="arrow-error" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#C94343"/></marker><marker id="arrow-exit" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#C94343"/></marker></defs>
+<rect width="1500" height="1310" fill="#FCFCFA"/>
+<text x="28.0" y="42.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#1F1F1F" text-anchor="start">Web: searching pages and papers, reading them</text>
+<text x="28.0" y="68.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" fill="#5A5A55" text-anchor="start">web.py and papers.py, called by tools.web_search, tools.search_papers and tools.fetch. working tree on 5ca550a, 2026-10-12.</text>
+<rect x="40" y="100" width="420" height="96" rx="10" fill="#F1ECFB" stroke="#7A55C9" stroke-width="1.4"/>
+<text x="52.0" y="123.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#45288A" text-anchor="start">web_search(query, n)</text>
+<text x="52.0" y="141.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#7A55C9" text-anchor="start">tools.py</text>
+<text x="52.0" y="164.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">refused until gaps(); one budget with papers</text>
+<text x="52.0" y="181.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">(≤ 4 searches a question); outbound_query</text>
+<rect x="520" y="100" width="460" height="96" rx="10" fill="#F1ECFB" stroke="#7A55C9" stroke-width="1.4"/>
+<text x="532.0" y="123.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#45288A" text-anchor="start">search_papers(query, n)</text>
+<text x="532.0" y="141.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#7A55C9" text-anchor="start">tools.py → papers.Papers</text>
+<text x="532.0" y="164.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">refused until gaps(); counts as a web search</text>
+<text x="532.0" y="181.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">query through guard.outbound_query</text>
+<rect x="40" y="236" width="420" height="130" rx="10" fill="#E4F4F7" stroke="#2A8FA6" stroke-width="1.4"/>
+<text x="52.0" y="259.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#12505E" text-anchor="start">The user&#x27;s search MCP server</text>
+<text x="52.0" y="277.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#2A8FA6" text-anchor="start">web.McpSearch · mcp.Server</text>
+<text x="52.0" y="300.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">a command (stdio) or a URL (Streamable HTTP);</text>
+<text x="52.0" y="317.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">its search tool called through its own schema;</text>
+<text x="52.0" y="334.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">links read from its text; none set → said</text>
+<text x="52.0" y="351.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">retry completes initialize + initialized first</text>
+<rect x="520" y="236" width="460" height="148" rx="10" fill="#E4F4F7" stroke="#2A8FA6" stroke-width="1.4"/>
+<text x="532.0" y="259.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#12505E" text-anchor="start">Every scholarly source, merged</text>
+<text x="532.0" y="277.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#2A8FA6" text-anchor="start">Papers.search</text>
+<text x="532.0" y="300.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">OpenAlex (with a key) · Semantic Scholar · arXiv</text>
+<text x="532.0" y="317.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">one from each in turn; a paper once (DOI, arXiv</text>
+<text x="532.0" y="334.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">id or title); arXiv ≥ 3 s apart; a source that</text>
+<text x="532.0" y="351.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">fails is named in the result</text>
+<rect x="40" y="406" width="420" height="96" rx="10" fill="#E3F4EC" stroke="#2E9467" stroke-width="1.4"/>
+<text x="52.0" y="429.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#155A3B" text-anchor="start">Its text, each link a source</text>
+<text x="52.0" y="447.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#2E9467" text-anchor="start">tools.web_search</text>
+<text x="52.0" y="470.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">[W#] per link (its paragraph), the kind of site:</text>
+<text x="52.0" y="487.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">university, preprint server, blog… (never a filter)</text>
+<rect x="520" y="424" width="460" height="112" rx="10" fill="#E3F4EC" stroke="#2E9467" stroke-width="1.4"/>
+<text x="532.0" y="447.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#155A3B" text-anchor="start">Each paper says what it is</text>
+<text x="532.0" y="465.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#2E9467" text-anchor="start">tools.search_papers</text>
+<text x="532.0" y="488.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">RETRACTED · journal article / conference paper /</text>
+<text x="532.0" y="505.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">preprint (published as …) · venue · citations</text>
+<text x="532.0" y="522.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">authors · DOI page · open PDF (fetch may read it)</text>
+<rect x="280" y="576" width="460" height="96" rx="10" fill="#F1ECFB" stroke="#7A55C9" stroke-width="1.4"/>
+<text x="292.0" y="599.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#45288A" text-anchor="start">fetch(url)</text>
+<text x="292.0" y="617.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#7A55C9" text-anchor="start">tools.py → Web.fetch</text>
+<text x="292.0" y="640.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">a URL a search returned (or a paper&#x27;s PDF), whole;</text>
+<text x="292.0" y="657.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">≤ 6 pages a question, a page read again free</text>
+<rect x="280" y="712" width="460" height="130" rx="10" fill="#FCE8E8" stroke="#C94343" stroke-width="1.4"/>
+<text x="292.0" y="735.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#7D1F1F" text-anchor="start">Public address? Connect to it</text>
+<text x="292.0" y="753.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#C94343" text-anchor="start">web._checked · web._pinned</text>
+<text x="292.0" y="776.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">localhost, 10.x, 192.168.x, 169.254.x, ::1, .local:</text>
+<text x="292.0" y="793.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">refused; the name resolved once, the request</text>
+<text x="292.0" y="810.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">sent to that address (Host and TLS name kept);</text>
+<text x="292.0" y="827.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">again at every redirect (≤ 5)</text>
+<rect x="280" y="882" width="460" height="112" rx="10" fill="#E4F4F7" stroke="#2A8FA6" stroke-width="1.4"/>
+<text x="292.0" y="905.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#12505E" text-anchor="start">GET, streamed</text>
+<text x="292.0" y="923.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#2A8FA6" text-anchor="start">Web._get</text>
+<text x="292.0" y="946.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">a page ≤ 5 MiB (cut), a PDF ≤ 64 MiB (else refused)</text>
+<text x="292.0" y="963.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">the PDF limit chosen on the first bytes</text>
+<text x="292.0" y="980.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">(type, .pdf, or %PDF-)</text>
+<rect x="280" y="1034" width="460" height="148" rx="10" fill="#E3F4EC" stroke="#2E9467" stroke-width="1.4"/>
+<text x="292.0" y="1057.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#155A3B" text-anchor="start">extract</text>
+<text x="292.0" y="1075.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#2E9467" text-anchor="start">web.extract</text>
+<text x="292.0" y="1098.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">PDF → the document converter: [p. N] pages,</text>
+<text x="292.0" y="1115.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">running heads dropped</text>
+<text x="292.0" y="1132.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">HTML → trafilatura, in the declared or guessed</text>
+<text x="292.0" y="1149.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">encoding; other text as is</text>
+<text x="292.0" y="1166.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">not text (image, archive, NUL) → not read</text>
+<rect x="800" y="1034" width="400" height="96" rx="10" fill="#FFFFFF" stroke="#9A9A94" stroke-width="1.4" stroke-dasharray="7 5"/>
+<text x="812.0" y="1057.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#3D3B35" text-anchor="start">Jina Reader</text>
+<text x="812.0" y="1075.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#9A9A94" text-anchor="start">r.jina.ai</text>
+<text x="812.0" y="1098.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">only with the user&#x27;s JINA_API_KEY, when a page</text>
+<text x="812.0" y="1115.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">yields nothing (25 of 30 read locally)</text>
+<rect x="280" y="1222" width="460" height="56" rx="10" fill="#EDEDED" stroke="#6B6B6B" stroke-width="1.4"/>
+<text x="292.0" y="1245.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#2B2B2B" text-anchor="start">Page text, untrusted, cached (UTF-8, 0600)</text>
+<path d="M 250.0 196.0 L 250.0 236.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<path d="M 250.0 366.0 L 250.0 406.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<path d="M 750.0 196.0 L 750.0 236.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<path d="M 750.0 384.0 L 750.0 424.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<path d="M 510.0 672.0 L 510.0 712.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<path d="M 510.0 842.0 L 510.0 882.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<path d="M 510.0 994.0 L 510.0 1034.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<path d="M 510.0 1182.0 L 510.0 1222.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<path d="M 250.0 502.0 L 250.0 556.0 L 395.0 556.0 L 395.0 576.0" fill="none" stroke="#8A877C" stroke-width="1.5" stroke-dasharray="6 4" marker-end="url(#arrow-back)"/>
+<path d="M 750.0 536.0 L 750.0 556.0 L 625.0 556.0 L 625.0 576.0" fill="none" stroke="#8A877C" stroke-width="1.5" stroke-dasharray="6 4" marker-end="url(#arrow-back)"/>
+<path d="M 740.0 1078.4 L 800.0 1078.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<path d="M 280.0 777.0 L 240.0 777.0 L 240.0 1250.0 L 280.0 1250.0" fill="none" stroke="#C94343" stroke-width="1.5" stroke-dasharray="6 4" marker-end="url(#arrow-error)"/>
+<rect x="1040" y="100" width="420" height="130" rx="10" fill="#FFFFFF" stroke="#9A9A94" stroke-width="1.4" stroke-dasharray="7 5"/>
+<text x="1052.0" y="123.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#3D3B35" text-anchor="start">Search services</text>
+<text x="1052.0" y="141.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#9A9A94" text-anchor="start">the user&#x27;s MCP server · OpenAlex</text>
+<text x="1052.0" y="164.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">Semantic Scholar · arXiv · Wikipedia: the query</text>
+<text x="1052.0" y="181.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">leaves the machine (secrets refused first)</text>
+<rect x="1040" y="250" width="420" height="150" rx="10" fill="#E4F4F7" stroke="#2A8FA6" stroke-width="1.4"/>
+<text x="1052.0" y="273.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#12505E" text-anchor="start">search_wikipedia(query, languages)</text>
+<text x="1052.0" y="291.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#2A8FA6" text-anchor="start">tools.py → wiki.Wikipedia</text>
+<text x="1052.0" y="314.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">≤ 3 editions (codes checked); lead summary,</text>
+<text x="1052.0" y="331.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">address, the title in en vi zh ja ko hi;</text>
+<text x="1052.0" y="348.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">an encyclopedia: a starting point, not</text>
+<text x="1052.0" y="365.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">evidence; counts as a web search</text>
+<path d="M 980.0 148.0 L 1040.0 148.0" fill="none" stroke="#C94343" stroke-width="2.2" marker-end="url(#arrow-exit)"/>
+<text x="1040.0" y="430.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" font-weight="700" fill="#3D3B35" text-anchor="start">Legend</text>
+<rect x="1040" y="442" width="22" height="14" rx="3" fill="#F1ECFB" stroke="#7A55C9"/>
+<text x="1070.0" y="453.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">agent and tools</text>
+<rect x="1040" y="463" width="22" height="14" rx="3" fill="#E3F4EC" stroke="#2E9467"/>
+<text x="1070.0" y="474.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">ZetokRAG</text>
+<rect x="1040" y="484" width="22" height="14" rx="3" fill="#E4F4F7" stroke="#2A8FA6"/>
+<text x="1070.0" y="495.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">web</text>
+<rect x="1040" y="505" width="22" height="14" rx="3" fill="#FCE8E8" stroke="#C94343"/>
+<text x="1070.0" y="516.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">guard: access, redaction, checks</text>
+<rect x="1040" y="526" width="22" height="14" rx="3" fill="#FFFFFF" stroke="#9A9A94" stroke-dasharray="4 3"/>
+<text x="1070.0" y="537.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">outside this machine</text>
+<path d="M 1040 554 L 1062 554" stroke="#55554F" stroke-width="1.8" marker-end="url(#arrow-flow)"/>
+<text x="1070.0" y="558.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">call or data</text>
+<path d="M 1040 575 L 1062 575" stroke="#8A877C" stroke-width="1.8" stroke-dasharray="6 4" marker-end="url(#arrow-back)"/>
+<text x="1070.0" y="579.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">returns, next round</text>
+<path d="M 1040 596 L 1062 596" stroke="#C94343" stroke-width="1.8" stroke-dasharray="6 4" marker-end="url(#arrow-error)"/>
+<text x="1070.0" y="600.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">error path</text>
+<path d="M 1040 617 L 1062 617" stroke="#C94343" stroke-width="1.8" marker-end="url(#arrow-exit)"/>
+<text x="1070.0" y="621.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">leaves the machine</text>
+<text x="1040.0" y="690.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" font-weight="700" fill="#7D1F1F" text-anchor="start">Open items (numbers on the boxes)</text>
+<text x="1040.0" y="707.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#7D1F1F" text-anchor="start">working tree on 5ca550a, 2026-10-12; their state is kept in STATUS.md</text>
+<circle cx="1049" cy="731" r="9" fill="#C94343"/>
+<text x="1049.0" y="735.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="700" fill="#FFFFFF" text-anchor="middle">18</text>
+<text x="1066.0" y="735.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">Semantic Scholar without a key answered 429 to 3 of 3 requests</text>
+<text x="1066.0" y="752.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">(2026-10-03), and its key needs a school or work email: it is</text>
+<text x="1066.0" y="769.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">asked every search and named when it does not answer;</text>
+<text x="1066.0" y="786.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">OpenAlex and arXiv answer</text>
+<circle cx="966" cy="250" r="10" fill="#C94343"/>
+<text x="966.0" y="254.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="700" fill="#FFFFFF" text-anchor="middle">18</text>
+<rect x="747.6" y="1060.2" width="44.9" height="17" rx="4" fill="#FCFCFA" fill-opacity="0.92"/>
+<text x="770.0" y="1072.2" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" fill="#3D3B35" text-anchor="middle">empty</text>
+<rect x="154.5" y="995.5" width="79.0" height="17" rx="4" fill="#FCFCFA" fill-opacity="0.92"/>
+<text x="194.0" y="1007.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" fill="#B23A3A" text-anchor="middle">refused → &quot;&quot;</text>
+</svg>

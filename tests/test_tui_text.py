@@ -29,7 +29,7 @@ sources = st.dictionaries(ids, st.tuples(st.text(alphabet="/a.md:L1-2 \x1b", min
 
 
 @given(answer_text, sources, st.lists(ids, max_size=2), st.lists(st.text(alphabet="quoted \x1b", min_size=1, max_size=90),
-       max_size=2), st.booleans(), st.sampled_from(["", "steps", "time", "cancelled", "length", "odd"]),
+       max_size=2), st.booleans(), st.sampled_from(["", "steps", "time", "cancelled", "length", "refused", "odd"]),
        st.integers(0, 12), st.integers(0, 2_000_000))
 @settings(max_examples=200)
 @example("BPE merges pairs [N1, W1]. More [W1].", {"N1": ("/n/bpe.md:L3-5", "bpe.md"), "W1": ("https://e/bpe", "BPE")},
@@ -42,7 +42,7 @@ def test_an_answer_is_rendered_with_links_sources_checks_and_why_it_stopped(text
     answer = Answer(text, sources, Check(unknown, quotes, uncited), steps, tokens // 2, tokens - tokens // 2, stopped)
     out = render(answer)
     assert not CONTROL.search(out.replace("\n", "")), "terminal control characters must never be drawn"
-    assert not re.search(r"\[[NW]\d+\](?!\()", out.split("\n**Sources**")[0])    # every citation is a link
+    assert not re.search(r"\[[NW]\d+\](?!\()", out.split("\n**Sources read**")[0])    # every citation is a link
     assert out == "\n".join(expected_render(text, srcs, unknown, quotes, uncited, stopped, steps, tokens))
 
 
@@ -53,22 +53,25 @@ def expected_render(text, srcs, unknown, quotes, uncited, stopped, steps, tokens
     lines = [tui._CITE.sub(lambda m: ", ".join(f"[{i.strip()}](source:{i.strip()})" for i in m.group(1).split(",")),
                            clean(text or "_(no answer)_")), ""]
     if srcs:
-        lines += ["**Sources**"] + [f"- [{k}](source:{k}) {clean(where)}" + (f" — {clean(title)}" if title else "")
+        lines += ["**Sources read**"] + [f"- [{k}](source:{k}) {clean(tui.home_path(where))}"
+                                         + (f" — {clean(title)}" if title else "")
                                     for k, (where, title) in srcs.items()]
     if unknown:
-        lines.append("\n> **Check:** cited but never retrieved: " + ", ".join(unknown))
+        lines.append("\n> **Check:** citation evidence unavailable; read again: " + ", ".join(unknown))
     if quotes:
         lines.append("\n> **Check:** quotes not found in the cited sources: "
                      + "; ".join(f"“{clean(q)[:80]}”" for q in quotes))
     if uncited:
-        lines.append("\n> **Check:** the answer cites no source")
+        lines.append("\n> **Check:** the answer cites none of the sources read")
     if not srcs and stopped != "cancelled":
         lines.append("\n_Answered without any source: from the model's own knowledge._")
     why = {"steps": "the step limit was reached", "time": "the time limit was reached", "cancelled": "interrupted",
-           "length": "the answer was cut at the model's token limit"}
+           "length": "the answer was cut at the model's token limit",
+           "refused": "the model kept making calls that were refused"}
     if stopped:
         lines.append("\n> stopped: " + why.get(stopped, stopped))
-    return lines + [f"\n<sub>{steps} model calls · {tokens:,} tokens</sub>"]
+    checked = "✓ citations checked · " if srcs and not (unknown or quotes or uncited) else ""   # shown when it passed
+    return lines + [f"\n<sub>{checked}{steps} model calls · {tokens:,} tokens</sub>"]
 
 
 @given(st.text(alphabet="thought.\n\x1b", max_size=3 * REASONING_SHOWN), st.booleans())
@@ -100,13 +103,22 @@ def test_every_known_error_is_explained_in_plain_words(name):
     assert explain(e) == f"> **Error:** {WHY[name]} `/retry` asks again. <sub>({name})</sub>"
 
 
+def test_what_the_user_reads_never_names_the_owners_test_tools():
+    """The model is the user's (any OpenAI-compatible API): no text a user reads points to the owner's test setup."""
+    from peresearch import llm, settings, tui
+    texts = list(tui.WHY.values()) + [label for _, label, _ in settings.FIELDS]
+    texts += [s for s in vars(llm).values() if isinstance(s, str)]
+    import inspect
+    texts += [inspect.getsource(llm.LLM._create)]                      # the waiting messages are said from here
+    for text in texts:
+        assert not any(name in text for name in ("chat-local", "Modal container", "Modal endpoint", "modal_vllm",
+                                                 "modal deploy")), text
+
+
 def test_other_errors_keep_their_own_text_safe_and_short():
     assert explain(RuntimeError("no model endpoint: set PERESEARCH_LLM_URL")) == (
-        "> **Error:** No model endpoint is set: run `peresearch setup` (or set `PERESEARCH_LLM_URL`). `/retry` asks "
-        "again. <sub>(RuntimeError: no model endpoint: set PERESEARCH_LLM_URL)</sub>")
-    from peresearch.llm import BudgetExceeded
-    assert explain(BudgetExceeded("today's model spending is at $1.00")).startswith(
-        "> **Error:** today's model spending is at $1.00 `/retry`")
+        "> **Error:** No model endpoint is set: /model chooses it (or set "
+        "`PERESEARCH_LLM_URL`). `/retry` asks again. <sub>(RuntimeError: no model endpoint: set PERESEARCH_LLM_URL)</sub>")
     assert explain(RuntimeError("disk full")) == ("> **Error:** disk full `/retry` asks again. "
                                                   "<sub>(RuntimeError: disk full)</sub>")
     odd = explain(ValueError("weird \x1b[2J" + "y" * 400))
@@ -140,22 +152,24 @@ def test_resume_rows_line_up_fit_the_width_and_keep_one_line(convs, width):
     assert len(starts) <= 1
 
 
-@given(st.integers(24, 140))
+@given(st.integers(26, 140))                              # 24 before the pointer's two-cell gutter
 def test_a_command_row_keeps_its_description_in_one_column(width):
     """The descriptions start two columns after the longest command; a wrapped one goes on under itself, with no
     blank line; they are dimmed, the commands not."""
-    column = max(map(len, COMMANDS)) + 2
+    column = max(map(len, COMMANDS)) + 2 + 2          # after the pointer's two-cell gutter
     console = Console(width=width, color_system=None)
     for command, description in COMMANDS.items():
         lines = console.render_lines(command_row(command, description), pad=False)
         plain = ["".join(seg.text for seg in line).rstrip() for line in lines]
-        assert plain[0].startswith(command.ljust(column)) and plain[0][column] != " "
+        assert plain[0].startswith("  " + command.ljust(column - 2)) and plain[0][column] != " "
         assert all(p.startswith(" " * column) and p[column] != " " for p in plain[1:]), plain
         assert " ".join(p[column:] for p in plain).split() == description.split()
         for line in lines:
-            for seg in line:
+            at = 0
+            for seg in line:                                # by column: the command undimmed, the description dimmed
                 if seg.text.strip():
-                    assert bool(seg.style and seg.style.dim) == (seg.text.strip() not in COMMANDS), (seg, plain)
+                    assert bool(seg.style and seg.style.dim) == (at >= column), (seg, plain)
+                at += len(seg.text)
 
 
 @pytest.mark.parametrize("language", ["python", "bash", ""])
@@ -209,6 +223,12 @@ def test_a_link_opens_a_page_or_shows_a_file_and_never_runs_one(monkeypatch, tmp
                      (str(tmp_path / "missing.md"), f"{tmp_path / 'missing.md'}: not found")):
         assert tui.open_outside(bad) == why
     assert len(runs) == 4                                                # refused: nothing run
+    for name in ("talk.pptx", "paper.pdf", "notes.docx"):              # converted: an editor cannot show it
+        doc = tmp_path / name
+        doc.write_bytes(b"PK")
+        assert tui.open_outside(str(doc), 2) is None
+        want = ["explorer.exe", "/select,C:\\x" + str(doc).replace("/", "\\")] if wsl else ["xdg-open", str(tmp_path)]
+        assert runs[-1][0] == want, name                                 # selected for its own program to open
 
 
 def test_wsl_is_recognized_and_paths_are_converted_by_wslpath(monkeypatch):
@@ -223,3 +243,27 @@ def test_wsl_is_recognized_and_paths_are_converted_by_wslpath(monkeypatch):
     monkeypatch.setattr(tui.subprocess, "run", lambda cmd, **kw: (seen.append((cmd, kw)), NS(stdout="C:\\x\\y\n"))[1])
     assert tui.windows_path("/x/y") == "C:\\x\\y" and seen == [
         (["wslpath", "-w", "/x/y"], {"capture_output": True, "text": True, "check": True})]
+
+
+def test_a_failed_internal_check_says_it_is_a_bug_and_where(tmp_path, monkeypatch):
+    from peresearch.zetokrag import models
+    with pytest.raises(AssertionError) as caught:
+        models.windows(5, 1, 1)
+    text = explain(caught.value)
+    assert text.startswith("> **Error:** an internal check of peresearch failed at `peresearch/zetokrag/models.py:")
+    assert "This is a bug in peresearch" in text and text.endswith("<sub>(AssertionError)</sub>")
+    # Installed, peresearch sits in site-packages next to every library: the place is peresearch's own innermost
+    # frame, never a library's (an assert inside textual was reported as peresearch's, at textual/widget.py)
+    site = tmp_path / "site-packages"
+    monkeypatch.setattr(tui, "__file__", str(site / "peresearch" / "tui.py"))
+    code = {}
+    exec(compile("def check():\n    assert False, 'the library checks itself'\n", str(site / "textual" / "widget.py"),
+                 "exec"), code)
+    exec(compile("def call(check):\n    check()\n", str(site / "peresearch" / "agent.py"), "exec"), code)
+    for run, where in ((lambda: code["call"](code["check"]), "peresearch/agent.py:2"), (code["check"], "")):
+        with pytest.raises(AssertionError) as caught:
+            run()
+        assert tui.place(caught.value) == where
+    assert explain(caught.value).startswith(          # a library's own: no place of ours to name
+        "> **Error:** an internal check of peresearch failed: the library checks itself. This is a bug")
+    assert explain(AssertionError()).startswith("> **Error:** an internal check of peresearch failed: (no message). ")

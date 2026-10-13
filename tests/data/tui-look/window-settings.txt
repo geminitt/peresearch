@@ -1,0 +1,30 @@
+
+
+
+
+  ╭──────────────────────────────────────────────────────────────────────────────────────────────╮
+  │ Settings                                                                                     │
+  │                                                                                              │
+  │ Research limits                                                                              │
+  │ steps                 12            model calls per question                                 │
+  │ web-searches          4             web, paper and Wikipedia searches per question           │
+  │ pages                 6             web pages read per question                              │
+  │ seconds               900           time per question, a cold model start included           │
+  │ thinking              the server's  the model's reasoning: on or off                         │
+  │ context               the server's  the model's context in tokens, when the server does not… │
+  │ rerank-depth          30            search candidates reordered by the rerank endpoint (few… │
+  │                                                                                              │
+  │ Search services                                                                              │
+  │ Web search server     not set                                                                │
+  │ Web search key        not set                                                                │
+  │ OpenAlex key          not set                                                                │
+  │ Semantic Scholar key  not set                                                                │
+  │ Jina Reader key       not set                                                                │
+  │                                                                                              │
+  │ tab next · enter save · empty default · esc close                                            │
+  ╰──────────────────────────────────────────────────────────────────────────────────────────────╯
+
+
+
+
+

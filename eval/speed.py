@@ -66,6 +66,7 @@ def run_corpus(name, reranker) -> None:
                            "peak_gpu_mb": torch.cuda.max_memory_allocated() / 2**20 if cuda else 0.0}
         log(name, m, f"{len(sample) / dt:.0f} docs/s;", gpu_memory())
         docs = np.load(RUNS / name / f"docs-{m}.npy").astype(np.float32)
+        assert docs.shape[0] == len(texts), f"{name}: {docs.shape[0]} saved vectors for {len(texts)} documents"
         stages = {"embed": [], "bm25": [], "dense+fusion": [], "rerank": [], "total": []}
         for q in queries:
             t0 = time.perf_counter()

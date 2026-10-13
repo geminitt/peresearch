@@ -1,0 +1,149 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1540" height="1420" viewBox="0 0 1540 1420">
+<defs><marker id="arrow-flow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#55554F"/></marker><marker id="arrow-back" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#8A877C"/></marker><marker id="arrow-error" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#C94343"/></marker><marker id="arrow-exit" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#C94343"/></marker></defs>
+<rect width="1540" height="1420" fill="#FCFCFA"/>
+<text x="28.0" y="42.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#1F1F1F" text-anchor="start">Agent loop: one question</text>
+<text x="28.0" y="68.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" fill="#5A5A55" text-anchor="start">agent.py: Agent.ask. The model reads the message and decides; tools until it answers or a limit is hit. working tree on 5ca550a, 2026-10-12.</text>
+<rect x="480" y="100" width="440" height="148" rx="10" fill="#F1ECFB" stroke="#7A55C9" stroke-width="1.4"/>
+<text x="492.0" y="123.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#45288A" text-anchor="start">Agent.ask(question)</text>
+<text x="492.0" y="141.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#7A55C9" text-anchor="start">agent.py</text>
+<text x="492.0" y="164.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">retain source IDs; reset question counts and gaps</text>
+<text x="492.0" y="181.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">system prompt; NO_WEB note without a provider</text>
+<text x="492.0" y="198.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">history: this conversation&#x27;s turns, whole;</text>
+<text x="492.0" y="215.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">the oldest summarized by the model when they</text>
+<text x="492.0" y="232.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">no longer fit; question marked current</text>
+<rect x="550" y="270" width="300" height="56" rx="10" fill="#FFF6D6" stroke="#B8960B" stroke-width="1.4"/>
+<text x="562.0" y="293.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#5E4B00" text-anchor="start">cancelled (Esc)?</text>
+<rect x="980" y="270" width="300" height="56" rx="10" fill="#EDEDED" stroke="#6B6B6B" stroke-width="1.4"/>
+<text x="992.0" y="293.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#2B2B2B" text-anchor="start">answer &#x27;(interrupted)&#x27;</text>
+<rect x="550" y="366" width="300" height="56" rx="10" fill="#FFF6D6" stroke="#B8960B" stroke-width="1.4"/>
+<text x="562.0" y="389.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#5E4B00" text-anchor="start">≥ 12 calls or &gt; 900 s?</text>
+<rect x="980" y="356" width="330" height="80" rx="10" fill="#F1ECFB" stroke="#7A55C9" stroke-width="1.4"/>
+<text x="992.0" y="379.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#45288A" text-anchor="start">Limit reached</text>
+<text x="992.0" y="402.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">message: answer now with what you have</text>
+<text x="992.0" y="419.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">no tools offered on this call</text>
+<rect x="480" y="470" width="440" height="112" rx="10" fill="#FDF0E2" stroke="#C9741A" stroke-width="1.4"/>
+<text x="492.0" y="493.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#7A4205" text-anchor="start">Agent._chat → LLM.chat(messages, tools, stop)</text>
+<text x="492.0" y="511.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#C9741A" text-anchor="start">agent._fit · _fold</text>
+<text x="492.0" y="534.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">oldest results trimmed, then the oldest turns</text>
+<text x="492.0" y="551.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">summarized by the model, to fit the context; a 400</text>
+<text x="492.0" y="568.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">for length: trimmed to the server&#x27;s count, again</text>
+<rect x="550" y="614" width="300" height="56" rx="10" fill="#FFF6D6" stroke="#B8960B" stroke-width="1.4"/>
+<text x="562.0" y="637.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#5E4B00" text-anchor="start">tool calls, no limit?</text>
+<rect x="30" y="614" width="400" height="44" rx="10" fill="#F1ECFB" stroke="#7A55C9" stroke-width="1.4"/>
+<text x="42.0" y="637.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#45288A" text-anchor="start">for each tool call</text>
+<rect x="30" y="698" width="400" height="120" rx="10" fill="#F1ECFB" stroke="#7A55C9" stroke-width="1.4"/>
+<text x="42.0" y="721.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#45288A" text-anchor="start">Before running it</text>
+<text x="42.0" y="744.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">arguments unreadable → the reason, not run</text>
+<text x="42.0" y="761.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">same name + arguments as before → &#x27;already called&#x27;</text>
+<text x="42.0" y="778.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">over 4 searches or 6 pages → limit message</text>
+<text x="42.0" y="795.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">otherwise run it</text>
+<rect x="30" y="858" width="400" height="96" rx="10" fill="#F1ECFB" stroke="#7A55C9" stroke-width="1.4"/>
+<text x="42.0" y="881.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#45288A" text-anchor="start">Toolbox.call(name, args)</text>
+<text x="42.0" y="899.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#7A55C9" text-anchor="start">tools.py</text>
+<text x="42.0" y="922.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">refusals and errors returned as text</text>
+<text x="42.0" y="939.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">events: tool, result</text>
+<rect x="30" y="994" width="400" height="96" rx="10" fill="#FCE8E8" stroke="#C94343" stroke-width="1.4"/>
+<text x="42.0" y="1017.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#7D1F1F" text-anchor="start">Wrap as untrusted data</text>
+<text x="42.0" y="1035.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#C94343" text-anchor="start">agent._wrap</text>
+<text x="42.0" y="1058.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">&lt;tool_output trust=&quot;untrusted data&quot;&gt;</text>
+<text x="42.0" y="1075.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">+ warning if it reads like an instruction</text>
+<rect x="550" y="714" width="300" height="56" rx="10" fill="#FFF6D6" stroke="#B8960B" stroke-width="1.4"/>
+<text x="562.0" y="737.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#5E4B00" text-anchor="start">answer text empty?</text>
+<rect x="980" y="704" width="400" height="96" rx="10" fill="#FDF0E2" stroke="#C9741A" stroke-width="1.4"/>
+<text x="992.0" y="727.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#7A4205" text-anchor="start">Ask once more</text>
+<text x="992.0" y="750.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">&#x27;Write the final answer now&#x27;</text>
+<text x="992.0" y="767.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">reasoning off (thinking = False)</text>
+<rect x="550" y="840" width="300" height="56" rx="10" fill="#FFF6D6" stroke="#B8960B" stroke-width="1.4"/>
+<text x="562.0" y="863.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#5E4B00" text-anchor="start">finish_reason = length?</text>
+<rect x="980" y="840" width="400" height="56" rx="10" fill="#EDEDED" stroke="#6B6B6B" stroke-width="1.4"/>
+<text x="992.0" y="863.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#2B2B2B" text-anchor="start">stopped = &#x27;length&#x27; (shown as cut)</text>
+<rect x="480" y="940" width="440" height="112" rx="10" fill="#FCE8E8" stroke="#C94343" stroke-width="1.4"/>
+<text x="492.0" y="963.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#7D1F1F" text-anchor="start">check(text, sources)</text>
+<text x="492.0" y="981.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#C94343" text-anchor="start">agent.check</text>
+<text x="492.0" y="1004.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">cited IDs identify known conversation excerpts</text>
+<text x="492.0" y="1021.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">a quote just before a citation is verbatim</text>
+<text x="492.0" y="1038.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">sources but no citation → flagged</text>
+<rect x="480" y="1092" width="440" height="80" rx="10" fill="#F0EFEA" stroke="#8A877C" stroke-width="1.4"/>
+<text x="492.0" y="1115.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#3D3B35" text-anchor="start">Save the turn</text>
+<text x="492.0" y="1133.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#8A877C" text-anchor="start">agent._remember</text>
+<text x="492.0" y="1156.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">sessions/&lt;project&gt;.jsonl: answer, places, versions</text>
+<rect x="550" y="1212" width="300" height="50" rx="10" fill="#EDEDED" stroke="#6B6B6B" stroke-width="1.4"/>
+<text x="562.0" y="1235.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#2B2B2B" text-anchor="start">return Answer; event &#x27;answer&#x27;</text>
+<path d="M 700.0 248.0 L 700.0 270.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<path d="M 850.0 298.0 L 980.0 298.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<path d="M 1280.0 298.0 L 1505.0 298.0 L 1505.0 925.0 L 940.0 925.0 L 940.0 962.0 L 920.0 962.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<path d="M 700.0 326.0 L 700.0 366.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<path d="M 850.0 394.0 L 980.0 394.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<path d="M 1145.0 436.0 L 1145.0 522.0 L 920.0 526.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<path d="M 700.0 422.0 L 700.0 470.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<path d="M 700.0 582.0 L 700.0 614.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<path d="M 550.0 642.0 L 430.0 642.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<path d="M 230.0 658.0 L 230.0 698.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<path d="M 230.0 818.0 L 230.0 858.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<path d="M 230.0 954.0 L 230.0 994.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<path d="M 430.0 1042.0 L 455.0 1042.0 L 455.0 298.0 L 550.0 298.0" fill="none" stroke="#8A877C" stroke-width="1.5" stroke-dasharray="6 4" marker-end="url(#arrow-back)"/>
+<path d="M 700.0 670.0 L 700.0 714.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<path d="M 850.0 742.0 L 980.0 742.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<path d="M 980.0 776.0 L 900.0 776.0 L 900.0 857.0 L 850.0 857.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<path d="M 700.0 770.0 L 700.0 840.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<path d="M 850.0 880.0 L 980.0 880.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<path d="M 1020.0 896.0 L 1020.0 911.0 L 956.0 911.0 L 956.0 995.0 L 920.0 995.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<path d="M 700.0 896.0 L 700.0 940.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<path d="M 700.0 1052.0 L 700.0 1092.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<path d="M 700.0 1172.0 L 700.0 1212.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<rect x="980" y="960" width="480" height="148" rx="10" fill="#FCE8E8" stroke="#C94343" stroke-width="1.4"/>
+<text x="992.0" y="983.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#7D1F1F" text-anchor="start">What leaves Agent.ask as an error</text>
+<text x="992.0" y="1006.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">BudgetExceeded; Interrupted → cancelled</text>
+<text x="992.0" y="1023.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">connection errors after 5 tries (llm-client.svg)</text>
+<text x="992.0" y="1040.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">a 400 (e.g. over the context length); a bad setting</text>
+<text x="992.0" y="1057.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">a failed internal check (assert): a bug in peresearch</text>
+<text x="992.0" y="1074.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">the interface shows explain(error), with file:line</text>
+<rect x="980" y="1128" width="480" height="80" rx="10" fill="#E8F0FE" stroke="#3B6FD8" stroke-width="1.4"/>
+<text x="992.0" y="1151.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#1A3D8F" text-anchor="start">Events to the interface (on_event)</text>
+<text x="992.0" y="1174.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">think · tokens · tool · result · wait · answer</text>
+<text x="30.0" y="1140.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" font-weight="700" fill="#3D3B35" text-anchor="start">Legend</text>
+<rect x="30" y="1152" width="22" height="14" rx="3" fill="#E8F0FE" stroke="#3B6FD8"/>
+<text x="60.0" y="1163.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">interface</text>
+<rect x="30" y="1173" width="22" height="14" rx="3" fill="#F1ECFB" stroke="#7A55C9"/>
+<text x="60.0" y="1184.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">agent and tools</text>
+<rect x="30" y="1194" width="22" height="14" rx="3" fill="#FDF0E2" stroke="#C9741A"/>
+<text x="60.0" y="1205.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">model client</text>
+<rect x="30" y="1215" width="22" height="14" rx="3" fill="#FCE8E8" stroke="#C94343"/>
+<text x="60.0" y="1226.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">guard: access, redaction, checks</text>
+<rect x="30" y="1236" width="22" height="14" rx="3" fill="#F0EFEA" stroke="#8A877C"/>
+<text x="60.0" y="1247.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">files on disk</text>
+<rect x="30" y="1257" width="22" height="14" rx="3" fill="#FFF6D6" stroke="#B8960B"/>
+<text x="60.0" y="1268.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">decision</text>
+<path d="M 30 1285 L 52 1285" stroke="#55554F" stroke-width="1.8" marker-end="url(#arrow-flow)"/>
+<text x="60.0" y="1289.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">call or data</text>
+<path d="M 30 1306 L 52 1306" stroke="#8A877C" stroke-width="1.8" stroke-dasharray="6 4" marker-end="url(#arrow-back)"/>
+<text x="60.0" y="1310.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">returns, next round</text>
+<path d="M 30 1327 L 52 1327" stroke="#C94343" stroke-width="1.8" stroke-dasharray="6 4" marker-end="url(#arrow-error)"/>
+<text x="60.0" y="1331.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">error path</text>
+<path d="M 30 1348 L 52 1348" stroke="#C94343" stroke-width="1.8" marker-end="url(#arrow-exit)"/>
+<text x="60.0" y="1352.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">leaves the machine</text>
+<rect x="901.1" y="280.0" width="27.9" height="17" rx="4" fill="#FCFCFA" fill-opacity="0.92"/>
+<text x="915.0" y="292.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" fill="#3D3B35" text-anchor="middle">yes</text>
+<rect x="1009.8" y="907.0" width="143.0" height="17" rx="4" fill="#FCFCFA" fill-opacity="0.92"/>
+<text x="1081.2" y="919.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" fill="#3D3B35" text-anchor="middle">still checked and saved</text>
+<rect x="704.8" y="328.0" width="22.3" height="17" rx="4" fill="#FCFCFA" fill-opacity="0.92"/>
+<text x="716.0" y="340.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" fill="#3D3B35" text-anchor="middle">no</text>
+<rect x="901.1" y="376.0" width="27.9" height="17" rx="4" fill="#FCFCFA" fill-opacity="0.92"/>
+<text x="915.0" y="388.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" fill="#3D3B35" text-anchor="middle">yes</text>
+<rect x="704.8" y="428.0" width="22.3" height="17" rx="4" fill="#FCFCFA" fill-opacity="0.92"/>
+<text x="716.0" y="440.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" fill="#3D3B35" text-anchor="middle">no</text>
+<rect x="476.1" y="624.0" width="27.9" height="17" rx="4" fill="#FCFCFA" fill-opacity="0.92"/>
+<text x="490.0" y="636.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" fill="#3D3B35" text-anchor="middle">yes</text>
+<rect x="431.5" y="689.2" width="71.0" height="17" rx="4" fill="#FCFCFA" fill-opacity="0.92"/>
+<text x="467.0" y="701.2" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" fill="#3D3B35" text-anchor="middle">next round</text>
+<rect x="704.8" y="674.0" width="22.3" height="17" rx="4" fill="#FCFCFA" fill-opacity="0.92"/>
+<text x="716.0" y="686.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" fill="#3D3B35" text-anchor="middle">no</text>
+<rect x="901.1" y="724.0" width="27.9" height="17" rx="4" fill="#FCFCFA" fill-opacity="0.92"/>
+<text x="915.0" y="736.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" fill="#3D3B35" text-anchor="middle">yes</text>
+<rect x="704.8" y="787.0" width="22.3" height="17" rx="4" fill="#FCFCFA" fill-opacity="0.92"/>
+<text x="716.0" y="799.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" fill="#3D3B35" text-anchor="middle">no</text>
+<rect x="931.1" y="862.0" width="27.9" height="17" rx="4" fill="#FCFCFA" fill-opacity="0.92"/>
+<text x="945.0" y="874.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" fill="#3D3B35" text-anchor="middle">yes</text>
+<rect x="704.8" y="900.0" width="22.3" height="17" rx="4" fill="#FCFCFA" fill-opacity="0.92"/>
+<text x="716.0" y="912.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" fill="#3D3B35" text-anchor="middle">no</text>
+</svg>

@@ -29,15 +29,19 @@ BENCHMARK_MAX_TOKENS = 512   # every model alike in eval/retrieval.py, speed.py,
 RERANKER_MAX_TOKENS = 512    # a (query, text) pair, special tokens included
 SPECIAL_TOKENS = 4           # <s> query </s></s> text </s> for an XLM-R cross-encoder
 WINDOW_OVERLAP = 64          # tokens shared by consecutive windows, so a sentence cut by one is whole in the next
+RETOKENIZE_SLACK = 2         # a window decoded then encoded again can gain a token (measured: 513 of 512)
+QUERY_MAX_TOKENS = 256       # a longer query is cut for the reranker (its start kept), so a window always has room:
+                             # 512 - 4 - 256 = 252 tokens of text, far over the overlap (a query of 444+ tokens once left
+                             # 64, the overlap itself: the windows never moved on). BM25 and the embedder read it whole.
 MIN_FREE_GIB = 2.0   # less free GPU memory than this (e.g. a local vLLM server holds it): the CPU is used instead
 
 
 def _device() -> str:
     """cuda when a GPU has room for the model, else cpu; PERESEARCH_DEVICE=cpu|cuda forces a choice."""
+    if os.environ.get("PERESEARCH_DEVICE") in ("cpu", "cuda"):     # a forced choice needs no PyTorch (`setup` in CI)
+        return os.environ["PERESEARCH_DEVICE"]
     import torch
 
-    if os.environ.get("PERESEARCH_DEVICE") in ("cpu", "cuda"):
-        return os.environ["PERESEARCH_DEVICE"]
     if not torch.cuda.is_available():
         return "cpu"
     free, _ = torch.cuda.mem_get_info()
@@ -52,6 +56,7 @@ def signature(name: str, max_tokens: int | None = None) -> str:
 
 def windows(n: int, size: int, overlap: int) -> list[tuple[int, int]]:
     """[start, end) spans of at most `size` that cover range(n), consecutive spans sharing `overlap`."""
+    assert 0 <= overlap < size, f"windows of {size} tokens sharing {overlap} would never move on"
     if n <= size:
         return [(0, n)]
     spans, start = [], 0
@@ -60,6 +65,25 @@ def windows(n: int, size: int, overlap: int) -> list[tuple[int, int]]:
         if start + size >= n:
             return spans
         start += size - overlap
+
+
+def _load(cls, repo: str, revision: str, **kw):
+    """`cls` (SentenceTransformer, CrossEncoder) from this machine when the pinned revision is here, else from the
+    Hub at that revision. Loading by name checked the revision's files online at every start (27 requests to
+    huggingface.co each run, end to end, 2026-10-05): what is here is used without asking, and a copy that does not
+    load (a download stopped midway) is fetched again."""
+    try:
+        from huggingface_hub import snapshot_download
+
+        here = snapshot_download(repo, revision=revision, local_files_only=True)
+    except Exception:                       # not on this machine (or no huggingface_hub): the Hub
+        here = None
+    if here:
+        try:
+            return cls(here, **kw)
+        except Exception:
+            pass
+    return cls(repo, revision=revision, **kw)
 
 
 class Embedder:
@@ -75,13 +99,17 @@ class Embedder:
         self.signature = signature(name, self.max_tokens)
         device = _device()
         dtype = torch.float16 if device == "cuda" else torch.float32
-        self.model = SentenceTransformer(self.spec["repo"], revision=self.spec["revision"], device=device,
-                                         model_kwargs={"torch_dtype": dtype})
+        self.model = _load(SentenceTransformer, self.spec["repo"], self.spec["revision"], device=device,
+                           model_kwargs={"torch_dtype": dtype})
         self.model.max_seq_length = self.max_tokens
 
     def _encode(self, texts: list[str], **kw) -> np.ndarray:
-        return self.model.encode(texts, batch_size=self.batch_size, normalize_embeddings=True,
-                                 convert_to_numpy=True, show_progress_bar=False, **kw).astype(np.float16)
+        out = self.model.encode(texts, batch_size=self.batch_size, normalize_embeddings=True,
+                                convert_to_numpy=True, show_progress_bar=False, **kw).astype(np.float16)
+        assert len(out) == len(texts), f"{len(out)} vectors for {len(texts)} texts"
+        assert not texts or bool(np.all(np.abs(np.linalg.norm(out.astype(np.float32), axis=1) - 1) < 1e-2)), \
+            "vectors are not unit length: cosine scores would be wrong"
+        return out
 
     def documents(self, texts: list[str]) -> np.ndarray:
         return self._encode([self.spec.get("doc_prefix", "") + t for t in texts])
@@ -104,14 +132,18 @@ class Reranker:
         device = _device()
         dtype = torch.float16 if device == "cuda" else torch.float32
         self.batch_size, self.windowed = batch_size, windowed
-        self.model = CrossEncoder(RERANKER["repo"], revision=RERANKER["revision"], max_length=RERANKER_MAX_TOKENS,
-                                  device=device, model_kwargs={"torch_dtype": dtype})
+        self.model = _load(CrossEncoder, RERANKER["repo"], RERANKER["revision"], max_length=RERANKER_MAX_TOKENS,
+                           device=device, model_kwargs={"torch_dtype": dtype})
 
     def _pairs(self, query: str, texts: list[str]) -> tuple[list[tuple[str, str]], list[int]]:
         """The (query, window) pairs to score and, for each, the index of the text it comes from."""
         tok = self.model.tokenizer
-        query_tokens = len(tok.encode(query, add_special_tokens=False, verbose=False))
-        room = max(RERANKER_MAX_TOKENS - SPECIAL_TOKENS - query_tokens, 64)
+        query_ids = tok.encode(query, add_special_tokens=False, verbose=False)
+        if len(query_ids) > QUERY_MAX_TOKENS:
+            query = tok.decode(query_ids[:QUERY_MAX_TOKENS])
+            query_ids = tok.encode(query, add_special_tokens=False, verbose=False)   # as the model will read it
+        room = RERANKER_MAX_TOKENS - SPECIAL_TOKENS - len(query_ids) - RETOKENIZE_SLACK
+        assert room > WINDOW_OVERLAP, f"{room} tokens of text a window, overlap {WINDOW_OVERLAP}"
         pairs, owner = [], []
         for i, text in enumerate(texts):
             ids = tok.encode(text, add_special_tokens=False, verbose=False)   # longer than 512 on purpose
@@ -132,6 +164,7 @@ class Reranker:
                          dtype=np.float32)
         best = np.full(len(texts), -np.inf, dtype=np.float32)
         np.maximum.at(best, np.asarray(owner), out)
+        assert bool(np.all(np.isfinite(best))), "a text got no window to score"
         return best
 
 

@@ -6,8 +6,19 @@ Every test therefore runs with HOME, PERESEARCH_HOME and the eval output folders
 here before anything is imported, and the session fails if the owner's real places changed while it ran."""
 import hashlib
 import os
+import sys
 import tempfile
+import faulthandler
+import threading
 from pathlib import Path
+
+from hypothesis import settings
+
+# Properties check behavior, not speed: Hypothesis's 200 ms per example failed a layout test on a slower container
+# (321 ms for a first example that takes 6-13 ms here, 2026-10-03), and would on any slow machine. Speed is checked
+# by its own tests where it matters (the denylist, the walk).
+settings.register_profile("peresearch", deadline=None)
+settings.load_profile("peresearch")
 
 REAL_HOME = Path(os.path.expanduser("~"))
 REAL_PLACES = [Path(os.environ.get("PERESEARCH_HOME", REAL_HOME / ".local/share/peresearch")),
@@ -32,16 +43,45 @@ def _state(places):
 BEFORE = _state(REAL_PLACES)
 
 SANDBOX = Path(tempfile.mkdtemp(prefix="peresearch-tests-"))
+for name in list(os.environ):
+    if name.startswith("PERESEARCH_") or name in ("JINA_API_KEY", "OPENALEX_API_KEY", "SEMANTIC_SCHOLAR_API_KEY"):
+        os.environ.pop(name)
 os.environ.setdefault("HF_HOME", str(REAL_HOME / ".cache" / "huggingface"))   # models stay where they were fetched
 for name, sub in (("HOME", "user"), ("PERESEARCH_HOME", "data"), ("PERESEARCH_RUNS", "runs"),
                   ("PERESEARCH_RESULTS", "results")):
     (SANDBOX / sub).mkdir()
     os.environ[name] = str(SANDBOX / sub)
+os.environ.pop("PERESEARCH_RERANK_DEPTH", None)    # the owner's shell setting would change what searches return
 
 import numpy as np  # noqa: E402
 import pytest  # noqa: E402
 
 from peresearch.zetokrag.core import tokenize
+
+
+def pytest_addoption(parser):
+    parser.addoption("--test-timeout", type=float, default=300, help="Hard deadline per test in seconds (default: 300)")
+
+
+@pytest.hookimpl(wrapper=True)
+def pytest_runtest_protocol(item, nextitem):
+    seconds = item.config.getoption("--test-timeout")
+    if seconds <= 0:
+        raise ValueError("--test-timeout must be positive")
+    def expired():
+        capture = item.config.pluginmanager.getplugin("capturemanager")
+        if capture is not None:
+            capture.suspend_global_capture(in_=True)
+        print(f"\nTEST TIMEOUT: {item.nodeid} exceeded {seconds} seconds", file=sys.stderr, flush=True)
+        faulthandler.dump_traceback(file=sys.stderr)
+        os._exit(124)
+    timer = threading.Timer(seconds, expired)
+    timer.daemon = True
+    timer.start()
+    try:
+        return (yield)
+    finally:
+        timer.cancel()
 
 
 class FakeEmbedder:
@@ -59,8 +99,8 @@ class FakeEmbedder:
     def documents(self, texts):
         return np.stack([self._vec(t) for t in texts]) if texts else np.zeros((0, self.dim), np.float16)
 
-    def queries(self, texts):
-        return self.documents(texts)
+    def queries(self, texts):                  # the same vectors; not a document (a spy on documents counts none)
+        return FakeEmbedder.documents(self, texts)
 
 
 class FakeReranker:

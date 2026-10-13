@@ -34,6 +34,24 @@ def test_the_modal_server_is_private_single_and_scales_to_zero():
     assert "scaledown_window" in kw and "REVISION = \"" in src and "vllm==" in src
 
 
+
+def test_every_modal_job_has_a_hard_cpu_and_memory_ceiling():
+    """Modal bills CPU and memory at the higher of request and use; only a (request, limit) pair bounds the cost."""
+    src = (DEPLOY / "modal_vllm.py").read_text()
+    tree = ast.parse(src)
+    consts = {t.id: n.value for n in tree.body if isinstance(n, ast.Assign) for t in n.targets
+              if isinstance(t, ast.Name)}
+    jobs = [d for n in ast.walk(tree) if isinstance(n, (ast.FunctionDef, ast.ClassDef)) for d in n.decorator_list
+            if isinstance(d, ast.Call) and getattr(d.func, "attr", "") in ("function", "server")]
+    assert len(jobs) == 2
+    for job in jobs:
+        kw = {k.arg: k.value for k in job.keywords}
+        for name in ("cpu", "memory"):
+            value = kw[name]
+            value = consts[value.id] if isinstance(value, ast.Name) else value
+            request, limit = ast.literal_eval(value)
+            assert 0 < request <= limit
+
 def load(name):
     spec = importlib.util.spec_from_file_location(name, DEPLOY / f"{name}.py")
     mod = importlib.util.module_from_spec(spec)
@@ -50,6 +68,28 @@ def test_the_image_spec_avoids_the_problems_found_in_review():
     text = load("replica").dockerfile(s)
     assert text.startswith(f"FROM {s['BASE']}") and "vllm==0.29.0" in text and "VLLM_USE_FLASHINFER_SAMPLER" in text
 
+
+
+def test_the_server_decodes_with_cuda_graphs_caches_on_the_volume_and_never_waits_on_the_hub():
+    """Eager decoding ran the 35B at ~10 tokens/s; CUDA graphs need compiling at start, which only a cache on the
+    Volume saves on the next cold start (a fresh container has no cache). The weights are on the Volume, so the
+    server never calls the Hugging Face Hub, whose stalls (6 and 15 minutes in the replica) would bill the GPU.
+    The replica serves with the same environment."""
+    s = load("replica").spec(DEPLOY / "modal_vllm.py")
+    assert "--enforce-eager" not in s["FLAGS"]
+    mount = "/root/.cache/huggingface"
+    env = s["SERVER_ENV"]
+    assert env["HF_HUB_OFFLINE"] == "1"
+    assert env["VLLM_CACHE_ROOT"].startswith(mount + "/") and env["TRITON_CACHE_DIR"].startswith(mount + "/")
+    assert "HF_HUB_OFFLINE" not in s["ENV"]                    # the download function, same image, stays online
+    tree = ast.parse((DEPLOY / "modal_vllm.py").read_text())
+    server = next(n for n in ast.walk(tree) if isinstance(n, ast.ClassDef) and n.name == "Server")
+    volumes = next(k.value for k in server.decorator_list[0].keywords if k.arg == "volumes")
+    assert mount in ast.literal_eval(volumes.keys[0])
+    starts = [c for c in ast.walk(server) if isinstance(c, ast.Call) and getattr(c.func, "attr", "") == "start"]
+    assert any(k.arg == "env" for c in starts for k in c.keywords)
+    args = load("replica").server_env_args(s)
+    assert args == [x for k, v in env.items() for x in ("-e", f"{k}={v}")]
 
 def test_the_laptop_server_gets_the_modal_environment():
     env = load("local_vllm").modal_constant("ENV")
@@ -203,9 +243,31 @@ def test_closing_the_terminal_stops_the_model_server_chat_local_started(chat_loc
     assert wait_for(lambda: not alive(server), 10), "the model server outlived its terminal"
 
 
-def test_a_server_left_by_a_killed_chat_local_is_taken_back_and_stopped(chat_local):
+@pytest.fixture
+def unreaped():
+    """Orphans come to this test process, which never reaps them: as in a container without an init (PID 1 a
+    program that does not wait for orphans), where a stopped orphan stays a zombie. Cleans them up afterwards."""
+    import ctypes
+    import os
+    libc = ctypes.CDLL(None, use_errno=True)
+    if libc.prctl(36, 1, 0, 0, 0) != 0:                              # PR_SET_CHILD_SUBREAPER
+        pytest.skip("cannot become a subreaper here")
+    yield
+    libc.prctl(36, 0, 0, 0, 0)
+    try:
+        while os.waitpid(-1, os.WNOHANG)[0]:
+            pass
+    except ChildProcessError:
+        pass
+
+
+@pytest.mark.parametrize("orphans", ["reaped (a desktop's init)", "never reaped (a container without an init)"])
+def test_a_server_left_by_a_killed_chat_local_is_taken_back_and_stopped(chat_local, request, orphans):
     """A chat-local killed outright (no clean-up at all) leaves its server; the next one adopts it and stops it on
-    quit, instead of reusing it and leaving it running for good as before."""
+    quit, instead of reusing it and leaving it running for good as before. Where nobody reaps orphans, the stopped
+    server stays a zombie: it is dead, and waiting for it to go ran the whole 30 s (a hang in a container)."""
+    if orphans.startswith("never"):
+        request.getfixturevalue("unreaped")
     start, _ = chat_local
     first, _, pidfile = start("first")
     assert wait_for(lambda: pidfile.exists() and pidfile.read_text().strip() != "")
@@ -216,7 +278,7 @@ def test_a_server_left_by_a_killed_chat_local_is_taken_back_and_stopped(chat_loc
     first.wait()
     assert alive(server)                                          # the orphan, as seen on the laptop
     second, _, _ = start("second", chat_seconds=1)
-    assert wait_for(lambda: second.poll() is not None, 20)
+    assert wait_for(lambda: second.poll() is not None, 20), "chat-local waited on a dead server"
     assert wait_for(lambda: not alive(server), 10), "the orphaned server was reused and left running"
     assert not (start.tmp / "runs" / "serve" / "local_vllm.pgid").exists()
 
@@ -247,3 +309,35 @@ def test_quitting_stops_the_server_chat_local_started_at_once(chat_local):
     t = time.time()
     assert wait_for(lambda: not alive(server), 5) and time.time() - t < 5
     assert not (start.tmp / "runs" / "serve" / "local_vllm.pgid").exists()
+
+
+def test_a_recorded_group_is_adopted_only_while_it_runs(tmp_path, monkeypatch):
+    """left_behind() adopts the recorded server's process group only while one of its processes runs: a group gone,
+    or one left as zombies (a container without an init never reaps them), is forgotten and its record removed,
+    so the next chat-local starts a server instead of waiting on a dead one."""
+    import importlib.util
+    import subprocess
+    import time
+    spec = importlib.util.spec_from_file_location("chat_local_under_test", DEPLOY / "chat_local.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    monkeypatch.setattr(mod, "ROOT", tmp_path)
+    record = mod.record()
+    record.parent.mkdir(parents=True)
+    gone = subprocess.Popen([sys.executable, "-c", "pass"], start_new_session=True)
+    gone.wait()                                                       # reaped: the group no longer exists
+    zombie = subprocess.Popen([sys.executable, "-c", "pass"], start_new_session=True)
+    stat = Path(f"/proc/{zombie.pid}/stat")
+    assert wait_for(lambda: stat.read_text().rsplit(") ", 1)[1].split()[0] == "Z"), "no zombie to look at"
+    live = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"], start_new_session=True)
+    try:
+        for pid, adopted in ((gone.pid, None), (zombie.pid, None), (live.pid, live.pid)):
+            record.write_text(str(pid))
+            assert mod.left_behind() == adopted
+            assert record.exists() == (adopted is not None)
+        record.write_text("not a number")
+        assert mod.left_behind() is None and not record.exists()
+    finally:
+        live.kill()
+        live.wait()
+        zombie.wait()

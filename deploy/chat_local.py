@@ -33,33 +33,60 @@ def record() -> Path:
     return ROOT / "runs" / "serve" / "local_vllm.pgid"
 
 
+def running(pgid: int) -> bool:
+    """Whether a process of the group still runs. A zombie does not: it is dead and waits for its parent to reap it,
+    which in a container without an init nobody does (PID 1 is a program that never waits for orphans), so a group
+    of zombies answered os.killpg(pgid, 0) and `stop` waited its whole 30 s."""
+    proc = Path("/proc")
+    if not proc.is_dir():                              # no /proc (macOS): only the signal test
+        try:
+            os.killpg(pgid, 0)
+            return True
+        except ProcessLookupError:
+            return False
+    for stat in proc.glob("[0-9]*/stat"):
+        try:
+            state, _, group = stat.read_text().rsplit(") ", 1)[1].split()[:3]
+        except (OSError, IndexError, ValueError):     # gone meanwhile, or unreadable
+            continue
+        if group == str(pgid) and state != "Z":
+            return True
+    return False
+
+
 def left_behind() -> int | None:
-    """The process group of a server an earlier run started and never stopped, if it is still alive."""
+    """The process group of a server an earlier run started and never stopped, if it is still running."""
     try:
         pgid = int(record().read_text())
-        os.killpg(pgid, 0)
-        return pgid
     except (OSError, ValueError):
-        record().unlink(missing_ok=True)
-        return None
+        pgid = None
+    if pgid is not None and running(pgid):
+        return pgid
+    record().unlink(missing_ok=True)
+    return None
 
 
 def stop(pgid: int) -> None:
     """The whole group — pixi, the launcher and vLLM's workers — then forget it."""
     try:
         os.killpg(pgid, signal.SIGTERM)
-        end = time.time() + 30
-        while time.time() < end:
-            try:
-                while os.waitpid(-pgid, os.WNOHANG)[0]:   # reap our own dead children: a zombie still counts
-                    pass
-            except ChildProcessError:                  # not our children (a server an earlier run left)
-                pass
-            os.killpg(pgid, 0)
-            time.sleep(0.2)
-        os.killpg(pgid, signal.SIGKILL)
     except ProcessLookupError:
         pass
+    end = time.time() + 30
+    while time.time() < end:
+        try:
+            while os.waitpid(-pgid, os.WNOHANG)[0]:   # reap our own dead children, so they are gone
+                pass
+        except ChildProcessError:                      # not our children (a server an earlier run left)
+            pass
+        if not running(pgid):
+            break
+        time.sleep(0.2)
+    else:
+        try:
+            os.killpg(pgid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
     record().unlink(missing_ok=True)
     try:
         print("local model server stopped", flush=True)

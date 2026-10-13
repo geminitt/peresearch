@@ -87,7 +87,9 @@ class BM25:
         terms = tokenize(query, self.folded)
         if not terms:                                  # "?!" or an emoji: no word to match (bm25s would raise)
             return np.zeros(self.model.scores["num_docs"], dtype=np.float32)
-        return np.asarray(self.model.get_scores(terms), dtype=np.float32)
+        out = np.asarray(self.model.get_scores(terms), dtype=np.float32)
+        assert len(out) == self.model.scores["num_docs"], "one BM25 score per text"
+        return out
 
 
 def top(scores: np.ndarray, n: int) -> np.ndarray:
@@ -99,12 +101,15 @@ def top(scores: np.ndarray, n: int) -> np.ndarray:
     cut = scores[np.argpartition(-scores, n - 1)[n - 1]]          # the n-th best score
     above = np.flatnonzero(scores > cut)
     idx = np.concatenate([above, np.flatnonzero(scores == cut)[:n - len(above)]])
+    assert len(idx) == n, f"top: {len(idx)} indices for n = {n}"
     return idx[np.lexsort((idx, -scores[idx]))]
 
 
 def minmax(values: np.ndarray) -> np.ndarray:
     lo, hi = float(values.min()), float(values.max())
-    return np.ones_like(values) if hi == lo else (values - lo) / (hi - lo)
+    out = np.ones_like(values) if hi == lo else (values - lo) / (hi - lo)
+    assert out.size == 0 or (out.min() >= -1e-6 and out.max() <= 1 + 1e-6), "min-max outside [0, 1]"
+    return out
 
 
 def fuse_minmax(lexical: np.ndarray, dense: np.ndarray, rho: float = 0.5, n: int = 100) -> tuple[np.ndarray, np.ndarray]:
@@ -112,6 +117,7 @@ def fuse_minmax(lexical: np.ndarray, dense: np.ndarray, rho: float = 0.5, n: int
 
     A lexical view that matched nothing (best score 0) is left out: min-max maps equal scores to 1, so 100 documents
     BM25 never matched used to get rho each and push the dense ranking down (results/multilingual.md)."""
+    assert len(lexical) == len(dense) and 0.0 <= rho <= 1.0, "two views over the same texts, 0 <= rho <= 1"
     fused: dict[int, float] = {}
     for weight, scores in ((rho, lexical), (1 - rho, dense)):
         idx = top(scores, n)
@@ -119,12 +125,14 @@ def fuse_minmax(lexical: np.ndarray, dense: np.ndarray, rho: float = 0.5, n: int
             continue
         for i, s in zip(idx, minmax(scores[idx])):
             fused[int(i)] = fused.get(int(i), 0.0) + weight * float(s)
+    assert all(-1e-6 <= v <= 1 + 1e-6 for v in fused.values()), "fused scores outside [0, 1]"
     ids = np.array(sorted(fused, key=lambda i: -fused[i]))
     return ids, np.array([fused[i] for i in ids], dtype=np.float32)
 
 
 def fuse_rrf(lexical: np.ndarray, dense: np.ndarray, k: int = 60, n: int = 100) -> tuple[np.ndarray, np.ndarray]:
     """Reciprocal rank fusion, sum of 1 / (k + rank) over the views (the usual baseline, k = 60)."""
+    assert len(lexical) == len(dense), "two views over the same texts"
     fused: dict[int, float] = {}
     for scores in (lexical, dense):
         for rank, i in enumerate(top(scores, n), start=1):
@@ -136,5 +144,6 @@ def fuse_rrf(lexical: np.ndarray, dense: np.ndarray, k: int = 60, n: int = 100) 
 def rerank(ids: np.ndarray, rerank_scores: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     """Reorder the reranked head by the cross-encoder; `ids` beyond the head keep their order after it."""
     head = len(rerank_scores)
+    assert head <= len(ids), f"{head} reranker scores for {len(ids)} ids"
     order = np.argsort(-rerank_scores, kind="stable")
     return np.concatenate([ids[:head][order], ids[head:]]), rerank_scores[order]

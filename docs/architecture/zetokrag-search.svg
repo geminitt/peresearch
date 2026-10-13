@@ -1,0 +1,122 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="1640" viewBox="0 0 1500 1640">
+<defs><marker id="arrow-flow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#55554F"/></marker><marker id="arrow-back" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#8A877C"/></marker><marker id="arrow-error" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#C94343"/></marker><marker id="arrow-exit" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#C94343"/></marker></defs>
+<rect width="1500" height="1640" fill="#FCFCFA"/>
+<text x="28.0" y="42.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#1F1F1F" text-anchor="start">ZetokRAG: answering search_notes</text>
+<text x="28.0" y="68.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" fill="#5A5A55" text-anchor="start">zetokrag/search.py: Searcher.find, called by tools.search_notes. No step calls an LLM, and no score decides for the model. working tree on 5ca550a, 2026-10-12.</text>
+<rect x="470" y="100" width="460" height="62" rx="10" fill="#F1ECFB" stroke="#7A55C9" stroke-width="1.4"/>
+<text x="482.0" y="123.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#45288A" text-anchor="start">search_notes(query)</text>
+<text x="482.0" y="141.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#7A55C9" text-anchor="start">tools.py</text>
+<rect x="470" y="202" width="460" height="62" rx="10" fill="#E3F4EC" stroke="#2E9467" stroke-width="1.4"/>
+<text x="482.0" y="225.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#155A3B" text-anchor="start">Searcher.find(query, k = None)</text>
+<text x="482.0" y="243.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#2E9467" text-anchor="start">zetokrag/search.py</text>
+<rect x="470" y="304" width="460" height="130" rx="10" fill="#E3F4EC" stroke="#2E9467" stroke-width="1.4"/>
+<text x="482.0" y="327.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#155A3B" text-anchor="start">Index.snapshot()</text>
+<text x="482.0" y="345.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#2E9467" text-anchor="start">zetokrag/index.py</text>
+<text x="482.0" y="368.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">PRAGMA data_version changed → rebuild in one read:</text>
+<text x="482.0" y="385.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">ids, BM25 over place + section + text,</text>
+<text x="482.0" y="402.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">vectors fp16 → float32; live scope before fusion</text>
+<rect x="160" y="474" width="440" height="112" rx="10" fill="#E3F4EC" stroke="#2E9467" stroke-width="1.4"/>
+<text x="172.0" y="497.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#155A3B" text-anchor="start">BM25.scores(query)</text>
+<text x="172.0" y="515.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#2E9467" text-anchor="start">zetokrag/core.py: BM25</text>
+<text x="172.0" y="538.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">words as typed, with combining marks</text>
+<text x="172.0" y="555.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">Han, Kana, Thai… cut into character pairs</text>
+<text x="172.0" y="572.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">k1 = 1.5, b = 0.75 (16 settings: within 0.006)</text>
+<rect x="800" y="474" width="440" height="112" rx="10" fill="#E3F4EC" stroke="#2E9467" stroke-width="1.4"/>
+<text x="812.0" y="497.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#155A3B" text-anchor="start">Dense similarity</text>
+<text x="812.0" y="515.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#2E9467" text-anchor="start">embed.Embedder.queries</text>
+<text x="812.0" y="538.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">the user&#x27;s endpoint, the model card&#x27;s query prefix;</text>
+<text x="812.0" y="555.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">cosine = vectors · q; no vector yet → the lowest;</text>
+<text x="812.0" y="572.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">none, or the endpoint down → words alone, said</text>
+<rect x="470" y="626" width="460" height="112" rx="10" fill="#E3F4EC" stroke="#2E9467" stroke-width="1.4"/>
+<text x="482.0" y="649.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#155A3B" text-anchor="start">fuse_minmax(ρ = 0.5, top 100 each)</text>
+<text x="482.0" y="667.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#2E9467" text-anchor="start">core.fuse_minmax</text>
+<text x="482.0" y="690.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">min-max per view, then ρ·BM25 + (1 − ρ)·dense</text>
+<text x="482.0" y="707.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">a chunk missing from a view gets 0 there</text>
+<text x="482.0" y="724.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">BM25 best ≤ 0 → BM25 left out</text>
+<rect x="470" y="778" width="460" height="130" rx="10" fill="#E3F4EC" stroke="#2E9467" stroke-width="1.4"/>
+<text x="482.0" y="801.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#155A3B" text-anchor="start">Rerank the first `depth` of 30</text>
+<text x="482.0" y="819.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#2E9467" text-anchor="start">embed.Reranker</text>
+<text x="482.0" y="842.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">the user&#x27;s /rerank on place + section + text;</text>
+<text x="482.0" y="859.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">score in [0, 1] (a raw logit → logistic);</text>
+<text x="482.0" y="876.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">depth: setting 0–30 (30); the rest, fused order;</text>
+<text x="482.0" y="893.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">none set or down → fused order, no score, said</text>
+<rect x="470" y="948" width="460" height="96" rx="10" fill="#E3F4EC" stroke="#2E9467" stroke-width="1.4"/>
+<text x="482.0" y="971.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#155A3B" text-anchor="start">Searcher.candidates: fold near-copies</text>
+<text x="482.0" y="994.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">8-character shingles, Jaccard ≥ 0.8, any script:</text>
+<text x="482.0" y="1011.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">a copy joins the better-ranked one (also in …)</text>
+<rect x="470" y="1084" width="460" height="78" rx="10" fill="#E3F4EC" stroke="#2E9467" stroke-width="1.4"/>
+<text x="482.0" y="1107.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#155A3B" text-anchor="start">Every candidate, best first</text>
+<text x="482.0" y="1130.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">no threshold, no verdict (`peresearch find`: pages of k)</text>
+<rect x="470" y="1202" width="460" height="112" rx="10" fill="#FCE8E8" stroke="#C94343" stroke-width="1.4"/>
+<text x="482.0" y="1225.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#7D1F1F" text-anchor="start">Re-read the source file</text>
+<text x="482.0" y="1248.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">gone or ambiguous → dropped; copies checked too</text>
+<text x="482.0" y="1265.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">changed text → current lines and warning</text>
+<text x="482.0" y="1282.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">old neighbors omitted; unique ordered span only</text>
+<rect x="470" y="1338" width="460" height="62" rx="10" fill="#E3F4EC" stroke="#2E9467" stroke-width="1.4"/>
+<text x="482.0" y="1361.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#155A3B" text-anchor="start">Neighbors</text>
+<text x="482.0" y="1384.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">unchanged file: id ± 1, same section</text>
+<rect x="470" y="1440" width="460" height="166" rx="10" fill="#F1ECFB" stroke="#7A55C9" stroke-width="1.4"/>
+<text x="482.0" y="1463.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#45288A" text-anchor="start">Result for the model</text>
+<text x="482.0" y="1481.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#7A55C9" text-anchor="start">tools.search_notes</text>
+<text x="482.0" y="1504.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">&#x27;n ranked candidates, best first (relevance…)&#x27;</text>
+<text x="482.0" y="1521.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">[N#] span (relevance) § section, (before), the</text>
+<text x="482.0" y="1538.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">hit, (after), each whole, (also in …); redacted;</text>
+<text x="482.0" y="1555.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">what the index does not hold, counted by reason;</text>
+<text x="482.0" y="1572.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">the agent shows what fits (harness frame)</text>
+<path d="M 700.0 162.0 L 700.0 202.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<path d="M 700.0 264.0 L 700.0 304.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<path d="M 585.0 434.0 L 585.0 455.0 L 380.0 455.0 L 380.0 474.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<path d="M 815.0 434.0 L 815.0 455.0 L 1020.0 455.0 L 1020.0 474.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<path d="M 380.0 586.0 L 380.0 606.0 L 585.0 606.0 L 585.0 626.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<path d="M 1020.0 586.0 L 1020.0 606.0 L 815.0 606.0 L 815.0 626.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<path d="M 700.0 738.0 L 700.0 778.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<path d="M 700.0 908.0 L 700.0 948.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<path d="M 700.0 1044.0 L 700.0 1084.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<path d="M 700.0 1162.0 L 700.0 1202.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<path d="M 700.0 1314.0 L 700.0 1338.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<path d="M 700.0 1400.0 L 700.0 1440.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<rect x="30" y="778" width="410" height="166" rx="10" fill="#E3F4EC" stroke="#2E9467" stroke-width="1.4"/>
+<text x="42.0" y="801.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#155A3B" text-anchor="start">Searcher.documents: overview</text>
+<text x="42.0" y="819.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#2E9467" text-anchor="start">zetokrag/search.py</text>
+<text x="42.0" y="842.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">the same fusion, inside a folder when asked</text>
+<text x="42.0" y="859.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">(kept before fusing); each file once, by its</text>
+<text x="42.0" y="876.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">best chunk; the first `depth` reranked on it;</text>
+<text x="42.0" y="893.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">overview: every file, headings, first line</text>
+<text x="42.0" y="910.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">(gold: +0.11 relevant files in 20 lines)</text>
+<path d="M 470.0 682.0 L 235.0 682.0 L 235.0 778.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<rect x="990" y="202" width="480" height="96" rx="10" fill="#F0EFEA" stroke="#8A877C" stroke-width="1.4"/>
+<text x="1002.0" y="225.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#3D3B35" text-anchor="start">Locks</text>
+<text x="1002.0" y="243.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#8A877C" text-anchor="start">Index._lock (RLock)</text>
+<text x="1002.0" y="266.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">snapshot and every read on the one reading</text>
+<text x="1002.0" y="283.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">connection, one thread at a time</text>
+<rect x="990" y="778" width="480" height="96" rx="10" fill="#E3F4EC" stroke="#2E9467" stroke-width="1.4"/>
+<text x="1002.0" y="801.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#155A3B" text-anchor="start">No model runs in peresearch</text>
+<text x="1002.0" y="819.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#2E9467" text-anchor="start">zetokrag/embed.py</text>
+<text x="1002.0" y="842.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">the endpoints from the settings (none by default)</text>
+<text x="1002.0" y="859.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">zetokrag/models.py: the benchmarks&#x27; test tools</text>
+<rect x="990" y="948" width="480" height="150" rx="10" fill="#FFF6D6" stroke="#B8960B" stroke-width="1.4"/>
+<text x="1002.0" y="971.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#5E4B00" text-anchor="start">Why no verdict (gold dev, 2026-10-04)</text>
+<text x="1002.0" y="994.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">best score: answerable vs not, AUROC 0.56</text>
+<text x="1002.0" y="1011.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">[0.37, 0.75]; the old cut (top 5, 0.25) showed</text>
+<text x="1002.0" y="1028.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">0.60 of the answering passages, the top 10 0.71,</text>
+<text x="1002.0" y="1045.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">the top 30 0.78</text>
+<text x="30.0" y="1130.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" font-weight="700" fill="#3D3B35" text-anchor="start">Legend</text>
+<rect x="30" y="1142" width="22" height="14" rx="3" fill="#F1ECFB" stroke="#7A55C9"/>
+<text x="60.0" y="1153.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">agent and tools</text>
+<rect x="30" y="1163" width="22" height="14" rx="3" fill="#E3F4EC" stroke="#2E9467"/>
+<text x="60.0" y="1174.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">ZetokRAG</text>
+<rect x="30" y="1184" width="22" height="14" rx="3" fill="#FCE8E8" stroke="#C94343"/>
+<text x="60.0" y="1195.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">guard: access, redaction, checks</text>
+<rect x="30" y="1205" width="22" height="14" rx="3" fill="#F0EFEA" stroke="#8A877C"/>
+<text x="60.0" y="1216.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">files on disk</text>
+<rect x="30" y="1226" width="22" height="14" rx="3" fill="#FFF6D6" stroke="#B8960B"/>
+<text x="60.0" y="1237.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">decision</text>
+<path d="M 30 1254 L 52 1254" stroke="#55554F" stroke-width="1.8" marker-end="url(#arrow-flow)"/>
+<text x="60.0" y="1258.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">call or data</text>
+<path d="M 30 1275 L 52 1275" stroke="#8A877C" stroke-width="1.8" stroke-dasharray="6 4" marker-end="url(#arrow-back)"/>
+<text x="60.0" y="1279.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">returns, next round</text>
+<path d="M 30 1296 L 52 1296" stroke="#C94343" stroke-width="1.8" stroke-dasharray="6 4" marker-end="url(#arrow-error)"/>
+<text x="60.0" y="1300.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">error path</text>
+<path d="M 30 1317 L 52 1317" stroke="#C94343" stroke-width="1.8" marker-end="url(#arrow-exit)"/>
+<text x="60.0" y="1321.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">leaves the machine</text>
+</svg>

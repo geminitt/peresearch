@@ -1,0 +1,30 @@
+ ╭─────────────────────────────────────────────────────╮
+ │ ✻ peresearch · research over your files and the web │
+ │                                                     │
+ │   model    qwen3-8b                                 │
+ │   folders  ~/notes                                  │
+ ╰─────────────────────────────────────────────────────╯
+
+
+
+
+
+
+
+
+                                                                               ▄▀▀▄▄▀▀▄
+                                                                               ██▀██▀█▀▀▀▀▀▀▀▀▀▄▄▄
+                                                                               ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀███▀▄
+╭──────────────────────────────────────────────────────────────────────────────                 ████
+│ ❯ /                                                                                           ▀▀▀▀
+╰─────────────────────────────────────────────────────────────────── no model: /model · 0 folders ─╯
+ ❯ /help      the commands
+   /folders   manage folders
+   /model     choose model for chat, embedding and reranker with reasoning effort to use
+   /settings  research limits and search services
+   /status    inspect setup, index, context and usage
+   /sessions  manage conversations
+   /local     local only: turn the web off for this session (again: back on)
+   /check     check configured connections after confirmation (remote services may charge)
+   /new       start a fresh conversation
+   /retry     ask the last question again

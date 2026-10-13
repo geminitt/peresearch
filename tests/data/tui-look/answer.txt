@@ -1,0 +1,30 @@
+ │                                                     │
+ │   model    qwen3-8b                                 │
+ │   folders  ~/notes                                  │
+ ╰─────────────────────────────────────────────────────╯
+
+ ❯ What do my notes say about BPE?
+
+ ● search_notes("byte pair encoding")
+   ⎿  1 source · 1 ranked candidates, best first (relevance: the reranker's score from 0 to 1, for…
+
+   Byte pair encoding merges the most frequent pair of symbols N1.
+
+   • Each merge creates one new token.
+   • SuperBPE lets merges cross spaces N1.
+
+   │ for _ in range(merges):
+   │     vocab.add(most_frequent(pairs))
+
+   Sources read
+
+   • N1 ~/notes/bpe.md:L1-5 — Tokenization
+
+   ✓ citations checked · 2 model calls · 0 tokens
+
+                                                                               ▄▀▀▄▄▀▀▄
+                                                                               ██▀██▀█▀▀▀▀▀▀▀▀▀▄▄▄
+                                                                               ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀███▀▄
+╭──────────────────────────────────────────────────────────────────────────────                 ████
+│ ❯ Ask about your files or the web                                                             ▀▀▀▀
+╰─────────────────────────────────────────────────────────────────────────── qwen3-8b · 0 folders ─╯

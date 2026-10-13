@@ -9,6 +9,12 @@ python = "3.12.*"
 numpy = "*"
 pytest = "*"
 hypothesis = ">=6.168.3,<7"
+ripgrep = ">=15"         # tools.grep: searches the declared folders and the extracted-text store
+python-docx = ">=1.2.0,<2"   # zetokrag.parse: Word documents
+python-pptx = ">=1.0.2,<2"   # zetokrag.parse: PowerPoint decks
+openpyxl = ">=3.1.5,<4"      # zetokrag.parse: Excel workbooks
+lxml-html-clean = ">=0.4.5,<0.5"   # trafilatura → justext needs it: conda's lxml has no html-clean extra
+                                   # (adding the three above moved lxml to conda and dropped it: web tests failed, 2026-10-05)
 
 [pypi-dependencies]
 peresearch = { path = ".", editable = true }
@@ -20,8 +26,10 @@ httpx = "*"
 trafilatura = "*"
 textual = "*"
 regex = "*"            # zetokrag.core: Unicode scripts and grapheme clusters (came only through trafilatura)
+charset-normalizer = ">=3.4"   # zetokrag.parse: legacy encodings (came only through requests and trafilatura)
 
-# models: BGE-M3 and the reranker on the local GPU
+# models: TEST TOOLS — the local embedders and reranker (zetokrag/models.py) for the gold ruler and the benchmarks;
+# no model runs inside peresearch (step 2, 2026-10-08: the user's endpoints, zetokrag/embed.py)
 [feature.models.pypi-dependencies]
 torch = "*"
 sentence-transformers = "*"
@@ -35,18 +43,42 @@ numpy = "<2.4"          # vLLM needs numba and mistral-common, which do not supp
 [feature.serve.pypi-dependencies]
 vllm = "==0.29.0"
 
+# servers: TEST TOOLS — other serving programs a user may put behind the gateway, run on the laptop with small models
+# by runs/serve/compat-matrix-*.py (the Model frame's compatibility matrix); not part of peresearch
+[feature.servers.dependencies]
+ollama = { version = ">=0.32.15", build = "cuda_129*" }
+"llama.cpp" = { version = ">=11351", build = "cuda129*" }
+
+# The GPU builds need __cuda. pixi 0.79 calls this table deprecated (a warning on every command) and wants CUDA on the
+# workspace's platforms instead, which would apply it to every environment (`ci` installs on machines without a GPU)
+# or add a second platform to every lock: kept here, where it touches only this environment.
+[feature.servers.system-requirements]
+cuda = "12.9"
+
+# mcp-servers: TEST TOOLS — a web search MCP server needing no key, run on the laptop (stdio and Streamable HTTP) to
+# check peresearch/mcp.py against a real server (step 3h, 2026-10-08)
+[feature.mcp-servers.dependencies]
+python = "3.12.*"
+
+[feature.mcp-servers.pypi-dependencies]
+duckduckgo-mcp-server = "*"
+
 # dev: measuring the tests (branch coverage, mutation testing) on the laptop
 [feature.dev.dependencies]
 pytest-cov = ">=7.1.0,<8"
 mutmut = ">=3.8.0,<4"
 
 [environments]
-default = ["models", "dev"]
+default = ["dev"]
+models = ["models", "dev"]
 ci = []
 serve = ["serve"]
+servers = { features = ["servers"], no-default-feature = true }
+mcp-servers = { features = ["mcp-servers"], no-default-feature = true }
 
 [tasks]
 test = "pytest -q"
+gate = "python scripts/check.py"
 chat-local = "python deploy/chat_local.py"      # the laptop model server + the TUI, server stopped on quit
 replica = "python deploy/replica.py"            # the Modal image rebuilt with Docker and run with a small model
 # The only way to deploy: the tests and the Docker replica must pass first, so no GPU time is paid for a server

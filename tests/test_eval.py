@@ -1,6 +1,7 @@
-"""Contracts of the evaluation arithmetic (eval/retrieval.py, eval/personal.py, eval/research.py,
-eval/tokenization.py): every metric against its textbook definition, the confidence intervals against the binomial
-tails they solve, the work split, the retries, and the run files that let an interrupted evaluation resume."""
+"""Contracts of the evaluation arithmetic (eval/retrieval.py, eval/research.py,
+eval/tokenization.py, eval/gold.py): every metric against its textbook definition, the confidence intervals against
+the binomial tails they solve, the work split, the retries, the run files that let an interrupted evaluation
+resume, and the gold ruler (judged lines reached, near-copies, the paired bootstrap)."""
 
 import hashlib
 import importlib.util
@@ -26,7 +27,7 @@ def module(name):
     return m
 
 
-retrieval, personal, research, tokenization = (module(n) for n in ("retrieval", "personal", "research", "tokenization"))
+retrieval, research, tokenization = (module(n) for n in ("retrieval", "research", "tokenization"))
 
 docs = st.lists(st.sampled_from([f"d{i}" for i in range(30)]), unique=True, max_size=25)
 grades = st.dictionaries(st.sampled_from([f"d{i}" for i in range(30)]), st.integers(1, 3), min_size=1, max_size=12)
@@ -66,50 +67,26 @@ def tail(n, p, lo, hi):
 @settings(max_examples=60)
 @example((25, 25))                                     # the rule of three's exact form: 0.025^(1/25)
 @example((5, 10))                                      # textbook Clopper-Pearson 0.1871–0.8129
-def test_the_exact_interval_solves_the_binomial_tails_and_both_copies_agree(kn):
+def test_the_exact_interval_solves_the_binomial_tails(kn):
     k, n = kn
-    lo, hi = personal.exact_interval(k, n)
-    assert research.exact_interval(k, n) == (lo, hi)
+    lo, hi = research.exact_interval(k, n)
     assert lo <= k / n <= hi
     assert lo == 0.0 if k == 0 else math.isclose(tail(n, lo, k, n), 0.025, abs_tol=1e-9)   # P(X >= k | lo)
     assert hi == 1.0 if k == n else math.isclose(tail(n, hi, 0, k), 0.025, abs_tol=1e-9)   # P(X <= k | hi)
     if k < n:
-        assert personal.exact_interval(k + 1, n)[0] > lo                  # more successes, higher bounds
+        assert research.exact_interval(k + 1, n)[0] > lo                  # more successes, higher bounds
     assert research.exact_interval(0, 0) == (0.0, 1.0)
 
 
-# --- the private set's matching ---------------------------------------------------------------------------------
-
-passages = st.text(alphabet="học máy dữ liệu BPE 中文检索系统 ", max_size=30)
-
-
-@given(passages, passages)
-@example("中文检索", "中文检索系统")                     # `\w+` keeps a Chinese stretch whole: no shared word
-@example("học máy", "Học máy và dữ liệu")
-def test_word_overlap_is_symmetric_bounded_and_cut_as_when_first_measured(a, b):
-    j = personal.jaccard(a, b)
-    x, y = set(tokenization.legacy_tokenize(a, folded=False)), set(tokenization.legacy_tokenize(b, folded=False))
-    assert j == personal.jaccard(b, a) == (len(x & y) / len(x | y) if x | y else 0.0)
-    assert personal.jaccard(a, a) == (1.0 if x else 0.0)
-
+# --- evidence in an answer --------------------------------------------------------------------------------------
 
 spans = st.tuples(st.sampled_from(["a.md", "b.md"]), st.sampled_from(["line", "page"]), st.integers(1, 20),
                   st.integers(0, 6)).map(lambda t: (t[0], t[1], t[2], t[2] + t[3]))
 
 
 @given(st.lists(spans, max_size=12), st.lists(spans, min_size=1, max_size=4))
-def test_gains_mark_the_first_rank_where_each_labelled_passage_is_found(rows, labels):
-    rows_ = [(i, p, "", u, a, b, f"text {i}", "") for i, (p, u, a, b) in enumerate(rows)]
+def test_evidence_is_found_when_a_cited_file_overlaps_a_labelled_passage(rows, labels):
     relevant = [{"path": p, "unit": u, "start": a, "end": b} for p, u, a, b in labels]
-    g = personal.gains(rows_, relevant, [""] * len(labels), "strict")
-    found, want = set(), []
-    for _, p, _, u, a, b, _, _ in rows_[:10]:
-        hit = next((k for k, r in enumerate(relevant) if k not in found and r["path"] == p and r["unit"] == u
-                    and a <= r["end"] and r["start"] <= b), None)
-        if hit is not None:
-            found.add(hit)
-        want.append(int(hit is not None))
-    assert g == want and sum(g) <= len(labels)
     files = {k: f"{p}:{'L' if u == 'line' else 'p.'}{a}-{b}" for k, (p, u, a, b) in enumerate(rows)}
     files["web"] = "https://example.org/a.md:L1-5"                     # a web source never counts
     overlap = any(r["path"] == p and r["unit"] == u and a <= r["end"] and r["start"] <= b
@@ -457,3 +434,154 @@ def test_the_test_split_is_a_seeded_share_of_every_language_with_every_type_draw
     assert gold.split([dict(q) for q in qs], 0.3, seed) == out                       # the same draw every time
     with pytest.raises(SystemExit):
         gold.split(out, 0.3, seed)                                                  # never drawn again
+
+
+# --- the ruler: scoring a ranked list against judged passages, by overlapping lines -----------------------------
+
+def span(f, a, b, unit="line"):
+    return {"file": f, "unit": unit, "start": a, "end": b}
+
+
+def test_a_ranked_list_is_scored_by_the_judged_lines_its_chunks_overlap():
+    judged = [{**span("a.md", 10, 12), "grade": 2}, {**span("a.md", 30, 31), "grade": 1},
+              {**span("b.md", 1, 5), "grade": 0}, {**span("p.pdf", 3, 3, "page"), "grade": 2}]
+    ranked = [span("b.md", 2, 3),            # judged 0: no gain, not unjudged
+              span("a.md", 11, 20),          # overlaps the grade-2 passage
+              span("a.md", 12, 12),          # the same passage again: no second credit
+              span("c.md", 1, 9),            # never judged
+              span("p.pdf", 3, 3, "line"),   # same file, other unit: no overlap
+              span("p.pdf", 2, 4, "page")]   # the page passage
+    s = gold.score(ranked, judged, k=10)
+    dcg = 2 / math.log2(3) + 2 / math.log2(7)
+    idcg = 2 / math.log2(2) + 2 / math.log2(3) + 1 / math.log2(4)
+    assert math.isclose(s["ndcg@10"], dcg / idcg)
+    assert s["recall@10"] == 1.0 and s["recall@3"] == 0.5             # of the two passages graded 2
+    assert s["unjudged@10"] == 2 / 6                                  # c.md, and p.pdf as lines
+    assert gold.score(ranked, [{**span("z.md", 1, 1), "grade": 0}], k=10) is None   # nothing to find: not scored
+
+
+passages = st.lists(st.tuples(st.sampled_from(["a", "b"]), st.integers(1, 30), st.integers(0, 6), st.integers(0, 2),
+                              st.integers(0, 3)), min_size=1, max_size=8)          # file, start, length, grade, group
+places = st.tuples(st.sampled_from(["a", "b", "c"]), st.integers(1, 30), st.integers(0, 6))
+rankings = st.lists(st.tuples(places, st.lists(places, max_size=2)), max_size=15)    # a chunk and its folded copies
+
+
+@given(passages, rankings, st.booleans())
+@example([("a", 3, 0, 2, 0), ("b", 3, 0, 1, 0)], [(("b", 3, 0), [])], True)   # a group reached through its lower copy
+@example([("a", 3, 0, 2, 0), ("b", 3, 0, 1, 0)], [(("c", 1, 0), [("b", 3, 0)])], True)   # through a folded copy
+def test_the_score_matches_a_line_by_line_reference(ps, rs, grouped):
+    """Against plain line sets: a chunk reaches a passage through its own lines or those of the copies folded into it
+    (`also`); judged near-copies (`groups`) are one passage, credited once with the group's best grade (its best is
+    what the ideal ranking holds) and counted once in recall. Without groups, every passage is its own."""
+    judged = [{**span(f, a, a + n), "grade": g} for f, a, n, g, _ in ps]
+    labels = [label for *_, label in ps] if grouped else list(range(len(ps)))
+    ranked = [{**span(f, a, a + n), "also": [span(g, b, b + m) for g, b, m in also]} for (f, a, n), also in rs]
+    s = gold.score(ranked, judged, k=10, groups=labels if grouped else None)
+    best_of = {}
+    for label, j in zip(labels, judged):
+        best_of[label] = max(best_of.get(label, 0), j["grade"])
+    best = sorted(best_of.values(), reverse=True)[:10]
+    if not any(best):
+        assert s is None
+        return
+
+    def lines(x):
+        return {(x["file"], i) for i in range(x["start"], x["end"] + 1)}
+
+    def reached_by(c):                                                  # the passages' groups a chunk reaches
+        own = lines(c).union(*(lines(a) for a in c["also"]))
+        return {labels[i] for i, j in enumerate(judged) if own & lines(j)}
+    credited, dcg, unjudged = set(), 0.0, 0
+    for r, c in enumerate(ranked[:10], start=1):                       # the reference: line sets, plainly
+        hit = reached_by(c)
+        unjudged += not hit
+        dcg += max((best_of[g] for g in hit - credited), default=0) / math.log2(r + 1)
+        credited |= hit
+    idcg = sum(g / math.log2(r + 1) for r, g in enumerate(best, start=1))
+    answers = {labels[i] for i, j in enumerate(judged) if j["grade"] == 2}
+
+    def recall(n):
+        return len(set().union(*(reached_by(c) for c in ranked[:n])) & answers) / len(answers) if answers else None
+    assert math.isclose(s["ndcg@10"], dcg / idcg)
+    assert (s["recall@3"], s["recall@10"], s["recall@30"]) == (recall(3), recall(10), recall(30))
+    assert s["unjudged@10"] == (unjudged / len(ranked[:10]) if ranked[:10] else 0.0)
+
+
+def test_a_copy_folded_into_a_candidate_and_judged_copies_count_once():
+    """Search folds near-copies into the better-ranked candidate (`also`); judged passages that are near-copies of
+    each other are one passage (`groups`): reached through either copy, credited once, counted once in recall."""
+    judged = [{**span("README.md", 10, 12), "grade": 2}, {**span("README.template.md", 8, 10), "grade": 2},
+              {**span("b.md", 1, 3), "grade": 1}]
+    groups = [0, 0, 1]                                                    # the two READMEs hold one passage
+    ranked = [{**span("README.template.md", 8, 10), "also": [span("README.md", 10, 12)]}, span("x.md", 1, 1),
+              span("b.md", 2, 2)]
+    s = gold.score(ranked, judged, k=10, groups=groups)
+    assert math.isclose(s["ndcg@10"], (2 / math.log2(2) + 1 / math.log2(4)) / (2 / math.log2(2) + 1 / math.log2(3)))
+    assert s["recall@3"] == 1.0 and s["unjudged@10"] == 1 / 3
+    only_copy = [{**span("x.md", 1, 1), "also": [span("README.md", 11, 11)]}]
+    assert gold.score(only_copy, judged, k=10, groups=groups)["recall@3"] == 1.0          # reached through its copy
+    assert gold.score(only_copy, judged, k=10)["recall@3"] == 0.5                          # without groups: 1 of 2
+
+
+def test_judged_passages_that_are_near_copies_form_one_group(tmp_path):
+    corpus = tmp_path / "c"
+    corpus.mkdir()
+    body = "Gradient descent moves the weights against the gradient, a small step at a time. " * 3
+    (corpus / "README.md").write_text("# R\n\n" + body + "\n")
+    (corpus / "README.template.md").write_text("# R\n\n" + body + "Rendered.\n")
+    (corpus / "other.md").write_text("# O\n\nMomentum keeps an average of past steps.\n")
+    judged = [{**span("README.md", 3, 3), "grade": 2}, {**span("other.md", 3, 3), "grade": 1},
+              {**span("README.template.md", 3, 3), "grade": 1}]
+    groups = gold.copy_groups(judged, corpus)
+    assert groups[0] == groups[2] != groups[1]
+
+
+def test_evaluate_scores_each_answerable_question_and_writes_one_line_each(home, tmp_path):
+    from peresearch.zetokrag.index import Index
+    from peresearch.zetokrag.search import Searcher
+    from tests.conftest import FakeEmbedder, FakeReranker
+    corpus = tmp_path / "corpus"
+    (corpus / "notes").mkdir(parents=True)
+    (corpus / "notes" / "bpe.md").write_text("# BPE\n\nbyte pair encoding merges frequent pairs\n\n# Other\n\nphở bò\n")
+    idx = Index(tmp_path / "index", embedder=FakeEmbedder())
+    idx.update([corpus])
+    qs = [{"id": "g1", "lang": "en", "type": "factoid", "answerable": True, "question": "byte pair encoding merges",
+           "evidence": [{"file": "notes/bpe.md", "unit": "line", "start": 3, "end": 3, "grade": 2, "quote": "byte"}]},
+          {"id": "g2", "lang": "vi", "type": "unanswerable", "answerable": False, "question": "phở gà", "evidence": []}]
+    judgments = [{"id": "g2", **span("notes/bpe.md", 7, 7), "grade": 1}]   # helps, yet nothing answers g2
+    out = tmp_path / "run.jsonl"
+    means = gold.evaluate(Searcher(idx, reranker=FakeReranker()), qs, judgments, corpus.resolve(), out)
+    lines = [json.loads(x) for x in out.read_text().splitlines()]
+    assert [x["id"] for x in lines] == ["g1", "g2"] and lines[1]["metrics"] is None
+    assert lines[0]["ranked"][0] == ["notes/bpe.md", "line", 1, 3] and lines[0]["metrics"]["recall@3"] == 1.0
+    assert means["scored"] == 1 and means["ndcg@10"] == 1.0
+    assert isinstance(lines[0]["best"], float) and 0 <= lines[0]["best"] <= 1
+    # a searcher that reranks nothing (PERESEARCH_RERANK_DEPTH=0) gives no best score: null, the file strict JSON
+    gold.evaluate(Searcher(idx, reranker=FakeReranker(), depth=0), qs, judgments, corpus.resolve(), out)
+    strict = [json.loads(x, parse_constant=lambda c: pytest.fail(f"{c} in the run file")) for x in
+              out.read_text().splitlines()]
+    assert [x["best"] for x in strict] == [None, None] and strict[0]["ranked"][0][0] == "notes/bpe.md"
+    assert gold.judged_passages(qs[0], [{"id": "g1", **span("notes/bpe.md", 1, 4), "grade": 2}]) == [
+        {"id": "g1", **span("notes/bpe.md", 1, 4), "grade": 2}]                    # evidence already covered
+
+
+def test_the_gold_copy_is_indexed_although_it_lives_in_peresearchs_own_folder(home, monkeypatch):
+    """The frozen copy sits in $PERESEARCH_HOME/eval/gold/corpus, which the walk never enters for a user (2026-10-03:
+    the index command built an empty index after that rule came in)."""
+    from tests.conftest import FakeEmbedder
+    corpus = gold.gold_home() / "corpus" / "notes"
+    corpus.mkdir(parents=True)
+    (corpus / "bpe.md").write_text("# BPE\n\nbyte pair encoding\n")
+    monkeypatch.setattr(gold, "Index", lambda path: __import__("peresearch.zetokrag.index", fromlist=["Index"]).Index(
+        path, embedder=FakeEmbedder()))
+    report = gold.index_corpus(gold.gold_home(), "indexes/x")
+    assert report.added == 1 and report.chunks == 1
+    assert __import__("os").environ["PERESEARCH_HOME"] == str(home)    # put back as it was
+
+
+def test_a_paired_bootstrap_brackets_the_mean_difference_and_is_seeded():
+    same = gold.paired([0.5, 0.7, 0.2], [0.5, 0.7, 0.2])
+    assert same == {"mean": 0.0, "low": 0.0, "high": 0.0, "wins": 0, "ties": 3, "losses": 0}
+    d = gold.paired([0.6, 0.9, 0.3, 0.8], [0.5, 0.7, 0.4, 0.6])
+    assert math.isclose(d["mean"], 0.1) and d["low"] <= d["mean"] <= d["high"] and (d["wins"], d["losses"]) == (3, 1)
+    assert gold.paired([0.6, 0.9, 0.3, 0.8], [0.5, 0.7, 0.4, 0.6]) == d                # seeded: the same twice

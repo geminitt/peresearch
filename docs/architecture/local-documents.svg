@@ -1,0 +1,175 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="1370" viewBox="0 0 1500 1370">
+<defs><marker id="arrow-flow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#55554F"/></marker><marker id="arrow-back" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#8A877C"/></marker><marker id="arrow-error" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#C94343"/></marker><marker id="arrow-exit" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#C94343"/></marker></defs>
+<rect width="1500" height="1370" fill="#FCFCFA"/>
+<text x="28.0" y="42.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#1F1F1F" text-anchor="start">Local documents: which files are read, and how</text>
+<text x="28.0" y="68.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" fill="#5A5A55" text-anchor="start">files.py decides which files; zetokrag/parse.py turns one into text; the index, the tools and the extracted-text store share both. working tree on 5ca550a, 2026-10-12.</text>
+<rect x="20" y="92" width="480" height="930" rx="16" fill="none" stroke="#B5B3AA" stroke-width="1.4" stroke-dasharray="9 6"/>
+<text x="36.0" y="116.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14" font-weight="700" fill="#6B6963" text-anchor="start">files.py: which files</text>
+<rect x="520" y="92" width="500" height="930" rx="16" fill="none" stroke="#B5B3AA" stroke-width="1.4" stroke-dasharray="9 6"/>
+<text x="536.0" y="116.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14" font-weight="700" fill="#6B6963" text-anchor="start">zetokrag/parse.py: the document converter</text>
+<rect x="1040" y="92" width="440" height="930" rx="16" fill="none" stroke="#B5B3AA" stroke-width="1.4" stroke-dasharray="9 6"/>
+<text x="1056.0" y="116.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14" font-weight="700" fill="#6B6963" text-anchor="start">Who reads the result</text>
+<rect x="40" y="130" width="440" height="78" rx="10" fill="#F0EFEA" stroke="#8A877C" stroke-width="1.4"/>
+<text x="52.0" y="153.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#3D3B35" text-anchor="start">Declared folders</text>
+<text x="52.0" y="171.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#8A877C" text-anchor="start">guard.roots() · config.json</text>
+<text x="52.0" y="194.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">the outermost only: a nested folder walked once</text>
+<rect x="40" y="248" width="440" height="200" rx="10" fill="#E3F4EC" stroke="#2E9467" stroke-width="1.4"/>
+<text x="52.0" y="271.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#155A3B" text-anchor="start">Each folder, in this order</text>
+<text x="52.0" y="289.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#2E9467" text-anchor="start">files.walk</text>
+<text x="52.0" y="312.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">1 protected (guard.DENY): counted, never named</text>
+<text x="52.0" y="329.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">2 a symlinked folder: not followed</text>
+<text x="52.0" y="346.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">3 peresearch&#x27;s own data ($PERESEARCH_HOME)</text>
+<text x="52.0" y="363.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">4 the user&#x27;s patterns: config.json exclude/include,</text>
+<text x="52.0" y="380.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">   .peresearchignore (the last match wins)</text>
+<text x="52.0" y="397.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">5 made by a tool: pyvenv.cfg, conda-meta/,</text>
+<text x="52.0" y="414.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">   CACHEDIR.TAG, .git, node_modules, *.dist-info…</text>
+<text x="52.0" y="431.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">6 a hidden name: left out unless included</text>
+<rect x="40" y="488" width="440" height="96" rx="10" fill="#FFF6D6" stroke="#B8960B" stroke-width="1.4"/>
+<text x="52.0" y="511.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#5E4B00" text-anchor="start">More than 500 files side by side?</text>
+<text x="52.0" y="534.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">yes → its files left out (likely a dataset),</text>
+<text x="52.0" y="551.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">unless the folder is declared or included</text>
+<rect x="40" y="624" width="440" height="130" rx="10" fill="#E3F4EC" stroke="#2E9467" stroke-width="1.4"/>
+<text x="52.0" y="647.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#155A3B" text-anchor="start">Each file</text>
+<text x="52.0" y="665.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#2E9467" text-anchor="start">files.walk</text>
+<text x="52.0" y="688.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">protected, or a link leading outside: counted</text>
+<text x="52.0" y="705.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">then the user&#x27;s patterns, a hidden name,</text>
+<text x="52.0" y="722.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">an Office owner file (~$…) → tool_made</text>
+<text x="52.0" y="739.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">a type parse does not read → &#x27;unsupported&#x27;</text>
+<rect x="40" y="776" width="440" height="130" rx="10" fill="#F0EFEA" stroke="#8A877C" stroke-width="1.4"/>
+<text x="52.0" y="799.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#3D3B35" text-anchor="start">Left out, with the reason</text>
+<text x="52.0" y="817.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#8A877C" text-anchor="start">index table `skipped`</text>
+<text x="52.0" y="840.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">tool_made · hidden · user_excluded · unreadable</text>
+<text x="52.0" y="857.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">large_folder · symlinked_folder · unsupported</text>
+<text x="52.0" y="874.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">a folder once, not each file in it</text>
+<text x="52.0" y="891.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">Index.why_not(path) answers from it</text>
+<rect x="540" y="130" width="460" height="112" rx="10" fill="#FFF6D6" stroke="#B8960B" stroke-width="1.4"/>
+<text x="552.0" y="153.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#5E4B00" text-anchor="start">parse.kind(extension)</text>
+<text x="552.0" y="176.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">.md .txt .rst .tex .bib and code → lines</text>
+<text x="552.0" y="193.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">.pdf .pptx → pages · .ipynb → cells</text>
+<text x="552.0" y="210.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">.docx .xlsx .html → Markdown lines · else unsupported</text>
+<rect x="540" y="266" width="460" height="180" rx="10" fill="#E3F4EC" stroke="#2E9467" stroke-width="1.4"/>
+<text x="552.0" y="289.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#155A3B" text-anchor="start">A text file</text>
+<text x="552.0" y="307.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#2E9467" text-anchor="start">parse.decode</text>
+<text x="552.0" y="330.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">over 20 MiB → too_large · a NUL byte → binary</text>
+<text x="552.0" y="347.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">a byte order mark → UTF-8, 16 or 32</text>
+<text x="552.0" y="364.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">valid UTF-8 → as it is</text>
+<text x="552.0" y="381.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">else the likeliest legacy encoding (charset-</text>
+<text x="552.0" y="398.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">normalizer), kept if its language is recognized</text>
+<text x="552.0" y="415.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">or ≥ 64 bytes without rare characters; NFC</text>
+<text x="552.0" y="432.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">else UTF-8 with replacement; the note says which</text>
+<rect x="540" y="486" width="460" height="164" rx="10" fill="#E3F4EC" stroke="#2E9467" stroke-width="1.4"/>
+<text x="552.0" y="509.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#155A3B" text-anchor="start">A PDF</text>
+<text x="552.0" y="527.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#2E9467" text-anchor="start">parse._pdf (PyMuPDF)</text>
+<text x="552.0" y="550.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">no text on any page → needs_ocr (no OCR yet)</text>
+<text x="552.0" y="567.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">PyMuPDF&#x27;s own order: columns read one by one</text>
+<text x="552.0" y="584.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">lines in the top or bottom 7.5% found on half</text>
+<text x="552.0" y="601.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">the pages, digits aside → dropped (heads, numbers)</text>
+<text x="552.0" y="618.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">a glyph without a character → U+FFFD</text>
+<text x="552.0" y="635.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">limit: 20 M characters of text, not bytes</text>
+<rect x="540" y="690" width="460" height="96" rx="10" fill="#E3F4EC" stroke="#2E9467" stroke-width="1.4"/>
+<text x="552.0" y="713.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#155A3B" text-anchor="start">A notebook</text>
+<text x="552.0" y="731.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#2E9467" text-anchor="start">parse._notebook</text>
+<text x="552.0" y="754.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">markdown and code cells, numbered</text>
+<text x="552.0" y="771.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">a code cell&#x27;s text outputs, ≤ 2,000 characters</text>
+<rect x="540" y="826" width="460" height="112" rx="10" fill="#EDEDED" stroke="#6B6B6B" stroke-width="1.4"/>
+<text x="552.0" y="849.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#2B2B2B" text-anchor="start">Doc(status, blocks, note)</text>
+<text x="552.0" y="872.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">a block: text, unit (line, page, cell), start</text>
+<text x="552.0" y="889.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">lines end at \n only (parse.lines), as editors,</text>
+<text x="552.0" y="906.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">git and ripgrep number them</text>
+<rect x="1060" y="130" width="400" height="78" rx="10" fill="#E3F4EC" stroke="#2E9467" stroke-width="1.4"/>
+<text x="1072.0" y="153.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#155A3B" text-anchor="start">Index.update</text>
+<text x="1072.0" y="171.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#2E9467" text-anchor="start">zetokrag/index.py</text>
+<text x="1072.0" y="194.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">chunks and vectors: zetokrag-index.svg</text>
+<rect x="1060" y="248" width="400" height="164" rx="10" fill="#F0EFEA" stroke="#8A877C" stroke-width="1.4"/>
+<text x="1072.0" y="271.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#3D3B35" text-anchor="start">Extracted-text store</text>
+<text x="1072.0" y="289.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#8A877C" text-anchor="start">text/&lt;sha&gt;.txt + table texts</text>
+<text x="1072.0" y="312.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">PDFs, notebooks, text not in UTF-8, as UTF-8</text>
+<text x="1072.0" y="329.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">one file per content, copies share it; 0600</text>
+<text x="1072.0" y="346.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">each block from a new line; units map a line</text>
+<text x="1072.0" y="363.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">back to its page, cell or line (locate)</text>
+<text x="1072.0" y="380.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">every update: missing written, the rest removed</text>
+<rect x="1060" y="452" width="400" height="112" rx="10" fill="#F1ECFB" stroke="#7A55C9" stroke-width="1.4"/>
+<text x="1072.0" y="475.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#45288A" text-anchor="start">Tools: read, grep, glob, tree</text>
+<text x="1072.0" y="493.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#7A55C9" text-anchor="start">tools.py</text>
+<text x="1072.0" y="516.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">read: parse.read, same text and lines</text>
+<text x="1072.0" y="533.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">grep: ripgrep over the files and the store,</text>
+<text x="1072.0" y="550.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">the converter for what the index has not seen</text>
+<rect x="1060" y="604" width="400" height="96" rx="10" fill="#E3F4EC" stroke="#2E9467" stroke-width="1.4"/>
+<text x="1072.0" y="627.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#155A3B" text-anchor="start">Search&#x27;s freshness check</text>
+<text x="1072.0" y="645.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#2E9467" text-anchor="start">Searcher.find</text>
+<text x="1072.0" y="668.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">a file changed since indexing is decoded</text>
+<text x="1072.0" y="685.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">as the index decoded it</text>
+<rect x="1060" y="740" width="400" height="96" rx="10" fill="#DDF2E3" stroke="#2E9467" stroke-width="1.4"/>
+<text x="1072.0" y="763.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#155A3B" text-anchor="start">Checked on a clean machine</text>
+<text x="1072.0" y="786.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">Docker, CPU only, not root, POSIX locale</text>
+<text x="1072.0" y="803.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">(level B, Linux only)</text>
+<path d="M 260.0 208.0 L 260.0 248.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<path d="M 260.0 448.0 L 260.0 488.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<path d="M 260.0 584.0 L 260.0 624.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<path d="M 260.0 754.0 L 260.0 776.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<path d="M 480.0 536.0 L 490.0 536.0 L 490.0 816.0 L 480.0 815.0" fill="none" stroke="#8A877C" stroke-width="1.5" stroke-dasharray="6 4" marker-end="url(#arrow-back)"/>
+<path d="M 480.0 663.0 L 510.0 658.0 L 510.0 178.0 L 540.0 186.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<path d="M 632.0 242.0 L 632.0 266.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<path d="M 632.0 446.0 L 632.0 486.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<path d="M 632.0 650.0 L 632.0 690.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<path d="M 632.0 786.0 L 632.0 826.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<path d="M 1000.0 848.4 L 1030.0 848.0 L 1030.0 169.0 L 1060.0 169.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<path d="M 1030.0 330.0 L 1060.0 330.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<path d="M 1030.0 508.0 L 1060.0 508.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<path d="M 1030.0 652.0 L 1060.0 652.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<text x="552.0" y="976.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#5A5A55" text-anchor="start">The extension picks one of the three; each ends in a Doc.</text>
+<text x="40.0" y="1065.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" font-weight="700" fill="#3D3B35" text-anchor="start">Legend</text>
+<rect x="40" y="1077" width="22" height="14" rx="3" fill="#F1ECFB" stroke="#7A55C9"/>
+<text x="70.0" y="1088.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">agent and tools</text>
+<rect x="40" y="1098" width="22" height="14" rx="3" fill="#E3F4EC" stroke="#2E9467"/>
+<text x="70.0" y="1109.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">ZetokRAG</text>
+<rect x="40" y="1119" width="22" height="14" rx="3" fill="#F0EFEA" stroke="#8A877C"/>
+<text x="70.0" y="1130.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">files on disk</text>
+<rect x="40" y="1140" width="22" height="14" rx="3" fill="#FFF6D6" stroke="#B8960B"/>
+<text x="70.0" y="1151.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">decision</text>
+<path d="M 270 1084 L 292 1084" stroke="#55554F" stroke-width="1.8" marker-end="url(#arrow-flow)"/>
+<text x="300.0" y="1088.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">call or data</text>
+<path d="M 270 1105 L 292 1105" stroke="#8A877C" stroke-width="1.8" stroke-dasharray="6 4" marker-end="url(#arrow-back)"/>
+<text x="300.0" y="1109.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">returns, next round</text>
+<path d="M 270 1126 L 292 1126" stroke="#C94343" stroke-width="1.8" stroke-dasharray="6 4" marker-end="url(#arrow-error)"/>
+<text x="300.0" y="1130.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">error path</text>
+<path d="M 270 1147 L 292 1147" stroke="#C94343" stroke-width="1.8" marker-end="url(#arrow-exit)"/>
+<text x="300.0" y="1151.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">leaves the machine</text>
+<text x="540.0" y="1065.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" font-weight="700" fill="#7D1F1F" text-anchor="start">Open items (numbers on the boxes)</text>
+<text x="540.0" y="1082.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#7D1F1F" text-anchor="start">working tree on 5ca550a, 2026-10-12; their state is kept in STATUS.md</text>
+<circle cx="549" cy="1106" r="9" fill="#C94343"/>
+<text x="549.0" y="1110.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="700" fill="#FFFFFF" text-anchor="middle">8</text>
+<text x="566.0" y="1110.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">grep walks the folders on every call (files.walk: 1.1–1.4 s of 2.2 s for 13,402 files on the owner&#x27;s machine); speed on a large corpus and on macOS or</text>
+<text x="566.0" y="1127.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">Windows not measured</text>
+<circle cx="549" cy="1143" r="9" fill="#C94343"/>
+<text x="549.0" y="1147.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="700" fill="#FFFFFF" text-anchor="middle">12</text>
+<text x="566.0" y="1147.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">encoding guess: a text under 64 bytes whose language is not recognized is read with replacement characters (said in the note); cp1252 and cp1250</text>
+<text x="566.0" y="1164.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">are confused (measured)</text>
+<circle cx="549" cy="1180" r="9" fill="#C94343"/>
+<text x="549.0" y="1184.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="700" fill="#FFFFFF" text-anchor="middle">13</text>
+<text x="566.0" y="1184.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">PDF reading order measured on 10 LaTeX arXiv papers only (prose of 69 two-column pages right); Word, scanned and vertical CJK layouts not</text>
+<text x="566.0" y="1201.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">measured; no OCR in the first version (needs_ocr is reported)</text>
+<circle cx="549" cy="1217" r="9" fill="#C94343"/>
+<text x="549.0" y="1221.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="700" fill="#FFFFFF" text-anchor="middle">14</text>
+<text x="566.0" y="1221.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">Word, PowerPoint, Excel and HTML have text readers; complex visual layouts remain unverified; .csv, .json, .log are read and grepped by the tools but</text>
+<text x="566.0" y="1238.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">not ranked</text>
+<circle cx="549" cy="1254" r="9" fill="#C94343"/>
+<text x="549.0" y="1258.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="700" fill="#FFFFFF" text-anchor="middle">16</text>
+<text x="566.0" y="1258.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">level B checked on Linux only (clean Docker image, CPU, not root, POSIX locale); macOS, Windows (junctions, cloud-synced placeholders) not checked</text>
+<circle cx="466" cy="638" r="10" fill="#C94343"/>
+<text x="466.0" y="642.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="700" fill="#FFFFFF" text-anchor="middle">14</text>
+<circle cx="986" cy="280" r="10" fill="#C94343"/>
+<text x="986.0" y="284.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="700" fill="#FFFFFF" text-anchor="middle">12</text>
+<circle cx="986" cy="500" r="10" fill="#C94343"/>
+<text x="986.0" y="504.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="700" fill="#FFFFFF" text-anchor="middle">13</text>
+<circle cx="1446" cy="466" r="10" fill="#C94343"/>
+<text x="1446.0" y="470.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="700" fill="#FFFFFF" text-anchor="middle">8</text>
+<circle cx="1446" cy="754" r="10" fill="#C94343"/>
+<text x="1446.0" y="758.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="700" fill="#FFFFFF" text-anchor="middle">16</text>
+<rect x="264.8" y="586.0" width="22.3" height="17" rx="4" fill="#FCFCFA" fill-opacity="0.92"/>
+<text x="276.0" y="598.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" fill="#3D3B35" text-anchor="middle">no</text>
+<rect x="269.3" y="747.0" width="49.3" height="17" rx="4" fill="#FCFCFA" fill-opacity="0.92"/>
+<text x="294.0" y="759.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" fill="#3D3B35" text-anchor="middle">left out</text>
+<rect x="462.1" y="658.0" width="27.9" height="17" rx="4" fill="#FCFCFA" fill-opacity="0.92"/>
+<text x="476.0" y="670.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" fill="#3D3B35" text-anchor="middle">yes</text>
+</svg>

@@ -1,0 +1,135 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="1400" viewBox="0 0 1500 1400">
+<defs><marker id="arrow-flow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#55554F"/></marker><marker id="arrow-back" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#8A877C"/></marker><marker id="arrow-error" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#C94343"/></marker><marker id="arrow-exit" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#C94343"/></marker></defs>
+<rect width="1500" height="1400" fill="#FCFCFA"/>
+<text x="28.0" y="42.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#1F1F1F" text-anchor="start">Tools: grep, glob, tree, search_notes and overview</text>
+<text x="28.0" y="68.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" fill="#5A5A55" text-anchor="start">tools.py: what the model calls to look through the user&#x27;s files. Every result is text with source ids. working tree on 5ca550a, 2026-10-12.</text>
+<rect x="470" y="100" width="460" height="78" rx="10" fill="#F1ECFB" stroke="#7A55C9" stroke-width="1.4"/>
+<text x="482.0" y="123.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#45288A" text-anchor="start">grep(pattern, glob)</text>
+<text x="482.0" y="141.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#7A55C9" text-anchor="start">tools.py: Toolbox.grep</text>
+<text x="482.0" y="164.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">the pattern checked with Python&#x27;s re first</text>
+<rect x="470" y="218" width="460" height="96" rx="10" fill="#FCE8E8" stroke="#C94343" stroke-width="1.4"/>
+<text x="482.0" y="241.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#7D1F1F" text-anchor="start">Where to look</text>
+<text x="482.0" y="259.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#C94343" text-anchor="start">Toolbox._scope</text>
+<text x="482.0" y="282.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">declared folders, and folders allowed this session,</text>
+<text x="482.0" y="299.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">or the folder a ~ or absolute pattern names</text>
+<rect x="470" y="354" width="460" height="130" rx="10" fill="#E3F4EC" stroke="#2E9467" stroke-width="1.4"/>
+<text x="482.0" y="377.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#155A3B" text-anchor="start">Walk</text>
+<text x="482.0" y="395.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#2E9467" text-anchor="start">tools._walk → files.walk</text>
+<text x="482.0" y="418.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">the index&#x27;s rules (local-documents.svg)</text>
+<text x="482.0" y="435.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">a folder named in the pattern is searched,</text>
+<text x="482.0" y="452.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">unless the user excluded it; a file once</text>
+<text x="482.0" y="469.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">left out → counted by reason</text>
+<rect x="470" y="524" width="460" height="164" rx="10" fill="#FFF6D6" stroke="#B8960B" stroke-width="1.4"/>
+<text x="482.0" y="547.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#5E4B00" text-anchor="start">Each file: how to read it?</text>
+<text x="482.0" y="565.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#B8960B" text-anchor="start">Toolbox._matches</text>
+<text x="482.0" y="588.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">a type parse does not read → skipped</text>
+<text x="482.0" y="605.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">text over 20 MiB → counted, not searched</text>
+<text x="482.0" y="622.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">current hash matches converted text → store</text>
+<text x="482.0" y="639.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">PDF, notebook → the converter</text>
+<text x="482.0" y="656.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">else valid UTF-8 → ripgrep, other text → converter</text>
+<rect x="40" y="740" width="400" height="130" rx="10" fill="#E3F4EC" stroke="#2E9467" stroke-width="1.4"/>
+<text x="52.0" y="763.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#155A3B" text-anchor="start">ripgrep</text>
+<text x="52.0" y="781.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#2E9467" text-anchor="start">tools._rg</text>
+<text x="52.0" y="804.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">--json --ignore-case --crlf --engine auto</text>
+<text x="52.0" y="821.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">400 paths a call, every matching line</text>
+<text x="52.0" y="838.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">a NUL byte → the file dropped (binary)</text>
+<rect x="470" y="740" width="460" height="130" rx="10" fill="#F0EFEA" stroke="#8A877C" stroke-width="1.4"/>
+<text x="482.0" y="763.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#3D3B35" text-anchor="start">Extracted-text store</text>
+<text x="482.0" y="781.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#8A877C" text-anchor="start">text/&lt;sha&gt;.txt (by ripgrep)</text>
+<text x="482.0" y="804.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">a store line → its page, cell or line</text>
+<text x="482.0" y="821.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">(extracted.locate); copies share the text</text>
+<text x="482.0" y="838.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">written by the index update</text>
+<rect x="960" y="740" width="500" height="130" rx="10" fill="#E3F4EC" stroke="#2E9467" stroke-width="1.4"/>
+<text x="972.0" y="763.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#155A3B" text-anchor="start">Converter</text>
+<text x="972.0" y="781.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#2E9467" text-anchor="start">parse.read + Python re</text>
+<text x="972.0" y="804.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">what the index has not seen as it is;</text>
+<text x="972.0" y="821.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">everything when ripgrep is missing or refuses a</text>
+<text x="972.0" y="838.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">pattern Python takes</text>
+<rect x="470" y="920" width="460" height="96" rx="10" fill="#F1ECFB" stroke="#7A55C9" stroke-width="1.4"/>
+<text x="482.0" y="943.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#45288A" text-anchor="start">In turns</text>
+<text x="482.0" y="966.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">every match, whole: each file&#x27;s first in walk order,</text>
+<text x="482.0" y="983.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">then each file&#x27;s second…; redacted</text>
+<rect x="470" y="1056" width="460" height="148" rx="10" fill="#EDEDED" stroke="#6B6B6B" stroke-width="1.4"/>
+<text x="482.0" y="1079.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#2B2B2B" text-anchor="start">Notes for the model</text>
+<text x="482.0" y="1102.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">the whole result: the agent shows what fits</text>
+<text x="482.0" y="1119.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">files over 20 MiB not searched</text>
+<text x="482.0" y="1136.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">files the user may not read: counted</text>
+<text x="482.0" y="1153.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">stopped after 60 s</text>
+<text x="482.0" y="1170.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">not searched: counts by reason</text>
+<path d="M 700.0 178.0 L 700.0 218.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<path d="M 700.0 314.0 L 700.0 354.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<path d="M 700.0 484.0 L 700.0 524.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<path d="M 516.0 688.0 L 516.0 714.0 L 240.0 714.0 L 240.0 740.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<path d="M 700.0 688.0 L 700.0 740.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<path d="M 884.0 688.0 L 884.0 714.0 L 1210.0 714.0 L 1210.0 740.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<path d="M 240.0 870.0 L 240.0 895.0 L 516.0 895.0 L 516.0 920.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<path d="M 700.0 870.0 L 700.0 920.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<path d="M 1210.0 870.0 L 1210.0 895.0 L 884.0 895.0 L 884.0 920.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<path d="M 700.0 1016.0 L 700.0 1056.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<rect x="40" y="100" width="400" height="166" rx="10" fill="#F1ECFB" stroke="#7A55C9" stroke-width="1.4"/>
+<text x="52.0" y="123.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#45288A" text-anchor="start">search_notes(query)</text>
+<text x="52.0" y="141.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#7A55C9" text-anchor="start">Toolbox.search_notes</text>
+<text x="52.0" y="164.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">Searcher.find: zetokrag-search.svg</text>
+<text x="52.0" y="181.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">every candidate, best first: (before) the hit</text>
+<text x="52.0" y="198.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">(after), each whole</text>
+<text x="52.0" y="215.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">not enough → what the index does not hold,</text>
+<text x="52.0" y="232.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">counted by reason (Index.coverage)</text>
+<rect x="40" y="306" width="400" height="112" rx="10" fill="#F1ECFB" stroke="#7A55C9" stroke-width="1.4"/>
+<text x="52.0" y="329.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#45288A" text-anchor="start">tree(path, depth)</text>
+<text x="52.0" y="347.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#7A55C9" text-anchor="start">Toolbox.tree</text>
+<text x="52.0" y="370.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">every entry; ≤ 4 levels (bounds the walk&#x27;s time)</text>
+<text x="52.0" y="387.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">a folder grep would skip: named with its reason</text>
+<text x="52.0" y="404.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">(files.check), not opened; hidden, protected: not shown</text>
+<rect x="40" y="458" width="400" height="96" rx="10" fill="#F1ECFB" stroke="#7A55C9" stroke-width="1.4"/>
+<text x="52.0" y="481.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#45288A" text-anchor="start">glob(pattern)</text>
+<text x="52.0" y="499.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#7A55C9" text-anchor="start">Toolbox.glob</text>
+<text x="52.0" y="522.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">the same walk; every file listed;</text>
+<text x="52.0" y="539.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">what was not listed, counted by reason</text>
+<rect x="40" y="590" width="400" height="112" rx="10" fill="#F1ECFB" stroke="#7A55C9" stroke-width="1.4"/>
+<text x="52.0" y="613.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#45288A" text-anchor="start">overview(query, folder)</text>
+<text x="52.0" y="631.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#7A55C9" text-anchor="start">Toolbox.overview</text>
+<text x="52.0" y="654.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">Searcher.documents: every file once, by its best</text>
+<text x="52.0" y="671.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">passage (whole, one line); headings, first line;</text>
+<text x="52.0" y="688.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">no query: the folder&#x27;s catalog by path</text>
+<rect x="960" y="100" width="500" height="130" rx="10" fill="#DDF2E3" stroke="#2E9467" stroke-width="1.4"/>
+<text x="972.0" y="123.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#155A3B" text-anchor="start">Measured on the owner&#x27;s folders</text>
+<text x="972.0" y="146.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">13,402 files: ripgrep 2.2 s, converter only 6.1 s,</text>
+<text x="972.0" y="163.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">the same output (old Python grep: 43.8 s);</text>
+<text x="972.0" y="180.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">walking takes 1.1–1.4 s of it</text>
+<rect x="960" y="270" width="500" height="96" rx="10" fill="#DDF2E3" stroke="#2E9467" stroke-width="1.4"/>
+<text x="972.0" y="293.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#155A3B" text-anchor="start">Checked on a clean machine</text>
+<text x="972.0" y="316.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">Docker: rg from pixi, none on the system;</text>
+<text x="972.0" y="333.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">every test passed (Linux only)</text>
+<text x="40.0" y="1250.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" font-weight="700" fill="#3D3B35" text-anchor="start">Legend</text>
+<rect x="40" y="1262" width="22" height="14" rx="3" fill="#F1ECFB" stroke="#7A55C9"/>
+<text x="70.0" y="1273.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">agent and tools</text>
+<rect x="40" y="1283" width="22" height="14" rx="3" fill="#E3F4EC" stroke="#2E9467"/>
+<text x="70.0" y="1294.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">ZetokRAG</text>
+<rect x="40" y="1304" width="22" height="14" rx="3" fill="#FCE8E8" stroke="#C94343"/>
+<text x="70.0" y="1315.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">guard: access, redaction, checks</text>
+<rect x="40" y="1325" width="22" height="14" rx="3" fill="#F0EFEA" stroke="#8A877C"/>
+<text x="70.0" y="1336.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">files on disk</text>
+<rect x="40" y="1346" width="22" height="14" rx="3" fill="#FFF6D6" stroke="#B8960B"/>
+<text x="70.0" y="1357.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">decision</text>
+<path d="M 270 1269 L 292 1269" stroke="#55554F" stroke-width="1.8" marker-end="url(#arrow-flow)"/>
+<text x="300.0" y="1273.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">call or data</text>
+<path d="M 270 1290 L 292 1290" stroke="#8A877C" stroke-width="1.8" stroke-dasharray="6 4" marker-end="url(#arrow-back)"/>
+<text x="300.0" y="1294.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">returns, next round</text>
+<path d="M 270 1311 L 292 1311" stroke="#C94343" stroke-width="1.8" stroke-dasharray="6 4" marker-end="url(#arrow-error)"/>
+<text x="300.0" y="1315.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">error path</text>
+<path d="M 270 1332 L 292 1332" stroke="#C94343" stroke-width="1.8" marker-end="url(#arrow-exit)"/>
+<text x="300.0" y="1336.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">leaves the machine</text>
+<text x="540.0" y="1250.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" font-weight="700" fill="#7D1F1F" text-anchor="start">Open items (numbers on the boxes)</text>
+<text x="540.0" y="1267.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#7D1F1F" text-anchor="start">working tree on 5ca550a, 2026-10-12; their state is kept in STATUS.md</text>
+<circle cx="549" cy="1291" r="9" fill="#C94343"/>
+<text x="549.0" y="1295.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="700" fill="#FFFFFF" text-anchor="middle">8</text>
+<text x="566.0" y="1295.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">grep walks the folders on every call (files.walk: 1.1–1.4 s of 2.2 s for 13,402 files on the owner&#x27;s machine); speed on a large corpus and on macOS</text>
+<text x="566.0" y="1312.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">or Windows not measured</text>
+<circle cx="549" cy="1328" r="9" fill="#C94343"/>
+<text x="549.0" y="1332.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="700" fill="#FFFFFF" text-anchor="middle">17</text>
+<text x="566.0" y="1332.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">pixi.toml lists linux-64 only: peresearch, and the ripgrep it ships, do not install on macOS or Windows yet</text>
+<circle cx="1446" cy="114" r="10" fill="#C94343"/>
+<text x="1446.0" y="118.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="700" fill="#FFFFFF" text-anchor="middle">8</text>
+<circle cx="1446" cy="284" r="10" fill="#C94343"/>
+<text x="1446.0" y="288.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="700" fill="#FFFFFF" text-anchor="middle">17</text>
+</svg>

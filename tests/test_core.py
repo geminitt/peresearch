@@ -153,6 +153,7 @@ pairs = st.integers(1, 25).flatmap(lambda k: st.tuples(
 @given(pairs, st.sampled_from([0.0, 0.3, 0.5, 1.0]), st.integers(1, 30))
 @example(([0.0] * 5, [0.1, 0.2, 0.3, 0.4, 0.5]), 0.5, 3)   # all-zero BM25 got rho for every text (results/multilingual.md)
 @example(([0.0], [-np.inf]), 0.0, 1)                        # every dense score excluded: fusion used to raise
+@example(([0.5, 0.2, 0.0], [0.1, 0.9, 0.3]), 0.5, 3)        # a weak BM25 match (best 0.5) still counts
 def test_minmax_fusion_matches_its_definition(pair, rho, n):
     lex, den = (np.array(x, dtype=np.float32) for x in pair)
     ids, fused = core.fuse_minmax(lex, den, rho, n)

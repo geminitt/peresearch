@@ -3,23 +3,26 @@
 - The conversation scrolls above; each question is shown as `❯ question`, each tool the agent calls as
   `● tool(args)` with a `⎿ result` line under it, then the cited answer, its sources and the citation check.
 - A status line while the agent works: a spinner, what it is doing, elapsed seconds and tokens so far.
-- The prompt at the bottom: Enter asks, ↑/↓ recall earlier questions, `/` opens the command menu (↑/↓ to pick,
-  Tab or Enter to take it, Esc to close), Esc during a question interrupts it at the next step. PageUp/PageDown
+- The input box at the bottom, `❯` in it and the setup in use on its bottom border: Enter asks, ↑/↓ recall earlier
+  questions, `/` opens the command menu under the box (↑/↓ to pick, Tab or Enter to take it, Esc to close), Esc
+  during a question interrupts it at the next step. PageUp/PageDown
   scroll the conversation; the conversation never takes the focus, so typing always reaches the prompt, also
   after a click on it. No line of key hints (the owner's choice): /keys lists the keys.
 - Nothing needs a minimum width (as in Claude Code): text, menu descriptions and code lines wrap to the terminal.
-- Folders are managed here too: /add <folder> (Tab completes the path), /remove, /folders, /index. On start, the
-  index is brought up to date with the declared folders (only new or changed files are read).
+- Controls open in windows (windows.py): folders, models and APIs, settings, status, conversations, checks. On
+  start, the index is brought up to date with the declared folders (only new or changed files are read).
 - Before the agent reads anything outside the declared folders, a dialog asks: yes this once, yes for that folder
   for the rest of the session, or no (Esc).
 Colors are the terminal's own, so its color scheme (light or dark) decides how everything looks: the default
 foreground and background and the six plain hues, never RGB, 256 colors, black, white or the bright colors (black
 or white is the background in some scheme, the bright ones are grays in Solarized). Muted text is dimmed; the
-cursor, selections and the chosen menu row are the default colors reversed; nothing is drawn on a colored background.
+accent is blue (`❯`, the chosen row of a list, the focused field); the cursor and selections are the default colors
+reversed; nothing is drawn on a colored background.
 The agent runs in a worker thread. Everything that came from a file, a page or the model is stripped of terminal
 control sequences before it is shown.
 """
 
+import asyncio
 import os
 import platform
 import re
@@ -31,52 +34,61 @@ import time
 from pathlib import Path
 from types import SimpleNamespace
 
-from textual import events, work
+from textual import events
 from textual.app import App, ComposeResult
 from textual.binding import Binding
-from rich.style import Style as RichStyle
 from pygments.token import Token
 from rich.cells import cell_len
 from rich.markup import escape
+from rich.padding import Padding
 from rich.table import Table
 from rich.text import Text
-from textual.containers import Vertical, VerticalScroll
+from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.highlight import ANSIDarkHighlightTheme, highlight
 from textual.screen import ModalScreen
-from textual.strip import Strip
 from textual.theme import Theme
 from textual.message import Message
-from textual.widgets import Markdown, OptionList, Static, TextArea
+from textual.css.query import NoMatches
+from textual.widgets import Input, Markdown, OptionList, Static, TextArea
 from textual.widgets._markdown import MarkdownFence
 from textual.widgets.option_list import Option
 from textual.widgets.text_area import Selection
 
-from peresearch import guard
-from peresearch.agent import _CITE, conversations, history_file, read_turns
+from peresearch import connections, guard, mascot, settings
+from peresearch.agent import (Answer, Check, USAGE, _CITE, check, clean_name, conversations, find_conversation, history_file, read_turns,
+                              usage)
 from peresearch.tools import Source
-from peresearch.workspace import complete, summary
+from peresearch.widgets import GUTTER, Field, SelectList, hints, home_path, row
+from peresearch.workspace import brief, complete, quiet
+from peresearch.zetokrag import parse
+from peresearch.zetokrag.index import Stopped
+
+QUIT_GRACE = 2.0          # seconds quitting waits for background work to stop before leaving it
 
 COMMANDS = {
     "/help": "the commands",
-    "/keys": "the keys",
-    "/add": "<folder> let peresearch read a folder (Tab completes the path), then index it",
-    "/remove": "<folder> stop reading a folder",
-    "/folders": "the folders peresearch may read",
-    "/index": "bring the index up to date with the folders",
-    "/new": "start a fresh conversation (earlier questions no longer sent as context)",
-    "/resume": "pick an earlier conversation of this project and continue it",
+    "/folders": "manage folders",
+    "/model": "choose model for chat, embedding and reranker with reasoning effort to use",
+    "/settings": "research limits and search services",
+    "/status": "inspect setup, index, context and usage",
+    "/sessions": "manage conversations",
+    "/local": "local only: turn the web off for this session (again: back on)",
+    "/check": "check configured connections after confirmation (remote services may charge)",
+    "/new": "start a fresh conversation",
     "/retry": "ask the last question again",
-    "/sources": "every source of the last answer, in full",
+    "/sources": "preview sources of the last answer",
     "/exit": "quit",
 }
 KEYS = {
     "Enter": "ask", "Ctrl+Enter": "new line", "↑ ↓": "earlier questions (in the menu: pick)",
     "/": "the command menu (Tab or Enter takes the chosen command, Esc closes it)",
+    "@": "name a file or folder for the question (Tab completes it from your folders)",
     "PgUp PgDn": "scroll the conversation", "Esc": "interrupt the question",
     "Ctrl+R": "show or hide the model's reasoning", "Ctrl+C": "copy the text selected with the mouse",
     "Ctrl+Q": "quit",
 }
-SPINNER = "∗✢✻✢"
+SPINNER = "⣾⣽⣻⢿⡿⣟⣯⣷"
+TICK = 0.1                  # seconds between two redraws of the status line and the mascot
 MARK = "\u2060"          # WORD JOINER, zero width: ends a real paste marker; no key types it
 # The terminal's palette only. Everything that would need a shade of the background (panels, cursors, selections)
 # is the default colors, reversed or dimmed, so the same theme reads on a light and on a dark scheme.
@@ -106,11 +118,11 @@ TERMINAL = Theme(
 
 
 WHY = {
-    "APIConnectionError": "The model server does not answer. If it is the local one, start it with `pixi run "
-                          "chat-local`; a Modal endpoint may still be waking up.",
+    "APIConnectionError": "The model server does not answer: check that it runs and that `PERESEARCH_LLM_URL` "
+                          "points to it (`/check` tests it); a server that is starting may need minutes.",
     "APITimeoutError": "The model server took too long to answer.",
-    "AuthenticationError": "The model server refused the key (`PERESEARCH_LLM_KEY`, set with `peresearch setup`).",
-    "PermissionDeniedError": "The model server refused the key (`PERESEARCH_LLM_KEY`, set with `peresearch setup`).",
+    "AuthenticationError": "The model server refused the key (`PERESEARCH_LLM_KEY`, set with `/model`).",
+    "PermissionDeniedError": "The model server refused the key (`PERESEARCH_LLM_KEY`, set with `/model`).",
     "NotFoundError": "The model server has no such path or model: check `PERESEARCH_LLM_URL` (ending in /v1) and "
                      "`PERESEARCH_LLM_MODEL`.",
     "RateLimitError": "The model server is limiting requests; wait a moment.",
@@ -119,13 +131,35 @@ WHY = {
 }
 
 
+def _drawn(beat: int | None) -> Text:
+    """The mascot's frame as one block of text: at rest (None), or a beat of its thinking."""
+    return Text("\n").join(mascot.frame(beat))
+
+
+def place(error: BaseException) -> str:
+    """Where an error was raised in peresearch's own code (the innermost such frame), as file:line. The package
+    folder itself is the root: installed, the folder above it holds every library."""
+    package, found, tb = Path(__file__).resolve().parent, "", error.__traceback__
+    while tb is not None:
+        path = Path(tb.tb_frame.f_code.co_filename).resolve()
+        if package in path.parents:
+            found = f"{path.relative_to(package.parent)}:{tb.tb_lineno}"
+        tb = tb.tb_next
+    return found
+
+
 def explain(error: Exception) -> str:
-    """An error as the reader can act on it (Markdown), the technical name kept at the end."""
+    """An error as the reader can act on it (Markdown), the technical name kept at the end. A failed internal check
+    (an assert) is a bug in peresearch: it says so and where."""
     name, text = type(error).__name__, guard.sanitize(str(error))[:300]
+    if isinstance(error, AssertionError):
+        where = place(error)
+        return (f"> **Error:** an internal check of peresearch failed{f' at `{where}`' if where else ''}: "
+                f"{text or '(no message)'}. This is a bug in peresearch, not in your setup. `/retry` asks again. "
+                f"<sub>({name})</sub>")
     if name == "RuntimeError" and "no model endpoint" in text:
-        why = "No model endpoint is set: run `peresearch setup` (or set `PERESEARCH_LLM_URL`)."
-    elif name == "BudgetExceeded":
-        why = text
+        why = ("No model endpoint is set: /model chooses it (or set "
+               "`PERESEARCH_LLM_URL`).")
     else:
         why = WHY.get(name, text)
     return f"> **Error:** {why} `/retry` asks again. <sub>({name}{': ' + text if name not in WHY else ''})</sub>"
@@ -134,25 +168,77 @@ def explain(error: Exception) -> str:
 REASONING_SHOWN = 8000     # characters of reasoning drawn per answer: tens of thousands stall the interface
 
 
-def command_row(command: str, description: str) -> Table:
-    """A row of the command menu: the descriptions in one column, a wrapped one going on under itself."""
-    row = Table.grid(padding=(0, 2))
-    row.add_column(width=max(map(len, COMMANDS)), no_wrap=True)
-    row.add_column(ratio=1)
-    row.add_row(command, Text(description, style="dim"))
-    return row
+MODEL_FIELDS = ("PERESEARCH_LLM_URL", "PERESEARCH_LLM_MODEL", "PERESEARCH_LLM_KEY")
+ENDPOINT_FIELDS = tuple(f"PERESEARCH_{kind}_{part}" for kind in ("EMBED", "RERANK") for part in ("URL", "MODEL", "KEY")) \
+    + ("PERESEARCH_SEARCH_MCP", "PERESEARCH_SEARCH_MCP_KEY", "PERESEARCH_SEARCH_TOOL")
+URL_NAMES = {"PERESEARCH_LLM_URL": "the model endpoint", "PERESEARCH_EMBED_URL": "the embeddings endpoint",
+             "PERESEARCH_RERANK_URL": "the rerank endpoint"}
+
+
+def config_listing() -> str:
+    """/config's page: what is set, in full, with where it comes from; the defaults in use on one line (what fits
+    without the user is not laid out: step 4, 2026-10-08); rerank-depth only when a rerank endpoint is set."""
+    saved, rows, defaults = settings.saved(), [], []
+    for key, setting, default, what, _ in settings.CONFIG:
+        if key == "rerank-depth" and not settings.get("PERESEARCH_RERANK_URL"):
+            continue
+        if os.environ.get(setting):
+            rows.append(f"- {key}: {os.environ[setting]} (environment) — {what}")
+        elif saved.get(setting):
+            rows.append(f"- {key}: {saved[setting]} (saved) — {what}")
+        else:
+            defaults.append(f"{key} {default}")
+    head = ("**Settings** (`/config <name> <value>` sets one, `/config <name>` resets it; they apply from the next "
+            "question)")
+    tail = ("None set: each has its default — " if not rows else "Defaults: ") + " · ".join(defaults) if defaults else ""
+    return "\n".join([head, *rows] + ([tail] if tail else []))
+
+
+def check_settings() -> tuple[bool, list[str]]:
+    """The model check on the model in the settings (llm.check_model)."""
+    from peresearch.llm import LLM, check_model
+    return check_model(LLM())
+
+
+def check_endpoints() -> list[str]:
+    """The search's endpoints in the settings (zetokrag/embed.check)."""
+    from peresearch.cli import web_check
+    from peresearch.zetokrag import embed
+    return embed.check(*embed.from_settings()) + web_check()
+
+
+def command_row(command: str, description: str) -> Padding:
+    """A row of the command menu: the pointer's gutter, the command, then its description dimmed in one column (a
+    wrapped one goes on under itself)."""
+    line = Table.grid(padding=(0, 2))
+    line.add_column(width=max(map(len, COMMANDS)), no_wrap=True)
+    line.add_column(ratio=1)
+    line.add_row(command, Text(description, style="dim"))
+    return Padding(line, (0, 0, 0, len(GUTTER)))
+
+
+def columns(rows: dict[str, str]) -> Table:
+    """Names and what they do in two aligned columns, the second dimmed (/help's commands and keys)."""
+    grid = Table.grid(padding=(0, 2))
+    grid.add_column(no_wrap=True)
+    grid.add_column(ratio=1)
+    for name, what in rows.items():
+        grid.add_row(name, Text(what, style="dim"))
+    return grid
 
 
 def conversation_rows(past, width: int) -> list[Text]:
-    """One line per conversation, in columns — when, how many questions, its first question — the question cut
-    near the end with "…" when the line would not fit, and kept on one line if it had line breaks."""
+    """One line per conversation, in columns — when, how many questions, its name if it has one, its first question —
+    the question cut near the end with "…" when the line would not fit, and kept on one line if it had line breaks."""
     counts = [f"{c.questions} question{'' if c.questions == 1 else 's'}" for c in past]
     count_width = max(map(len, counts), default=0)
     rows = []
     for c, count in zip(past, counts):
         head = f"{time.strftime('%Y-%m-%d %H:%M', time.localtime(c.last))}  {count:<{count_width}}  "
+        named = f"{guard.sanitize(c.name)} · " if getattr(c, "name", "") else ""
         first = Text(" ".join(guard.sanitize(c.first).split()), style="dim")
-        first.truncate(max(8, width - cell_len(head)), overflow="ellipsis")
+        first.truncate(max(8, width - cell_len(head) - cell_len(named)), overflow="ellipsis")
+        head += named
         rows.append(Text.assemble(head, first, no_wrap=True, overflow="ellipsis"))
     return rows
 
@@ -171,24 +257,28 @@ def render(answer, reasoning: bool = False) -> str:
                      guard.sanitize(answer.text or "_(no answer)_"))
     parts += [text, ""]
     if answer.sources:
-        parts.append("**Sources**")
-        parts += [f"- [{s.id}](source:{s.id}) {guard.sanitize(s.where)}" + (f" — {guard.sanitize(s.title)}" if s.title else "")
-                  for s in answer.sources.values()]
+        parts.append("**Sources read**")
+        parts += [f"- [{s.id}](source:{s.id}) {guard.sanitize(home_path(s.where))}"
+                  + (f" — {guard.sanitize(s.title)}" if s.title else "") for s in answer.sources.values()]
     c = answer.check
     if c.unknown_ids:
-        parts.append(f"\n> **Check:** cited but never retrieved: {', '.join(c.unknown_ids)}")
+        parts.append(f"\n> **Check:** citation evidence unavailable; read again: {', '.join(c.unknown_ids)}")
     if c.unsupported_quotes:
         parts.append("\n> **Check:** quotes not found in the cited sources: "
                      + "; ".join(f"“{guard.sanitize(q)[:80]}”" for q in c.unsupported_quotes))
     if c.uncited:
-        parts.append("\n> **Check:** the answer cites no source")
+        parts.append("\n> **Check:** the answer cites none of the sources read")
     if not answer.sources and answer.stopped != "cancelled":
         parts.append("\n_Answered without any source: from the model's own knowledge._")
     if answer.stopped:
         why = {"steps": "the step limit was reached", "time": "the time limit was reached",
-               "cancelled": "interrupted", "length": "the answer was cut at the model's token limit"}
+               "cancelled": "interrupted", "length": "the answer was cut at the model's token limit",
+               "refused": "the model kept making calls that were refused"}
         parts.append(f"\n> stopped: {why.get(answer.stopped, answer.stopped)}")
-    parts.append(f"\n<sub>{answer.steps} model calls · {answer.prompt_tokens + answer.completion_tokens:,} tokens</sub>")
+    passed = not (c.unknown_ids or c.unsupported_quotes or c.uncited)   # any check record, not only agent.Check
+    checked = "✓ citations checked · " if answer.sources and passed else ""
+    parts.append(f"\n<sub>{checked}{answer.steps} model calls · {answer.prompt_tokens + answer.completion_tokens:,} "
+                 "tokens</sub>")
     return "\n".join(parts)
 
 
@@ -346,7 +436,11 @@ class Fence(MarkdownFence):
     scrollbar here, so the end of a line was out of sight)."""
 
     DEFAULT_CSS = """
-    Fence { overflow: hidden hidden; }
+    Fence { overflow: hidden hidden; border: none; border-left: solid ansi_blue; padding: 0 0 0 1; margin: 1 0; }
+    /* Textual's ANSI rule pads the code with a blank line above and below and drops the margin: the rule on the
+       left then ran over empty lines, and the next heading touched the code. */
+    Fence:ansi { margin: 1 0; }
+    Fence:ansi > Label { padding: 0; }
     Fence > Label { width: 1fr; text-wrap: wrap; text-overflow: fold; }
     """
 
@@ -381,7 +475,8 @@ def windows_path(path: str) -> str:
 
 def open_outside(target: str, line: int | None = None) -> str | None:
     """A web page (http or https only) in the browser; one of the user's files in an editor at its line, or selected
-    in the file manager; a folder in the file manager. A file is never given to the system's default action, which
+    in the file manager (always so for a converted file: a PDF, a notebook, Word, PowerPoint, Excel, HTML, which an
+    editor cannot show, its own program can); a folder in the file manager. A file is never given to the system's default action, which
     would run a .bat or an .exe. Returns why it was refused, or None."""
     if re.match(r"(?i)https?://", target):
         cmd = (["explorer.exe", target] if on_wsl() else ["open", target] if sys.platform == "darwin"
@@ -389,7 +484,7 @@ def open_outside(target: str, line: int | None = None) -> str | None:
     elif not target.startswith("/"):
         return "only web links (http, https) and your own files open"
     elif os.path.isfile(target):
-        if shutil.which("code"):
+        if shutil.which("code") and parse.kind(Path(target)) not in parse.CONVERTED:   # a PDF or a deck: not text
             cmd = ["code", "-g", f"{target}:{line or 1}"]
         elif on_wsl():
             cmd = ["explorer.exe", f"/select,{windows_path(target)}"]
@@ -412,34 +507,114 @@ def location(where: str) -> tuple[str, int | None]:
     return (m.group(1), int(m.group(2)) if m.group(2) else None) if m else (where, None)
 
 
-class Menu(OptionList):
-    """The command menu. It never has the focus (typing stays on the prompt), and Textual draws a list row from a
-    style that drops `reverse`, so with the terminal's colors its chosen row looked like every other. The chosen row
-    is reversed here, the row under the mouse bold."""
+class Menu(SelectList):
+    """The command menu, under the input box as in Claude Code. It never has the focus (typing stays on the prompt);
+    the chosen row shows the `❯` pointer in the accent color (SelectList)."""
 
-    def render_line(self, y: int) -> Strip:
-        strip = super().render_line(y)
-        try:
-            index, _ = self._lines[self.scroll_offset.y + y]
-        except IndexError:
-            return strip
-        if index == self.highlighted:
-            return strip.apply_style(RichStyle(reverse=True))
-        if index == self._mouse_hovering_over:
-            return strip.apply_style(RichStyle(bold=True))
-        return strip
+
+WINDOW_CSS = """
+    {name} {{ align: center middle; background: ansi_default; }}
+    #{box} {{ width: 100%; max-width: 96; height: auto; max-height: 90%; padding: 0 1; border: round {color};
+             background: ansi_default; }}
+    #{box} > .title {{ height: 1; text-style: bold; margin-bottom: 1; }}
+    #{box} > .hint {{ height: auto; color: ansi_default; text-style: dim; margin-top: 1; }}
+"""
+
+
+class Setup(ModalScreen):
+    """The model and the search services' keys (settings.FIELDS). A key's field is hidden and starts empty: empty
+    keeps the current key, and a key is never shown, only whether one is set. Dismissed with the changed values
+    (enter or ctrl+s) or None (esc)."""
+
+    CSS = WINDOW_CSS.format(name="Setup", box="setup", color="ansi_blue") + """
+    #setup-fields { height: auto; max-height: 70vh; scrollbar-size-vertical: 1; }
+    #setup-error { color: ansi_red; height: auto; }
+    #setup-detail { height: auto; max-height: 2; text-style: dim; margin-top: 1; }
+    """
+    BINDINGS = [Binding("escape", "cancel", show=False), Binding("ctrl+s", "save", show=False)]
+    SHORT = {"PERESEARCH_LLM_URL": "Model endpoint", "PERESEARCH_LLM_MODEL": "Model", "PERESEARCH_LLM_KEY": "Model key",
+             "PERESEARCH_EMBED_URL": "Embeddings endpoint", "PERESEARCH_EMBED_MODEL": "Embedding model",
+             "PERESEARCH_EMBED_KEY": "Embeddings key", "PERESEARCH_RERANK_URL": "Rerank endpoint",
+             "PERESEARCH_RERANK_MODEL": "Rerank model", "PERESEARCH_RERANK_KEY": "Rerank key"}
+
+    def __init__(self, current: dict):
+        super().__init__()
+        self.current = current
+
+    def compose(self) -> ComposeResult:
+        from peresearch.windows import short_label
+        with Vertical(id="setup"):
+            yield Static("Setup · the model and the search services", classes="title", markup=False)
+            with VerticalScroll(id="setup-fields"):
+                for name, label, hidden in settings.FIELDS:
+                    state = ("set: empty keeps it" if self.current.get(name) else "not set") if hidden else ""
+                    yield Field(self.SHORT.get(name) or short_label(name, label),
+                                "" if hidden else self.current.get(name, ""), id=name.lower(), password=hidden,
+                                placeholder=state, note=label[:1].upper() + label[1:])
+            yield Static("", id="setup-error")
+            yield Static("", id="setup-detail", markup=False)
+            yield Static(hints(("tab", "next"), ("enter", "save"), ("esc", "close without saving")) +
+                         ". Saving contacts no service; /check tests the connections.", classes="hint", markup=False)
+
+    def on_mount(self) -> None:
+        self.query_one(Input).focus()
+
+    def on_descendant_focus(self, event: events.DescendantFocus) -> None:
+        field = event.widget.parent
+        if isinstance(field, Field):
+            self.query_one("#setup-detail", Static).update(field.note_text)
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        event.stop()
+        self.action_save()
+
+    def action_save(self) -> None:
+        values = {name: self.query_one(f"#{name.lower()}", Input).value.strip() for name, _, _ in settings.FIELDS}
+        for name, said in URL_NAMES.items():
+            url = values[name]
+            if url and not url.startswith(("http://", "https://")):
+                self.query_one("#setup-error", Static).update(f"{said} must start with http:// or https://")
+                return
+        hidden = {name for name, _, secret in settings.FIELDS if secret}
+        self.dismiss({name: v for name, v in values.items()
+                      if (v or name not in hidden) and v != self.current.get(name, "")})
+
+    def action_cancel(self) -> None:
+        self.dismiss(None)
+
+
+class ConnectionCheck(ModalScreen[bool]):
+    """A deliberate user action before connection checks can contact paid services: r runs them, esc does not."""
+
+    CSS = WINDOW_CSS.format(name="ConnectionCheck", box="connection-check", color="ansi_blue")
+    BINDINGS = [Binding("escape", "cancel", show=False), Binding("r", "run", show=False)]
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="connection-check"):
+            yield Static("Check connections", classes="title", markup=False)
+            yield Static("This sends test requests to your configured model and search services. Remote usage may "
+                         "be charged by those services. It does not send your documents.", markup=False)
+            yield Static(hints(("r", "run checks"), ("esc", "cancel")), classes="hint", markup=False)
+
+    def action_run(self) -> None:
+        self.dismiss(True)
+
+    def action_cancel(self) -> None:
+        self.dismiss(False)
 
 
 class Permission(ModalScreen[str]):
     """May the agent read a path outside the declared folders? Dismissed with "once", "session", "no" (the model
-    is told and goes on) or "stop" (Esc: refuse and stop the question, as Esc does everywhere else)."""
+    is told and goes on) or "stop" (Esc: refuse and stop the question, as Esc does everywhere else). Shown above the
+    input box, as Claude Code asks for a tool's permission."""
 
     CSS = """
-    Permission { align: center bottom; }
+    Permission { align: center bottom; background: transparent; }
     #permission { width: 100%; height: auto; margin: 0 0 3 0; padding: 0 1; border: round ansi_yellow;
                   background: ansi_default; }
+    #permission > .title { height: auto; margin-bottom: 1; }
     #choices { height: auto; border: none; padding: 0; background: ansi_default; }
-    #permission > .hint { color: ansi_default; text-style: dim; }
+    #permission > .hint { height: auto; color: ansi_default; text-style: dim; margin-top: 1; }
     """
     BINDINGS = [Binding("escape", "stop", show=False)]
     VERBS = {"read": "read", "tree": "list", "glob": "list the files in", "grep": "search in"}
@@ -451,13 +626,16 @@ class Permission(ModalScreen[str]):
     def compose(self) -> ComposeResult:
         folder = self.path if self.path.is_dir() else self.path.parent
         with Vertical(id="permission"):
-            yield Static(f"[b]peresearch wants to {self.VERBS.get(self.tool, self.tool)}[/b] something outside your "
-                         f"declared folders:\n  {escape(guard.sanitize(str(self.path)))}")
-            yield Menu(Option("Yes, this once", id="once"),
-                       Option(f"Yes, and everything in {escape(guard.sanitize(str(folder)))} for this session",
+            yield Static(Text.assemble((f"peresearch wants to {self.VERBS.get(self.tool, self.tool)}", "bold"),
+                                       " something outside your declared folders:\n",
+                                       (f"  {guard.sanitize(home_path(str(self.path)))}", "yellow")),
+                         classes="title", markup=False)
+            yield Menu(Option(row("Yes, this once"), id="once"),
+                       Option(row(f"Yes, and everything in {guard.sanitize(home_path(str(folder)))} for this session"),
                               id="session"),
-                       Option("No", id="no"), id="choices")
-            yield Static("esc stops the question", classes="hint")
+                       Option(row("No"), id="no"), id="choices")
+            yield Static(hints(("↑↓", "choose"), ("enter", "answer"), ("esc", "stops the question")),
+                         classes="hint", markup=False)
 
     def on_mount(self) -> None:
         menu = self.query_one("#choices", Menu)
@@ -472,38 +650,108 @@ class Permission(ModalScreen[str]):
         self.dismiss("stop")
 
 
+def asked_line(question: str) -> Text:
+    """A question in the conversation: the accent `❯`, then the question as typed."""
+    return Text.assemble(("❯ ", "blue"), guard.sanitize(question))
+
+
+MENTION = re.compile(r"(?<!\S)@(\S+)")           # @path at the start of a word
+
+
+def mention_matches(partial: str, roots: list) -> list[str]:
+    """What completes `@partial`: a path from ~ or / as typed, else one inside a declared folder, relative to it."""
+    if partial.startswith(("/", "~")):
+        return complete(partial, folders_only=False)
+    out = set()
+    for root in roots:
+        base = str(root).rstrip("/") + "/"
+        out.update(m[len(base):] for m in complete(base + partial, folders_only=False) if m.startswith(base))
+    return sorted(out)
+
+
+def with_mentions(question: str, roots: list) -> str:
+    """The question for the model: the places it names with @ that exist (inside a declared folder, from ~ or /)
+    and are not protected, added as a note to read them with the tools, so every rule of read and tree still holds."""
+    named = []
+    for token in MENTION.findall(question):
+        p = Path(token).expanduser()
+        if not p.is_absolute():
+            p = next((Path(r) / token for r in roots if (Path(r) / token).exists()), None)
+        if p is not None and p.exists() and p not in [q for q, _ in named] and not (
+                guard.denied(p) or guard.denied(Path(os.path.realpath(p)))):     # a protected place: no note
+            named.append((p, p.is_dir()))
+    if not named:
+        return question
+    return question + "\n\n(The user named with @: " + ", ".join(
+        f"{p} (a folder: look at it with tree)" if is_dir else f"{p} (a file: read it with read)"
+        for p, is_dir in named) + ")"
+
+
+def export_markdown(project: str, exchanges: list) -> str:
+    """Questions and answers as Markdown, each answer followed by its sources: id, place and title (not their text,
+    which may be long and is the user's own)."""
+    out = f"# peresearch — {project}\n"
+    for question, answer in exchanges:
+        out += f"\n## {' '.join(question.split())}\n\n{answer.text.strip()}\n"
+        if answer.sources:
+            out += "\n**Sources**\n\n" + "\n".join(f"- **{s.id}** {s.where}" + (f" — {s.title}" if s.title else "")
+                                                   for s in answer.sources.values()) + "\n"
+    return out
+
+
 class Chat(App):
+    # The layout of Claude Code's: the conversation above; the status line; the input box with its `❯` and, on its
+    # bottom border, the setup in use; under it the command menu while it is open. No line of key hints (the owner's
+    # choice, 2026-09-30): /keys lists them.
     CSS = """
-    /* No scrollbar anywhere; the mouse wheel, PageUp/PageDown and the arrow keys still scroll. */
+    /* No scrollbar in the conversation; the mouse wheel, PageUp/PageDown and the arrow keys still scroll. */
     * { scrollbar-size: 0 0; }
-    Screen { layout: vertical; }
+    Screen { layout: vertical; layers: base mascot; }
     Screen { background: ansi_default; color: ansi_default; }
-    #heading { height: auto; padding: 0 1; border: round ansi_blue; }
+    #welcome { width: auto; max-width: 100%; height: auto; padding: 0 1; border: round ansi_blue; }
     #log { height: 1fr; padding: 0 1; background: ansi_default; }
-    .question { margin: 1 0 0 0; color: ansi_default; text-style: bold; padding: 0 1; }
-    .tool { color: ansi_green; margin: 1 0 0 0; }
-    .result { color: ansi_default; text-style: dim; }
+    /* No bold for emphasis: Windows Terminal draws bold as a brighter color, which Solarized makes a pale gray. */
+    .question { margin: 1 0 0 0; color: ansi_default; }
+    .tool { color: ansi_default; margin: 1 0 0 0; text-wrap: nowrap; text-overflow: ellipsis; }
+    .result { color: ansi_default; text-style: dim; text-wrap: nowrap; text-overflow: ellipsis; }
     .note { color: ansi_default; text-style: dim; margin: 1 0 0 0; }
-    #status { height: 1; padding: 0 1; color: ansi_yellow; }
-    #commands { height: auto; max-height: 8; display: none; border: round ansi_blue; background: ansi_default; }
-    #ask { height: auto; min-height: 3; max-height: 10; border: round ansi_blue; padding: 0 1;
+    #log > Page { margin: 1 0 0 0; padding: 0 0 0 2; }
+    /* The mascot lies on the input box (mascot.py), on a layer of its own: three lines above the box hold its
+       body; the status line keeps clear of it; the box's right padding keeps typed text from under its tail. */
+    #status { width: 1fr; height: 100%; padding: 0 1; color: ansi_yellow; content-align: left bottom; }
+    #input-box { height: auto; border: round ansi_blue; background: ansi_default;
+                 border-subtitle-color: ansi_default; border-subtitle-style: dim; }
+    #prompt-mark { width: 2; height: 1; color: ansi_blue; }
+    #ask { height: auto; min-height: 1; max-height: 8; border: none; padding: 0;
            background: ansi_default; color: ansi_default; }
+    #ask:focus { border: none; }
+    #commands { height: auto; max-height: 10; display: none; padding: 0 1; }
     /* The cursor and the selection are the default colors reversed (TextArea's own ANSI rules), as a terminal's
        cursor is: a black-on-white cursor vanished where black is the background (Solarized Dark). */
     #ask > .text-area--cursor-line { background: ansi_default; }
     #ask > .text-area--placeholder { color: ansi_default; text-style: dim; }
     Screen > .screen--selection { background: ansi_default; color: ansi_default; text-style: reverse; }
-    """
+    """ + (f"#bar {{ height: {mascot.REST_LINES - 2}; }} #perch {{ width: {mascot.WIDTH}; }} "
+           f"#mascot {{ layer: mascot; position: absolute; width: {mascot.WIDTH}; height: auto; }} "
+           f"#input-box {{ padding: 0 {mascot.TAIL - 1} 0 1; }}")
     BINDINGS = [Binding("ctrl+q", "quit", "Quit", priority=True)]     # Ctrl+C copies (the owner's choice)
     ENABLE_COMMAND_PALETTE = False       # Textual's own palette (Ctrl+P): another look, and it switches themes
 
-    def __init__(self, make_agent, heading=lambda: "peresearch", workspace=None, index_on_start: bool = True,
-                 project: str = "default"):
-        super().__init__()
-        self.make_agent, self.heading, self.ws, self.project = make_agent, heading, workspace, project
+    def __init__(self, make_agent, welcome=lambda: "✻ peresearch", status=lambda reason=None: "",
+                 workspace=None, index_on_start: bool = True, project: str = "default", model_check=None,
+                 endpoint_check=None, setup_on_start: bool = False):
+        super().__init__(ansi_color=True)
+        self.model_check = model_check or check_settings
+        self.endpoint_check = endpoint_check or check_endpoints
+        self.setup_on_start, self._checking_connections = setup_on_start, False
+        self.make_agent, self.welcome, self.ws, self.project = make_agent, welcome, workspace, project
+        self.status_text = status                      # /status
+        self.index_progress = None                     # (files reached, files to look at), set by the update
+        self.walking, self.pose = 0, None              # ticks since work began; the mascot's beat (None: at rest)
         self.index_on_start = index_on_start and workspace is not None
-        self.agent, self.busy, self.last, self.pending_new = None, False, None, False
+        self.agent, self.busy, self.last = None, False, None
         self.pending_resume = None                    # a conversation picked before the agent existed
+        self.pending_name = None                      # a name given before the agent existed
         self.last_question = None                     # (as shown, as sent) for /retry
         self.show_reasoning, self.pages = False, []   # Ctrl+R; this session's answers, to redraw them
         self.sources_of = {}                          # a shown page -> the answer whose sources its links name
@@ -512,25 +760,58 @@ class Chat(App):
         self.started, self.doing, self.tokens, self.frame = 0.0, "", 0, 0
         self.indexing = ""                             # what the index update is doing, apart from a question
         self.flash, self.flash_until = "", 0.0         # a short message on the status line when idle
+        self.stopping, self.background = threading.Event(), []   # set on quitting; the threads doing work
+        self.local_only = False                        # /local: the web off for this session
+        self.exchanges = []                            # (question as sent, answer) since opening or /new: /export
+        self.asking = ""                               # the question being answered, as sent
+        self._control_sink = None                      # a control window owns its administrative feedback
 
     def compose(self) -> ComposeResult:
-        yield Static(f"✻ {self.heading()}", id="heading")
         yield VerticalScroll(id="log", can_focus=False)
         self.status = Static("", id="status")       # kept: the spinner may tick once more after unmounting
-        yield self.status
+        self.bird = Static(_drawn(None), id="mascot")      # lying on the box below it (perch)
+        with Horizontal(id="bar"):
+            yield self.status
+            yield Static("", id="perch")                   # the room the mascot's body takes above the box
+        with Horizontal(id="input-box"):
+            yield Static("❯", id="prompt-mark")
+            yield Prompt(placeholder="Ask about your files or the web", id="ask")
         yield Menu(id="commands")
-        yield Prompt(placeholder="❯ Ask about your files or the web", id="ask")
+        yield self.bird
 
     def on_mount(self) -> None:
         self.register_theme(TERMINAL)
         self.theme = "terminal"
         self.query_one("#ask", Prompt).focus()
-        self.set_interval(0.1, self.tick)
+        self.set_interval(TICK, self.tick)
+        self.call_after_refresh(self.place_mascot)
+        self.add(Static(self.welcome(), id="welcome", markup=False))     # it opens the log and scrolls away
+        if self.setup_on_start and not settings.get("PERESEARCH_LLM_URL"):
+            self.call_after_refresh(self.window_command, "/model")
+            return
         if self.index_on_start:
             if self.ws.folders():
-                self.reindex("Checking your folders for changes")
+                self.reindex("Checking your folders for changes", opening=True)
             else:
-                self.note("No folders yet: /add <folder> lets peresearch read one.")
+                self.control_notice("No folders yet: /folders lets peresearch read one.")
+
+    def place_mascot(self) -> None:
+        """Lay the mascot on the input box: its belly on the box's top border, its last two lines over the border and
+        the box's first line, its tail over the box's right edge. Asked on every tick: the box grows with the text.
+        While a window is open it is hidden, so it never lies across one."""
+        try:
+            box = self.query_one("#input-box")
+        except NoMatches:                                   # the screen is gone (quitting)
+            return
+        shown = len(self.screen_stack) <= 1
+        if self.bird.display != shown:
+            self.bird.display = shown
+        if not box.region.width:                            # not laid out yet
+            return
+        lines = mascot.REST_LINES if self.pose is None else mascot.WORK_LINES
+        offset = (box.region.right - mascot.WIDTH, box.region.y + 2 - lines)
+        if tuple(self.bird.styles.offset) != offset:
+            self.bird.styles.offset = offset
 
     # --- the conversation ---
 
@@ -540,29 +821,118 @@ class Chat(App):
         log.scroll_end(animate=False)
 
     def note(self, text: str) -> None:
-        self.add(Static(guard.sanitize(text), classes="note"))
+        if self._control_sink is not None:
+            self._control_sink(text)
+            return
+        self.add(Static(guard.sanitize(text), classes="note", markup=False))   # names, paths, typed text: as typed
+
+    def run_control(self, action, sink) -> None:
+        previous, self._control_sink = self._control_sink, sink
+        try:
+            action()
+        finally:
+            self._control_sink = previous
+
+    def control_notice(self, text: str) -> None:
+        self.say(guard.redact(text)[0])
+
+    def window_command(self, text: str) -> bool:
+        from peresearch.windows import ChecksWindow, FolderWindow, InfoWindow, ModelWindow, SessionWindow, SettingsWindow
+
+        name = text.split(" ")[0]
+        if name in ("/folders", "/add", "/remove", "/index"):
+            self.push_screen(FolderWindow(self.ws))
+        elif name in ("/model", "/setup"):
+            self.push_screen(ModelWindow(self.setup_done))
+        elif name in ("/settings", "/config"):
+            self.push_screen(SettingsWindow(self.setup_done))
+        elif name in ("/sessions", "/resume", "/rename", "/export"):
+            self.push_screen(SessionWindow())
+        elif name == "/status":
+            try:
+                body = self.status_text(text[len(name):].strip() or None)
+            except Exception as error:
+                body = explain(error)
+            tabs = {"Setup and index": body, "Usage": self.usage_text(),
+                    "Context": self.context_text(self.agent.context_report()) if self.agent is not None and
+                    hasattr(self.agent, "context_report") else "Ask a question first to measure model context."}
+            self.push_screen(InfoWindow("Status", body, tabs))
+        elif name in ("/help", "/keys"):
+            commands, keys = columns(COMMANDS), columns(KEYS)
+            self.push_screen(InfoWindow("Help", "", {"Commands": commands, "Keys": keys}))
+        elif name in ("/usage", "/context"):
+            body = self.usage_text() if name == "/usage" else self.context_text(self.agent.context_report()) \
+                if self.agent is not None and hasattr(self.agent, "context_report") else "Ask a question first."
+            self.push_screen(InfoWindow("Usage" if name == "/usage" else "Context", body))
+        elif name == "/sources":
+            if self.last and self.last.sources:
+                body = "\n\n".join(f"**{source.id}** {guard.sanitize(source.where)}\n\n> "
+                                     + guard.sanitize(source.text[:600]).replace("\n", "\n> ")
+                                     for source in self.last.sources.values())
+            else:
+                body = "No sources yet."
+            self.push_screen(InfoWindow("Sources", body))
+        elif name == "/check":
+            self.push_screen(ChecksWindow())
+        else:
+            return False
+        return True
+
+    SETUP_EVERY = 2.0             # seconds between two readings of the settings for the input box's border
+
+    def setup_line(self) -> str:
+        """What the input box's bottom border says: the chat model in use, the declared folders, the web off."""
+        model = settings.get("PERESEARCH_LLM_MODEL") or (connections.host(settings.get("PERESEARCH_LLM_URL"))
+                                                        if settings.get("PERESEARCH_LLM_URL") else "")
+        try:
+            folders = len(self.ws.folders()) if self.ws else 0
+        except guard.ConfigError:
+            folders = 0
+        parts = [guard.sanitize(model) if model else "no model: /model",
+                 f"{folders} folder{'' if folders == 1 else 's'}"]
+        return " · ".join(parts + (["web off"] if self.local_only else []))
+
+    def update_setup_line(self, now: bool = False) -> None:
+        if not now and time.time() < getattr(self, "_setup_read", 0.0):
+            return
+        self._setup_read = time.time() + self.SETUP_EVERY
+        try:
+            self.query_one("#input-box").border_subtitle = self.setup_line()
+        except NoMatches:
+            pass
 
     def tick(self) -> None:
         status = self.status
+        self.walking = self.walking + 1 if self.busy or self.indexing else 0    # the mascot thinks while work runs
+        pose = self.walking // round(mascot.STEP / TICK) % mascot.FRAMES if self.walking else None
+        if pose != self.pose and self.is_running:           # a late tick after closing draws nothing
+            self.pose = pose
+            self.bird.update(_drawn(pose))
+        if self.is_running:
+            self.place_mascot()
+            self.update_setup_line()
         if not self.busy and not self.indexing:
-            status.update(self.flash if time.time() < self.flash_until else "")
+            idle = "Checking connections…" if self._checking_connections else "local only · web off" if self.local_only else ""
+            status.update(self.flash if time.time() < self.flash_until else idle)
             return
         self.frame += 1
         spin = SPINNER[self.frame % len(SPINNER)]
         if not self.busy:                              # only the index update runs
-            status.update(f"{spin} {guard.sanitize(self.indexing)}… (you can ask meanwhile)")
+            done, total = self.index_progress or (0, 0)
+            far = f" {done:,}/{total:,} files" if total else ""
+            status.update(f"{spin} {guard.sanitize(self.indexing)}…{far} (you can ask meanwhile)")
             return
         extra = f" · {self.tokens:,} tokens" if self.tokens else ""
         status.update(f"{spin} {guard.sanitize(self.doing)}… ({time.time() - self.started:.0f}s{extra} · esc to interrupt)")
 
     def on_agent_event(self, kind: str, detail: str) -> None:
         if kind == "tool":
-            self.add(Static(f"● {guard.sanitize(detail)}", classes="tool"))
+            self.add(Static(Text.assemble(("● ", "green"), guard.sanitize(detail)), classes="tool"))   # its arguments
             self.doing = ("Searching" if detail.startswith(("search", "grep", "glob", "web")) else
                           "Looking through folders" if detail.startswith("tree") else
                           "Noting what is missing" if detail.startswith("gaps") else "Reading")
         elif kind == "result":
-            self.add(Static(f"  ⎿  {guard.sanitize(detail)}", classes="result"))
+            self.add(Static(f"  ⎿  {guard.sanitize(detail)}", classes="result", markup=False))
         elif kind == "tokens":
             self.tokens = int(detail)
         elif kind == "think":
@@ -577,6 +947,10 @@ class Chat(App):
         q = event.value.strip()                            # the prompt has already emptied itself
         if menu.display and menu.highlighted is not None and self.menu_kind == "conversations" and not q:
             self.resume(menu.get_option_at_index(menu.highlighted).id.removeprefix("resume:"))
+            return
+        if menu.display and menu.highlighted is not None and \
+                menu.get_option_at_index(menu.highlighted).id.startswith("mention:"):     # an @path picked
+            self.take_mention(menu.get_option_at_index(menu.highlighted).id, event.value)
             return
         if menu.display and menu.highlighted is not None and q.startswith("/"):
             chosen = menu.get_option_at_index(menu.highlighted).id
@@ -596,42 +970,69 @@ class Chat(App):
         if q.startswith("/"):
             self.command(q)
             return
+        if self._checking_connections:
+            self.note("Wait for the connection checks to finish before asking a question.")
+            return
         if self.busy:
             self.note("still working on the previous question (esc to interrupt it)")
             return
         self.asked.append(q)
         self.recall = None
-        self.ask(q, self.query_one("#ask", Prompt).expand(q))
+        self.ask(q, with_mentions(self.query_one("#ask", Prompt).expand(q), self.ws.folders() if self.ws else []))
 
     def ask(self, shown: str, sent: str) -> None:
         self.last_question = (shown, sent)
+        self.asking = sent
         self.start("Starting")
-        self.add(Static(f"❯ {guard.sanitize(shown.replace(MARK, ''))}", classes="question", markup=False))
+        self.add(Static(asked_line(shown.replace(MARK, "")), classes="question"))
         self.run_agent(sent)
 
-    @work(thread=True, exclusive=True, group="agent")
+    def _in_background(self, job, *args) -> None:
+        """A question or an index update, in a daemon thread. Textual's thread workers run in asyncio's executor,
+        which Python waits for on exit: quitting took 20 s behind an index update and 300 s behind a model call
+        (measured 2026-10-05). A daemon thread is asked to stop and left if it does not (the index rolls back an
+        unfinished batch)."""
+        thread = threading.Thread(target=job, args=args, daemon=True)
+        self.background = [t for t in self.background if t.is_alive()] + [thread]
+        thread.start()
+
+    def _ui(self, fn, *args) -> None:
+        """Call `fn` on the interface from a background thread, unless the interface is gone (quitting)."""
+        if not self.is_running or self.stopping.is_set():
+            return
+        try:
+            self.call_from_thread(fn, *args)
+        except RuntimeError:                             # closed between the check and the call
+            pass
+
     def run_agent(self, question: str) -> None:
+        self._in_background(self._run_agent, question)
+
+    def _run_agent(self, question: str) -> None:
         def event(kind, detail):
-            self.call_from_thread(self.on_agent_event, kind, detail)
+            self._ui(self.on_agent_event, kind, detail)
         try:
             if self.agent is None:
-                self.call_from_thread(self.on_agent_event, "wait", "Loading the local models")
+                self._ui(self.on_agent_event, "wait", "Loading your configured services")
                 self.agent = self.make_agent(event)
                 if hasattr(self.agent, "toolbox"):
                     self.agent.toolbox.ask = self.permission
-                if self.pending_resume:
+                    self.agent.toolbox.local_only = self.local_only
+                if self.pending_resume:                 # a new agent starts a new conversation, else this one
                     self.agent.resume(self.pending_resume)
-                elif self.pending_new:
-                    self.agent.new_session()
+                if self.pending_name:
+                    self.agent.rename(self.pending_name)
+                    self.pending_name = None
             answer = self.agent.ask(question)
             self.last = answer
-            self.call_from_thread(self.show_answer, answer)
+            self._ui(self.show_answer, answer)
         except Exception as e:
-            self.call_from_thread(self.add, Page(explain(e)))
+            self._ui(self.add, Page(explain(e)))
         finally:
-            self.call_from_thread(self.done)
+            self._ui(self.done)
 
     def show_answer(self, answer) -> None:
+        self.exchanges.append((self.asking, answer))
         page = Page(render(answer, self.show_reasoning))
         self.pages.append((page, answer))
         self.sources_of[page] = answer
@@ -644,28 +1045,35 @@ class Chat(App):
             kind, sid = href.split(":", 1)
             source = getattr(self.sources_of.get(event.markdown), "sources", {}).get(sid)
             if source is None:
-                self.note(f"{sid}: no such source")
+                self.link_notice(f"{sid}: no such source")
             elif kind == "source":
                 self.show_source(source, self.sources_of[event.markdown])
             else:
                 target, line = (source.where, None) if source.kind == "web" else location(source.where)
                 why = open_outside(target, line)
-                self.note(f"not opened: {why}" if why else f"opened {target}")
+                self.link_notice(f"not opened: {why}" if why else f"opened {target}")
         elif re.match(r"(?i)https?://", href):
             why = open_outside(href)
-            self.note(f"not opened: {why}" if why else f"opened {href}")
+            self.link_notice(f"not opened: {why}" if why else f"opened {href}")
         else:
-            self.note("not opened: only web links (http, https) and your own files open")
+            self.link_notice("not opened: only web links (http, https) and your own files open")
+
+    def link_notice(self, text: str) -> None:
+        from peresearch.windows import Window
+        if isinstance(self.screen, Window):
+            self.screen.message(text)
+        else:
+            self.control_notice(text)
 
     def show_source(self, source, answer) -> None:
+        from peresearch.windows import SourceWindow
         excerpt = guard.sanitize(source.text[:600]).replace("\n", "\n> ") if source.text else \
             "_(the excerpt is not kept in the history)_"
         what = "open the page" if source.kind == "web" else "open the file"
-        page = Page(f"**{source.id}** {guard.sanitize(source.where)}"
+        body = (f"**{source.id}** {guard.sanitize(source.where)}"
                     + (f" — {guard.sanitize(source.title)}" if source.title else "")
                     + f"\n\n> {excerpt}\n\n[{what}](open:{source.id})")
-        self.sources_of[page] = answer
-        self.add(page)
+        self.push_screen(SourceWindow(body, answer))
 
     def action_toggle_reasoning(self) -> None:
         """Ctrl+R: show or hide what the model thought before answering, on every answer of this session."""
@@ -683,38 +1091,56 @@ class Chat(App):
         def show():
             self.doing = "Waiting for your permission"
             self.push_screen(Permission(tool, path), lambda choice: (answer.update(choice=choice), answered.set()))
-        self.call_from_thread(show)
+        self._ui(show)
         while not answered.wait(0.1):
-            if not self.is_running:                     # quit while the dialog was open
+            if not self.is_running or self.stopping.is_set():      # quit while the dialog was open
                 return "no"
         if answer.get("choice") == "stop":              # Esc on the dialog: refuse, and stop the whole question
             self.agent.cancel()
             return "no"
-        return answer.get("choice") or "no"
+        choice = answer.get("choice") or "no"
+        assert choice in ("once", "session", "no"), f"permission dialog answered {choice!r}"
+        return choice
 
     def done(self) -> None:
         self.busy = False
-        self.query_one("#heading", Static).update(f"✻ {self.heading()}")
 
-    @work(thread=True, exclusive=True, group="index")      # a group of its own: a question does not cancel it
-    def reindex(self, doing: str) -> None:
+    def reindex(self, doing: str, opening: bool = False) -> None:
+        notify = self._control_sink or (self.control_notice if opening else None)
+        self._in_background(self._reindex, doing, opening, notify)
+
+    def _reindex(self, doing: str, opening: bool = False, notify=None) -> None:
         """Brings the index up to date in the background; questions can be asked meanwhile (search copes with an
-        index being updated), and the status line shows the question first."""
-        self.call_from_thread(setattr, self, "indexing", doing)
+        index being updated), and the status line shows the question first and how far the update is. Quitting stops
+        it at the next file. One line says what it did (none when opening found nothing to do); /status the rest."""
+        self._ui(setattr, self, "indexing", doing)
         try:
-            r = self.ws.update()
-            quiet = not (r.added or r.changed or r.removed or r.withheld)
-            text = f"Index up to date: {r.chunks:,} chunks from {r.added + r.changed + r.unchanged} files." if quiet \
-                else summary(r, limit=5)
-            self.call_from_thread(self.note, text)
+            r = self.ws.update(stop=self.stopping.is_set,
+                               progress=lambda done, total: setattr(self, "index_progress", (done, total)))
+            if not (opening and quiet(r)):
+                self._ui(notify or self.note, brief(r))
+        except Stopped:                                  # quitting: what it did is kept, the next start goes on
+            pass
         except Exception as e:
-            self.call_from_thread(self.note, f"indexing failed: {type(e).__name__}: {e}"[:300])
+            why = (f"an internal check failed at {place(e)}: {e}" if isinstance(e, AssertionError)
+                   else f"{type(e).__name__}: {e}")
+            self._ui(notify or self.note, f"indexing failed: {why}"[:300])
         finally:
-            self.call_from_thread(self.indexed)
+            self._ui(self.indexed)
 
     def indexed(self) -> None:
-        self.indexing = ""
-        self.query_one("#heading", Static).update(f"✻ {self.heading()}")
+        self.indexing, self.index_progress = "", None
+
+    async def action_quit(self) -> None:
+        """Quit at once: an index update is asked to stop (what it did is kept), a question is interrupted, and work
+        that has not stopped after QUIT_GRACE seconds (an embedding on a CPU) is left behind."""
+        self.stopping.set()
+        if self.agent is not None and hasattr(self.agent, "cancel"):
+            self.agent.cancel()
+        end = time.monotonic() + QUIT_GRACE
+        while any(t.is_alive() for t in self.background) and time.monotonic() < end:
+            await asyncio.sleep(0.05)
+        self.exit()
 
     def start(self, doing: str) -> None:
         self.busy, self.started, self.doing, self.tokens = True, time.time(), doing, 0
@@ -722,23 +1148,54 @@ class Chat(App):
     # --- commands ---
 
     def command(self, text: str) -> None:
+        """User-facing command router: groups open windows; immediate actions use the status line."""
+        if not self.window_command(text):
+            self.run_control(lambda: self.action_command(text), self._control_sink or self.control_notice)
+
+    def action_command(self, text: str) -> None:
+        """Application actions retained for window controllers and existing integrations."""
         name = text.split(" ")[0]
+        if self._checking_connections and name not in ("/exit", "/help", "/keys", "/status", "/usage"):
+            self.note("Wait for the connection checks to finish before changing the session or settings.")
+            return
         if name == "/exit":
-            self.exit()
+            self.run_worker(self.action_quit())
         elif name == "/help":
             self.add(Page("**Commands** (the keys: `/keys`)\n" + "\n".join(f"- `{c}` {d}" for c, d in COMMANDS.items())))
         elif name == "/keys":
             self.add(Page("**Keys**\n" + "\n".join(f"- **{k}** {d}" for k, d in KEYS.items())))
-        elif name == "/new":
+        elif name in ("/clear", "/new", "/reset"):
             if self.busy:
                 self.note("wait for the current question to finish, or press esc")
                 return
+            given = text[len(name):].strip()
+            try:
+                given = clean_name(given) if given else ""
+            except ValueError as e:
+                self.note(str(e))
+                return
             if self.agent is not None:
                 self.agent.new_session()
-            self.pending_new, self.pending_resume = self.agent is None, None
+            self.pending_resume, self.pending_name = None, None
             self.query_one("#log", VerticalScroll).remove_children()
-            self.pages, self.sources_of = [], {}
+            self.pages, self.sources_of, self.exchanges = [], {}, []
+            self.last, self.last_question = None, None
             self.note("New conversation: earlier questions are no longer sent as context.")
+            if given:
+                self.name_conversation(given)
+        elif name == "/rename":
+            given = text[len(name):].strip()
+            if not given:
+                self.note("/rename <name>: a name for this conversation (/resume finds it by name)")
+            else:
+                self.name_conversation(given)
+        elif name == "/usage":
+            self.add(Page(self.usage_text()))
+        elif name == "/context":
+            if self.agent is None or not hasattr(self.agent, "context_report"):
+                self.note("/context measures the model's requests: ask a question first")
+            else:
+                self.add(Page(self.context_text(self.agent.context_report())))
         elif name == "/retry":
             if self.busy:
                 self.note("wait for the current question to finish, or press esc")
@@ -750,14 +1207,22 @@ class Chat(App):
             if self.busy:
                 self.note("wait for the current question to finish, or press esc")
                 return
+            key = text[len(name):].strip()
+            if key:
+                found = find_conversation(history_file(self.project), key)
+                if found is None:
+                    self.note(f"no conversation named or numbered “{key}”")
+                else:
+                    self.resume(found.id)
+                return
             past = conversations(history_file(self.project))
             if not past:
                 self.note("no earlier conversation in this project")
                 return
             menu = self.query_one("#commands", OptionList)
             menu.clear_options()
-            menu.add_options([Option(row, id="resume:" + c.id)
-                              for c, row in zip(past, conversation_rows(past[:50], self.size.width - 6))])
+            menu.add_options([Option(row(text), id="resume:" + c.id)
+                              for c, text in zip(past, conversation_rows(past[:50], self.size.width - 4))])
             menu.display, menu.highlighted, self.menu_kind = True, 0, "conversations"
         elif name == "/sources":
             if not self.last or not self.last.sources:
@@ -766,10 +1231,80 @@ class Chat(App):
             self.add(Page("\n\n".join(f"**`{s.id}`** {guard.sanitize(s.where)}\n\n> "
                                           + guard.sanitize(s.text[:600]).replace("\n", "\n> ")
                                           for s in self.last.sources.values())))
-        elif name == "/folders":
+        elif name == "/local":
+            self.local_only = not self.local_only
+            if self.agent is not None and hasattr(self.agent, "toolbox"):
+                self.agent.toolbox.local_only = self.local_only
+            self.note("Local only: the web is off for this session (/local turns it back on)." if self.local_only
+                      else "The web is on again.")
+            self.update_setup_line(now=True)
+        elif name == "/setup":
+            if self.busy or self._checking_connections:
+                self.note("wait for the current question to finish, or press esc")
+                return
+            self.push_screen(Setup(settings.saved()), self.setup_done)
+        elif name == "/check":
+            if self.busy or self.indexing or self._checking_connections:
+                self.note("Wait for the current operation to finish before checking connections.")
+                return
+            self.push_screen(ConnectionCheck(), self.check_connections)
+        elif name == "/config":
+            self.config(text[len(name):].split())
+        elif name == "/export":
+            self.export(text[len(name):].strip())
+        elif name == "/status":
+            self.add(Page(guard.sanitize(self.status_text(text[len(name):].strip() or None))))
+        elif name in ("/folders", "/add", "/remove", "/index"):
+            try:
+                self.folder_command(name, text)
+            except guard.ConfigError as e:              # the user broke config.json while this runs: said
+                self.note(str(e))
+        else:
+            self.note(f"unknown command {name}; / for the list")
+
+    def name_conversation(self, name: str) -> None:
+        """Name the current conversation; before the agent exists, the name waits for it."""
+        try:
+            if self.agent is not None:
+                self.agent.rename(name)
+            elif self.pending_resume:
+                # Renaming a resumed conversation must persist even before the next model is constructed.
+                import json
+                from peresearch.agent import _append_private
+                _append_private(history_file(self.project), json.dumps({"time": time.time(),
+                                "conversation": self.pending_resume, "name": clean_name(name)}))
+                self.pending_name = None
+            else:
+                self.pending_name = clean_name(name)
+        except ValueError as e:
+            self.note(str(e))
+            return
+        self.note(f"This conversation is named “{clean_name(name)}”.")
+
+    @staticmethod
+    def context_text(r: dict) -> str:
+        """/context's page from Agent.context_report."""
+        lines = [f"- {name}: {n:,} characters ≈ {round(n / r['ratio']):,} tokens" for name, n in r["parts"]]
+        whole = (f"of the model's {r['context']:,} ({r['tokens'] / r['context']:.0%})" if r["context"] else
+                 "(the model's context is not known: set PERESEARCH_LLM_CONTEXT)")
+        return (f"**Context** (the next question's request before its own messages; {r['ratio']:.1f} characters a "
+                f"token, as last measured)\n" + "\n".join(lines) + f"\n- in all: ≈ {r['tokens']:,} tokens {whole}")
+
+    def usage_text(self) -> str:
+        """Model requests and tokens (sent, generated) of this conversation, of today and of the project."""
+        path = history_file(self.project)
+        current = self.agent.conversation if self.agent is not None else self.pending_resume
+        today = time.mktime(time.localtime()[:3] + (0, 0, 0, 0, 0, -1))
+        rows = [("this conversation", usage(path, current) if current else dict.fromkeys(USAGE, 0)),
+                ("today, this project", usage(path, since=today)), ("this project", usage(path))]
+        return "**Usage** (model requests · tokens sent · tokens generated)\n" + "\n".join(
+            f"- {label}: {u['requests']:,} · {u['prompt_tokens']:,} · {u['completion_tokens']:,}" for label, u in rows)
+
+    def folder_command(self, name: str, text: str) -> None:
+        if name == "/folders":
             folders = self.ws.folders() if self.ws else []
             self.note("\n".join(map(str, folders)) or "no folders declared: /add <folder>")
-        elif name in ("/add", "/remove", "/index"):
+        else:
             if self.ws is None:
                 self.note("folders cannot be changed here")
                 return
@@ -790,8 +1325,125 @@ class Chat(App):
             else:
                 self.note(f"Removed {arg}" if self.ws.remove(arg) else f"{arg} was not a declared folder")
                 self.reindex("Dropping its chunks from the index")
-        else:
-            self.note(f"unknown command {name}; / for the list")
+            self.update_setup_line(now=True)
+
+    def take_mention(self, chosen: str, value: str) -> None:
+        """An @path row taken (Tab, Enter or a click) into `value`, the typed text: it replaces what follows its
+        last @."""
+        self.set_prompt(value[:value.rindex("@") + 1] + chosen.removeprefix("mention:"))
+        self.hide_menu()
+
+    def config(self, words: list[str]) -> None:
+        """/config shows each setting with its value and where it comes from; /config <name> <value> checks and
+        saves one, /config <name> resets it; either applies from the next question, in the same conversation."""
+        if not words:
+            self.add(Page(config_listing()))
+            return
+        if self.busy:
+            self.note("wait for the current question to finish, or press esc")
+            return
+        key, value = words[0], " ".join(words[1:])
+        try:
+            _, setting, default, _, _ = settings.row(key)
+            if value:
+                value = settings.check(key, value)[1]
+        except ValueError as e:
+            self.note(str(e))
+            return
+        kept = {k: v for k, v in settings.saved().items() if k != setting}
+        settings.save({**kept, setting: value} if value else kept)
+        self._retire_agent()
+        self.note((f"{key} is now {value}; it applies from the next question." if value
+                   else f"{key} is back to its default ({default}).")
+                  + (f" {setting} is set in the environment, which wins over the file."
+                     if os.environ.get(setting) else ""))
+
+    def _retire_agent(self) -> None:
+        """The next question gets a new agent, in the same conversation; the old one's search server is stopped."""
+        if self.agent is None:
+            return
+        web = getattr(getattr(self.agent, "toolbox", None), "web", None)
+        if hasattr(web, "close"):
+            web.close()
+        self.pending_resume, self.agent = self.agent.conversation, None
+
+    def setup_done(self, changes) -> None:
+        """Save what /setup changed; the next question gets an agent built on it, in the same conversation."""
+        if not changes:
+            self.note("Setup closed; nothing changed.")
+            return
+        path = settings.save({**settings.saved(), **changes})
+        self._retire_agent()
+        overridden = [n for n in changes if os.environ.get(n)]
+        self.note(f"Saved to {path}. The new settings take effect from the next question."
+                  + (f" {', '.join(overridden)} {'is' if len(overridden) == 1 else 'are'} set in the environment, which "
+                     "wins over the file." if overridden else ""))
+        self.note("Connections have not been checked. /check runs tests; remote services may charge. "
+                  "Use /folders to add documents, or ask a question when your model is configured.")
+        self.update_setup_line(now=True)
+
+    def check_connections(self, confirmed: bool, notify=None) -> None:
+        if not confirmed or self.busy or self.indexing or self._checking_connections:
+            return
+        self._checking_connections = True
+        self.note("Checking configured connections…")
+        self._in_background(self._check_connections, notify)
+
+    def _check_connections(self, notify=None) -> None:
+        try:
+            self._check_model(notify)
+            if not self.stopping.is_set():
+                self._check_endpoints(notify)
+        finally:
+            self._ui(setattr, self, "_checking_connections", False)
+
+    def _check_endpoints(self, notify=None) -> None:
+        try:
+            lines = self.endpoint_check()
+        except Exception as e:
+            self._ui(notify or self.note, f"the endpoints could not be checked: {type(e).__name__}: {e}"[:300])
+            return
+        body = guard.sanitize("**Search endpoints**\n" + "\n".join(f"- {line}" for line in lines))
+        self._ui(notify, body) if notify else self._ui(self.add, Page(body))
+
+    def _check_model(self, notify=None) -> None:
+        try:
+            works, lines = self.model_check()
+        except Exception as e:
+            self._ui(notify or self.note, f"the model could not be checked: {type(e).__name__}: {e}"[:300])
+            return
+        body = guard.sanitize(
+            "**Model check** " + ("· it works with the agent" if works else
+                                  "· **it does not call tools**: the agent cannot search your files or the web with it")
+            + "\n" + "\n".join(f"- {line}" for line in lines))
+        self._ui(notify, body) if notify else self._ui(self.add, Page(body))
+
+    def export(self, arg: str) -> None:
+        """This conversation as Markdown (export_markdown) into a new file: `arg` a .md file, or a folder (default the
+        current one) that gets a dated name. Never overwrites, never writes into a protected place."""
+        if not self.exchanges:
+            self.note("nothing to export yet: ask a question first")
+            return
+        target = Path(arg).expanduser() if arg else Path.cwd()
+        target = target if target.is_absolute() else Path.cwd() / target
+        if guard.denied(target) or guard.denied(Path(os.path.realpath(target))):
+            self.note(f"not saved: {target} is a protected place")
+            return
+        if target.is_dir():
+            target = target / f"peresearch-{self.project}-{time.strftime('%Y-%m-%d-%H%M%S')}.md"
+        elif target.suffix.lower() != ".md":
+            self.note(f"not saved: {target} is not a folder")
+            return
+        try:
+            with open(target, "x", encoding="utf-8") as f:          # "x": an existing file is never overwritten
+                f.write(export_markdown(self.project, self.exchanges))
+        except FileExistsError:
+            self.note(f"not saved: {target} exists (give another name)")
+            return
+        except OSError as e:
+            self.note(f"not saved: {target}: {e.strerror or e}")
+            return
+        self.note(f"Saved to {target}")
 
     # --- the command menu and the question history ---
 
@@ -826,21 +1478,30 @@ class Chat(App):
             turns = self.agent.resume(conversation)
         else:
             turns = [t for t in read_turns(history_file(self.project)) if t["conversation"] == conversation]
-            self.pending_resume, self.pending_new = conversation, False
+            self.pending_resume, self.pending_name = conversation, None   # a name waiting
+            # for the conversation left behind is not this one's
         log = self.query_one("#log", VerticalScroll)
         log.remove_children()
-        self.pages, self.sources_of = [], {}
+        self.pages, self.sources_of, self.exchanges = [], {}, []
+        self.last, self.last_question = None, None
         when = time.strftime("%Y-%m-%d %H:%M", time.localtime(turns[0].get("time", 0))) if turns else "?"
         self.note(f"Resumed the conversation of {when} ({len(turns)} question{'' if len(turns) == 1 else 's'}); "
                   "the next question continues it.")
+        from peresearch.agent import ResultStore
+        from peresearch.evidence import Sources
+        registry = (self.agent.source_registry() if self.agent is not None else
+                    Sources.load(turns, ResultStore(self.project, conversation),
+                                 lambda path: guard.allowed(Path(path))))
         for t in turns:
-            self.add(Static(f"❯ {guard.sanitize(t['question'])}", classes="question", markup=False))
-            kept = {k: Source(k, "web" if str(v).startswith("http") else "file", str(v), "", "")
-                    for k, v in (t.get("sources") or {}).items()}
-            page = Page(render(SimpleNamespace(text=t["answer"], sources=kept, check=SimpleNamespace(
-                unknown_ids=[], unsupported_quotes=[], uncited=False), stopped="", steps=0, prompt_tokens=0,
-                completion_tokens=0)).rsplit("\n<sub>", 1)[0])
-            self.sources_of[page] = SimpleNamespace(sources=kept)
+            self.add(Static(asked_line(t["question"]), classes="question"))
+            kept = registry.for_turn(t)
+            measured = t.get("usage") or {}
+            answer = Answer(t["answer"], kept, check(t["answer"], kept), measured.get("requests", 0),
+                            measured.get("prompt_tokens", 0), measured.get("completion_tokens", 0))
+            self.exchanges.append((t["question"], answer))
+            self.last, self.last_question = answer, (t["question"], t["question"])
+            page = Page(render(answer).rsplit("\n<sub>", 1)[0])
+            self.sources_of[page] = answer
             self.add(page)
 
     def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
@@ -848,6 +1509,8 @@ class Chat(App):
         self.hide_menu()
         if event.option.id.startswith("resume:"):
             self.resume(event.option.id.removeprefix("resume:"))
+        elif event.option.id.startswith("mention:"):
+            self.take_mention(event.option.id, prompt.value)
         elif event.option.id.startswith("path:"):
             self.set_prompt(prompt.value.split(" ")[0] + " " + event.option.id[5:])
         elif event.option.id in ("/add", "/remove"):
@@ -883,8 +1546,20 @@ class Chat(App):
             if chosen.startswith("resume:"):
                 self.resume(chosen.removeprefix("resume:"))
                 return
+            if chosen.startswith("mention:"):
+                self.take_mention(chosen, value)
+                return
             self.set_prompt((value.split(" ")[0] + " " + chosen[5:]) if chosen.startswith("path:") else chosen + " ")
             self.hide_menu()
+        elif value.rsplit(" ", 1)[-1].startswith("@") and not value.startswith("/"):      # @path being typed
+            partial = value[value.rindex("@") + 1:]
+            matches = mention_matches(partial, self.ws.folders() if self.ws else [])
+            if len(matches) == 1:
+                self.set_prompt(value[:value.rindex("@") + 1] + matches[0])
+            elif matches:
+                menu.clear_options()
+                menu.add_options([Option(row(m), id="mention:" + m) for m in matches[:50]])
+                menu.display, menu.highlighted, self.menu_kind = True, 0, "paths"
         elif value.startswith(("/add ", "/remove ")):
             cmd, _, partial = value.partition(" ")
             if cmd == "/remove":
@@ -895,7 +1570,7 @@ class Chat(App):
                 self.set_prompt(f"{cmd} {matches[0]}")
             elif matches:
                 menu.clear_options()
-                menu.add_options([Option(m, id="path:" + m) for m in matches[:50]])
+                menu.add_options([Option(row(m), id="path:" + m) for m in matches[:50]])
                 menu.display, menu.highlighted, self.menu_kind = True, 0, "paths"
 
     def say(self, text: str, seconds: float = 2.5) -> None:

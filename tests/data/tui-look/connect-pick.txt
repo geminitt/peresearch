@@ -1,0 +1,30 @@
+
+
+
+
+
+
+
+
+              ╭──────────────────────────────────────────────────────────────────────╮
+              │ OpenAI · choose a model                                              │
+              │                                                                      │
+              │ Filter                type to filter 3 model IDs                     │
+              │ ❯ gpt-6.1-mini                                                       │
+              │   gpt-6.1-sol                                                        │
+              │   text-embedding-4                                                   │
+              │                                                                      │
+              │ A listed ID is not yet tested for answering or tool calling; /check  │
+              │ tests the chosen one.                                                │
+              │                                                                      │
+              │ type filter · ↑↓ choose · enter use · esc back                       │
+              ╰──────────────────────────────────────────────────────────────────────╯
+
+
+
+
+
+
+
+
+

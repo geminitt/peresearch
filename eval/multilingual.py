@@ -266,6 +266,7 @@ def _atomic_save(path: Path, **arrays) -> None:
 
 def _pack(lists) -> dict:
     """Ragged lists of (id, score) per query as padded arrays (-1 ids, -inf scores)."""
+    assert all(len(i) == len(s) for i, s in lists), "ids and scores of different lengths"
     ids = np.full((len(lists), TOP), -1, dtype=np.int32)
     sc = np.full((len(lists), TOP), -np.inf, dtype=np.float32)
     for r, (i, s) in enumerate(lists):
@@ -339,6 +340,7 @@ def lexical_top(variant: str, texts: list[str], qtexts: list[str], own: list | N
         for k, i, s in zip(pick, ids, sc):
             keep = i != own[k] if own[k] is not None else np.ones(len(i), bool)   # ArguAna: the query's own text
             out[k] = (i[keep][:TOP].astype(np.int32), s[keep][:TOP].astype(np.float32))
+    assert all(x is not None for x in out), "a query ranked by neither index"
     return out
 
 
@@ -436,7 +438,9 @@ def _embeddings(name: str, model: str, texts: list[str], base: Path):
         return retrieval.document_embeddings(name, model, texts, base)
     dense_path, sparse_path = base / "docs-bge-m3-dense.npy", base / "docs-bge-m3-sparse.npz"
     if dense_path.exists() and sparse_path.exists():
-        return np.load(dense_path), sp.load_npz(sparse_path)
+        dense, sparse = np.load(dense_path), sp.load_npz(sparse_path)
+        assert dense.shape[0] == sparse.shape[0] == len(texts), f"{name}: cached BGE-M3 vectors of another corpus"
+        return dense, sparse
     step, enc, t, parts = 16384, None, time.time(), []
     for a in range(0, len(texts), step):
         part_d, part_s = base / f"docs-bge-m3-dense.{a:08d}.npy", base / f"docs-bge-m3-sparse.{a:08d}.npz"
@@ -456,6 +460,7 @@ def _embeddings(name: str, model: str, texts: list[str], base: Path):
         s_.unlink()
     del enc
     free_gpu()
+    assert dense.shape[0] == sparse.shape[0] == len(texts), f"{name}: BGE-M3 vectors do not match the documents"
     return dense, sparse
 
 
@@ -480,6 +485,7 @@ def fuse(a: tuple, b: tuple, rho: float = RHO, guard: bool = False) -> tuple[np.
         if len(ids):
             for i, x in zip(ids, core.minmax(np.asarray(sc, dtype=np.float32))):
                 fused[int(i)] = fused.get(int(i), 0.0) + weight * float(x)
+    assert all(-1e-6 <= v <= 1 + 1e-6 for v in fused.values()), "fused scores outside [0, 1]"
     order = sorted(fused, key=lambda i: -fused[i])
     return np.array(order, dtype=np.int32), np.array([fused[i] for i in order], dtype=np.float32)
 
@@ -575,6 +581,7 @@ def run_scores(names) -> list[str]:
                     done_ids, done_scores = list(np.split(z["ids"], z["offsets"][1:-1])), \
                         list(np.split(z["scores"], z["offsets"][1:-1]))
                     done_ids, done_scores = done_ids[:start], done_scores[:start]
+                    assert len(done_ids) == len(done_scores) == start, f"{name}: a saved part shorter than it says"
                 rr, t = Reranker(windowed=False), time.time()
                 for k in range(start, len(qt)):
                     ids = np.array(sorted(union[k]), dtype=np.int32)
@@ -585,6 +592,7 @@ def run_scores(names) -> list[str]:
                         _atomic_save(part, ids=np.concatenate(done_ids), scores=np.concatenate(done_scores),
                                      offsets=offsets, queries_done=np.array(k + 1))
                         log(name, st, "reranked", f"{k + 1}/{len(qt)} queries, {time.time() - t:.0f}s")
+                assert len(done_ids) == len(qt), f"{name}: {len(done_ids)} reranked queries of {len(qt)}"
                 os.replace(part, out / "rerank.npz")
                 del rr
                 free_gpu()
@@ -662,6 +670,8 @@ def analyse_one(name: str, setting: str) -> dict:
         z = np.load(RUNS / name / setting / "rerank.npz")
         ids, sc = np.split(z["ids"], z["offsets"][1:-1]), np.split(z["scores"], z["offsets"][1:-1])
         cached = [dict(zip(i.tolist(), x.tolist())) for i, x in zip(ids, sc)]
+    assert (cached is None or len(cached) == len(qs)) and all(len(v) == len(qs) for v in views.values()), \
+        f"{name} {setting}: saved scores of other queries"
     per = {v: [retrieval.metrics([doc_ids[i] for i in o], r) for o, r in zip(orders, rels)]
            for v, orders in variants(views, cached).items()}
     depth_recall = {}

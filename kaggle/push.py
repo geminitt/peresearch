@@ -9,6 +9,7 @@ import argparse
 import json
 import re
 import subprocess
+import sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -24,14 +25,16 @@ args = ap.parse_args()
 
 commit = args.commit or subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
 remote = subprocess.run(["git", "branch", "-r", "--contains", commit], capture_output=True, text=True).stdout
-assert remote.strip(), f"commit {commit} is not on the remote yet: push it first"
+if not remote.strip():                    # a check of the world, not of this code: never an assert
+    sys.exit(f"commit {commit} is not on the remote yet: push it first")
 
 src = (HERE / args.kernel / "run.py").read_text()
 src = re.sub(r'^COMMIT = .*$', f'COMMIT = "{commit}"', src, flags=re.M)
 for kv in args.set:
     k, v = kv.split("=", 1)
     src, n = re.subn(rf'^{k} = .*$', f"{k} = {v}", src, flags=re.M)
-    assert n == 1, f"no top-level constant {k}"
+    if n != 1:
+        sys.exit(f"no top-level constant {k}")
 meta = json.loads((HERE / args.kernel / "kernel-metadata.json").read_text())
 meta["kernel_sources"] = args.input
 meta["dataset_sources"] = args.dataset

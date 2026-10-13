@@ -1,0 +1,30 @@
+
+
+
+
+
+
+
+
+
+  ╭──────────────────────────────────────────────────────────────────────────────────────────────╮
+  │ Models and APIs                                                                              │
+  │                                                                                              │
+  │ Chat model  Embeddings  Reranker                                                             │
+  │                                                                                              │
+  │ ❯ qwen3-8b  Local server · 127.0.0.1  ✔ in use                                               │
+  │                                                                                              │
+  │ Model IDs listed here have not been tested for inference or tool calling; /check tests the   │
+  │ chosen ones.                                                                                 │
+  │                                                                                              │
+  │ ←→ role · enter use · a add API · d list IDs · m enter ID · o off · esc close                │
+  ╰──────────────────────────────────────────────────────────────────────────────────────────────╯
+
+
+
+
+
+
+
+
+

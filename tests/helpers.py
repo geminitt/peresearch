@@ -10,7 +10,8 @@ import pytest
 from peresearch.agent import Agent
 from peresearch.llm import Reply
 from peresearch.tools import Toolbox
-from peresearch.web import Exa, Tavily, Web
+from peresearch.mcp import MCPError
+from peresearch.web import McpSearch, Web
 from peresearch.zetokrag.index import Index
 from peresearch.zetokrag.search import Searcher
 from tests.conftest import FakeEmbedder, FakeReranker
@@ -55,20 +56,33 @@ class ScriptedLLM:
         return self.replies.pop(0) if self.replies else Reply("fallback answer [N1]")
 
 
-def http_mock(tavily_status=200, pages=None):
+class SearchServer:
+    """A web search MCP server as McpSearch sees it (peresearch.mcp.Server's surface): one search tool whose text
+    names a page; `fails` makes every call fail as a server that is down does."""
+    name = "fake-search"
+
+    def __init__(self, fails=False):
+        self.fails, self.calls, self.closed = fails, [], False
+
+    def tools(self):
+        return [{"name": "web_search", "inputSchema": {"type": "object", "properties": {
+            "query": {"type": "string"}, "max_results": {"type": "integer"}}, "required": ["query"]}}]
+
+    def call(self, name, args):
+        self.calls.append((name, args))
+        if self.fails:
+            raise MCPError("fake-search: 429 too many requests")
+        return f"1. [BPE explained](https://example.org/bpe)\nabout {args['query']}"
+
+    def close(self):
+        self.closed = True
+
+
+def http_mock(pages=None):
     pages = pages if pages is not None else {"https://example.org/bpe": PAGE}
 
     def handler(request):
         url = str(request.url)
-        if url == Tavily.url:
-            if tavily_status != 200:
-                return httpx.Response(tavily_status, json={"detail": "limit"})
-            q = json.loads(request.content)["query"]
-            return httpx.Response(200, json={"results": [
-                {"title": "BPE explained", "url": "https://example.org/bpe", "content": f"about {q}"}]})
-        if url == Exa.url:
-            return httpx.Response(200, json={"results": [
-                {"title": "Exa hit", "url": "https://example.org/exa", "highlights": ["from exa"]}]})
         if url.startswith("https://r.jina.ai/"):
             return httpx.Response(200, text="rendered by the reader")
         if url in pages:
@@ -89,11 +103,11 @@ def notes(tmp_path):
     return root
 
 
-def toolbox(home, notes, tavily_status=200, pages=None):
+def toolbox(home, notes, search_fails=False, pages=None):
     idx = Index(home, embedder=FakeEmbedder())
     idx.update([notes])
-    http = http_mock(tavily_status, pages)
-    web = Web([Tavily("tvly-test", http), Exa("exa-test", http)], http=http, cache=home / "web")
+    http = http_mock(pages)
+    web = Web(McpSearch(SearchServer(search_fails)), http=http, cache=home / "web")
     return Toolbox(Searcher(idx, reranker=FakeReranker()), web, roots=[notes])
 
 
@@ -107,6 +121,8 @@ def tui_run(make, steps, size=(100, 40), **kw):
     from peresearch.tui import Chat
 
     kw.setdefault("index_on_start", False)
+    kw.setdefault("model_check", lambda: (True, ["model: checked"]))     # no model is called by the tests
+    kw.setdefault("endpoint_check", lambda: ["embeddings: checked", "rerank: none set"])   # nor an endpoint
 
     async def run():
         app = Chat(make, **kw)
@@ -128,7 +144,8 @@ def texts(app):
     from textual.widgets import Markdown, Static
     out = []
     for w in app.query("#log > *"):
-        out.append(w.source if isinstance(w, Markdown) else str(w.render()))
+        if w.id != "welcome":                                       # the conversation, not the greeting above it
+            out.append(w.source if isinstance(w, Markdown) else str(w.render()))
     return "\n".join(out)
 
 
@@ -143,3 +160,31 @@ def user_home(tmp_path, monkeypatch):
     (user / ".config" / "app.md").write_text("private settings\n")
     monkeypatch.setenv("HOME", str(user))
     return user
+
+
+def gateway_scripted(*replies):
+    """Scripted SDK chunks through the production LLM, including its outbound observer."""
+    import json
+    from types import SimpleNamespace
+    from peresearch.llm import LLM
+    pending = iter(replies)
+
+    def create(**kw):
+        reply = next(pending)
+        if isinstance(reply, BaseException):
+            raise reply
+        if callable(reply):
+            reply = reply(kw)
+        calls = [SimpleNamespace(index=i, id=call.id, function=SimpleNamespace(
+                    name=call.name, arguments=json.dumps(call.args, ensure_ascii=False)))
+                 for i, call in enumerate(reply.calls)]
+        delta = SimpleNamespace(content=reply.text, reasoning_content=reply.reasoning,
+                                refusal=reply.refusal, tool_calls=calls)
+        chunk = SimpleNamespace(choices=[SimpleNamespace(delta=delta, finish_reason=reply.finish or "stop")],
+                                usage=SimpleNamespace(prompt_tokens=reply.prompt_tokens,
+                                                      completion_tokens=reply.completion_tokens))
+        return iter([chunk])
+    client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+    model = LLM(client=client, model="scripted-gateway", retries=1, max_tokens=2048)
+    model._context = 8192
+    return model

@@ -1,0 +1,30 @@
+
+
+
+
+
+  ╭──────────────────────────────────────────────────────────────────────────────────────────────╮
+  │ Help                                                                                         │
+  │                                                                                              │
+  │ Commands  Keys                                                                               │
+  │                                                                                              │
+  │ /help      the commands                                                                      │
+  │ /folders   manage folders                                                                    │
+  │ /model     choose model for chat, embedding and reranker with reasoning effort to use        │
+  │ /settings  research limits and search services                                               │
+  │ /status    inspect setup, index, context and usage                                           │
+  │ /sessions  manage conversations                                                              │
+  │ /local     local only: turn the web off for this session (again: back on)                    │
+  │ /check     check configured connections after confirmation (remote services may charge)      │
+  │ /new       start a fresh conversation                                                        │
+  │ /retry     ask the last question again                                                       │
+  │ /sources   preview sources of the last answer                                                │
+  │ /exit      quit                                                                              │
+  │                                                                                              │
+  │ ←→ section · ↑↓ scroll · esc close                                                           │
+  ╰──────────────────────────────────────────────────────────────────────────────────────────────╯
+
+
+
+
+

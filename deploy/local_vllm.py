@@ -33,6 +33,7 @@ def modal_flags() -> list[str]:
 def command() -> list[str]:
     flags = modal_flags()
     for k, v in LOCAL.items():
+        assert k in flags, f"{k} is no longer among modal_vllm.FLAGS: the laptop setting has nothing to replace"
         flags[flags.index(k) + 1] = v
     return ["vllm", "serve", MODEL, "--revision", REVISION, "--served-model-name", "llm", "--port", "8000", *flags]
 

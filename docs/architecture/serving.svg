@@ -1,0 +1,126 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="1010" viewBox="0 0 1500 1010">
+<defs><marker id="arrow-flow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#55554F"/></marker><marker id="arrow-back" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#8A877C"/></marker><marker id="arrow-error" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#C94343"/></marker><marker id="arrow-exit" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#C94343"/></marker></defs>
+<rect width="1500" height="1010" fill="#FCFCFA"/>
+<text x="28.0" y="42.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#1F1F1F" text-anchor="start">Test tools: serving a model for the author&#x27;s measurements (gate 3)</text>
+<text x="28.0" y="68.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" fill="#5A5A55" text-anchor="start">deploy/, not part of peresearch (any OpenAI-compatible API is). The laptop runs a small model of the same family with the Modal flags; Docker rebuilds the Modal image before any GPU time is paid for. working tree on 5ca550a, 2026-10-12.</text>
+<rect x="20" y="92" width="440" height="760" rx="16" fill="none" stroke="#B5B3AA" stroke-width="1.4" stroke-dasharray="9 6"/>
+<text x="36.0" y="116.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14" font-weight="700" fill="#6B6963" text-anchor="start">Laptop: pixi run chat-local</text>
+<rect x="480" y="92" width="480" height="760" rx="16" fill="none" stroke="#B5B3AA" stroke-width="1.4" stroke-dasharray="9 6"/>
+<text x="496.0" y="116.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14" font-weight="700" fill="#6B6963" text-anchor="start">Laptop: pixi run replica (Docker)</text>
+<rect x="980" y="92" width="500" height="760" rx="16" fill="none" stroke="#B5B3AA" stroke-width="1.4" stroke-dasharray="9 6"/>
+<text x="996.0" y="116.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14" font-weight="700" fill="#6B6963" text-anchor="start">Modal: pixi run modal-deploy</text>
+<rect x="40" y="130" width="400" height="130" rx="10" fill="#E8F0FE" stroke="#3B6FD8" stroke-width="1.4"/>
+<text x="52.0" y="153.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#1A3D8F" text-anchor="start">chat_local.py</text>
+<text x="52.0" y="171.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#3B6FD8" text-anchor="start">deploy/chat_local.py</text>
+<text x="52.0" y="194.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">starts the server, then peresearch chat</text>
+<text x="52.0" y="211.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">stops it on quit, SIGHUP, SIGTERM</text>
+<text x="52.0" y="228.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">pgid in runs/serve/local_vllm.pgid</text>
+<rect x="40" y="300" width="400" height="150" rx="10" fill="#FDF0E2" stroke="#C9741A" stroke-width="1.4"/>
+<text x="52.0" y="323.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#7A4205" text-anchor="start">local_vllm.py</text>
+<text x="52.0" y="341.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#C9741A" text-anchor="start">pixi env &#x27;serve&#x27;: vLLM 0.29.0</text>
+<text x="52.0" y="364.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">Qwen3.5-0.8B (pinned revision)</text>
+<text x="52.0" y="381.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">FLAGS and ENV read from modal_vllm.py (ast)</text>
+<text x="52.0" y="398.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">max-model-len 16384, GPU memory 0.80</text>
+<text x="52.0" y="415.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">WSL: VLLM_WSL2_ENABLE_PIN_MEMORY=1</text>
+<rect x="40" y="490" width="400" height="96" rx="10" fill="#F1ECFB" stroke="#7A55C9" stroke-width="1.4"/>
+<text x="52.0" y="513.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#45288A" text-anchor="start">peresearch (TUI)</text>
+<text x="52.0" y="536.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">PERESEARCH_LLM_URL=http://localhost:8000/v1</text>
+<text x="52.0" y="553.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">ZetokRAG models move to the CPU</text>
+<rect x="40" y="626" width="400" height="78" rx="10" fill="#F0EFEA" stroke="#8A877C" stroke-width="1.4"/>
+<text x="52.0" y="649.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#3D3B35" text-anchor="start">runs/serve/local_vllm.log</text>
+<text x="52.0" y="672.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">server log, kept</text>
+<rect x="500" y="130" width="440" height="130" rx="10" fill="#FDF0E2" stroke="#C9741A" stroke-width="1.4"/>
+<text x="512.0" y="153.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#7A4205" text-anchor="start">Image spec</text>
+<text x="512.0" y="171.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#C9741A" text-anchor="start">deploy/modal_vllm.py (literals)</text>
+<text x="512.0" y="194.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">BASE nvidia/cuda:13.0.3-devel-ubuntu22.04</text>
+<text x="512.0" y="211.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">PYTHON 3.12 · PIP vllm==0.29.0</text>
+<text x="512.0" y="228.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">ENV · FLAGS (qwen3 parsers, 32k, CUDA graphs)</text>
+<rect x="500" y="300" width="440" height="200" rx="10" fill="#FDF0E2" stroke="#C9741A" stroke-width="1.4"/>
+<text x="512.0" y="323.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#7A4205" text-anchor="start">replica.py</text>
+<text x="512.0" y="341.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#C9741A" text-anchor="start">docker build + run</text>
+<text x="512.0" y="364.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">environment: CUDA of nvcc = CUDA of torch</text>
+<text x="512.0" y="381.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">download: HF with the image&#x27;s settings</text>
+<text x="512.0" y="398.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">serve: through vllm_server.py, as on Modal</text>
+<text x="512.0" y="415.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">sampling: requests sent as the agent sends</text>
+<text x="512.0" y="432.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">tool call: 1 of 3 requests calls the tool</text>
+<text x="512.0" y="449.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">each check PASS or FAIL</text>
+<rect x="500" y="540" width="440" height="78" rx="10" fill="#F0EFEA" stroke="#8A877C" stroke-width="1.4"/>
+<text x="512.0" y="563.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#3D3B35" text-anchor="start">runs/replica/</text>
+<text x="512.0" y="586.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">vLLM&#x27;s whole log, compiled kernels noted</text>
+<rect x="1000" y="130" width="460" height="96" rx="10" fill="#EDEDED" stroke="#6B6B6B" stroke-width="1.4"/>
+<text x="1012.0" y="153.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#2B2B2B" text-anchor="start">pixi run modal-deploy</text>
+<text x="1012.0" y="171.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#6B6B6B" text-anchor="start">pixi.toml: depends-on</text>
+<text x="1012.0" y="194.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">test and replica must pass first</text>
+<rect x="1000" y="266" width="460" height="96" rx="10" fill="#FDF0E2" stroke="#C9741A" stroke-width="1.4"/>
+<text x="1012.0" y="289.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#7A4205" text-anchor="start">download()</text>
+<text x="1012.0" y="307.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#C9741A" text-anchor="start">CPU container</text>
+<text x="1012.0" y="330.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">weights into Volume peresearch-hf-cache</text>
+<text x="1012.0" y="347.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">no GPU billed for the download</text>
+<rect x="1000" y="402" width="460" height="182" rx="10" fill="#FDF0E2" stroke="#C9741A" stroke-width="1.4"/>
+<text x="1012.0" y="425.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#7A4205" text-anchor="start">Server</text>
+<text x="1012.0" y="443.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#C9741A" text-anchor="start">modal_vllm.Server (one L40S)</text>
+<text x="1012.0" y="466.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">Qwen3.6-35B-A3B-FP8, pinned revision</text>
+<text x="1012.0" y="483.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">max 1 container, scale to zero after 300 s</text>
+<text x="1012.0" y="500.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">startup timeout 1,200 s</text>
+<text x="1012.0" y="517.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">proxy auth (Modal&#x27;s default) as the API key</text>
+<text x="1012.0" y="534.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">vllm_server.start: dies within seconds</text>
+<rect x="1000" y="624" width="460" height="112" rx="10" fill="#F1ECFB" stroke="#7A55C9" stroke-width="1.4"/>
+<text x="1012.0" y="647.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#45288A" text-anchor="start">Client settings</text>
+<text x="1012.0" y="665.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#7A55C9" text-anchor="start">settings.env</text>
+<text x="1012.0" y="688.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">PERESEARCH_LLM_URL = &lt;deployed URL&gt;/v1</text>
+<text x="1012.0" y="705.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">PERESEARCH_LLM_KEY = wk-….ws-… (proxy token)</text>
+<text x="1012.0" y="722.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">PERESEARCH_LLM_MODEL = llm</text>
+<path d="M 240.0 260.0 L 240.0 300.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<path d="M 240.0 450.0 L 240.0 490.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<path d="M 440.0 427.5 L 455.0 428.0 L 455.0 665.0 L 440.0 665.0" fill="none" stroke="#8A877C" stroke-width="1.5" stroke-dasharray="6 4" marker-end="url(#arrow-back)"/>
+<path d="M 720.0 260.0 L 720.0 300.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<path d="M 720.0 500.0 L 720.0 540.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<path d="M 440.0 337.5 L 500.0 337.0" fill="none" stroke="#8A877C" stroke-width="1.5" stroke-dasharray="6 4" marker-end="url(#arrow-back)"/>
+<path d="M 1230.0 226.0 L 1230.0 266.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<path d="M 1230.0 362.0 L 1230.0 402.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<path d="M 1230.0 624.0 L 1230.0 584.0" fill="none" stroke="#C94343" stroke-width="2.2" marker-end="url(#arrow-exit)"/>
+<path d="M 940.0 195.0 L 1000.0 195.0" fill="none" stroke="#8A877C" stroke-width="1.5" stroke-dasharray="6 4" marker-end="url(#arrow-back)"/>
+<text x="40.0" y="880.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" font-weight="700" fill="#3D3B35" text-anchor="start">Legend</text>
+<rect x="40" y="892" width="22" height="14" rx="3" fill="#E8F0FE" stroke="#3B6FD8"/>
+<text x="70.0" y="903.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">interface</text>
+<rect x="40" y="913" width="22" height="14" rx="3" fill="#F1ECFB" stroke="#7A55C9"/>
+<text x="70.0" y="924.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">agent and tools</text>
+<rect x="40" y="934" width="22" height="14" rx="3" fill="#FDF0E2" stroke="#C9741A"/>
+<text x="70.0" y="945.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">model client</text>
+<rect x="275" y="892" width="22" height="14" rx="3" fill="#F0EFEA" stroke="#8A877C"/>
+<text x="305.0" y="903.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">files on disk</text>
+<path d="M 275 920 L 297 920" stroke="#55554F" stroke-width="1.8" marker-end="url(#arrow-flow)"/>
+<text x="305.0" y="924.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">call or data</text>
+<path d="M 275 941 L 297 941" stroke="#8A877C" stroke-width="1.8" stroke-dasharray="6 4" marker-end="url(#arrow-back)"/>
+<text x="305.0" y="945.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">returns, next round</text>
+<path d="M 510 899 L 532 899" stroke="#C94343" stroke-width="1.8" stroke-dasharray="6 4" marker-end="url(#arrow-error)"/>
+<text x="540.0" y="903.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">error path</text>
+<path d="M 510 920 L 532 920" stroke="#C94343" stroke-width="1.8" marker-end="url(#arrow-exit)"/>
+<text x="540.0" y="924.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">leaves the machine</text>
+<text x="500.0" y="700.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" font-weight="700" fill="#7D1F1F" text-anchor="start">Open items (numbers on the boxes)</text>
+<text x="500.0" y="717.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#7D1F1F" text-anchor="start">working tree on 5ca550a, 2026-10-12; their state is kept in STATUS.md</text>
+<circle cx="509" cy="741" r="9" fill="#C94343"/>
+<text x="509.0" y="745.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="700" fill="#FFFFFF" text-anchor="middle">9</text>
+<text x="526.0" y="745.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">the endpoint is the user&#x27;s (any OpenAI-compatible API); checked with</text>
+<text x="526.0" y="762.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">small models on Ollama 0.32.15, llama.cpp and vLLM 0.29</text>
+<text x="526.0" y="779.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">(2026-10-06, recorded in tests/data/servers); LM Studio and a</text>
+<text x="526.0" y="796.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">provider&#x27;s API not yet run</text>
+<circle cx="1446" cy="416" r="10" fill="#C94343"/>
+<text x="1446.0" y="420.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="700" fill="#FFFFFF" text-anchor="middle">9</text>
+<rect x="254.0" y="262.0" width="132.0" height="17" rx="4" fill="#FCFCFA" fill-opacity="0.92"/>
+<text x="320.0" y="274.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" fill="#3D3B35" text-anchor="middle">start, wait until ready</text>
+<rect x="253.6" y="452.0" width="92.8" height="17" rx="4" fill="#FCFCFA" fill-opacity="0.92"/>
+<text x="300.0" y="464.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" fill="#3D3B35" text-anchor="middle">localhost:8000</text>
+<rect x="734.3" y="262.0" width="83.4" height="17" rx="4" fill="#FCFCFA" fill-opacity="0.92"/>
+<text x="776.0" y="274.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" fill="#3D3B35" text-anchor="middle">read with ast</text>
+<rect x="431.9" y="319.2" width="76.1" height="17" rx="4" fill="#FCFCFA" fill-opacity="0.92"/>
+<text x="470.0" y="331.2" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" fill="#3D3B35" text-anchor="middle">FLAGS, ENV</text>
+<rect x="1242.1" y="228.0" width="35.7" height="17" rx="4" fill="#FCFCFA" fill-opacity="0.92"/>
+<text x="1260.0" y="240.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" fill="#3D3B35" text-anchor="middle">once</text>
+<rect x="1238.2" y="364.0" width="51.7" height="17" rx="4" fill="#FCFCFA" fill-opacity="0.92"/>
+<text x="1264.0" y="376.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" fill="#3D3B35" text-anchor="middle">Volume</text>
+<rect x="1237.5" y="586.0" width="44.9" height="17" rx="4" fill="#FCFCFA" fill-opacity="0.92"/>
+<text x="1260.0" y="598.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" fill="#B23A3A" text-anchor="middle">HTTPS</text>
+<rect x="935.2" y="177.0" width="69.7" height="17" rx="4" fill="#FCFCFA" fill-opacity="0.92"/>
+<text x="970.0" y="189.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" fill="#3D3B35" text-anchor="middle">same spec</text>
+</svg>

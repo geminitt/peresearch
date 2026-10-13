@@ -13,6 +13,9 @@ sizes (a 6 GB laptop GPU) differ. Checks, each reported PASS or FAIL:
   sampling     chat requests sent as the agent sends them (its temperature and top-p, streamed) are answered
   tool call    at least one of three such requests with a tool comes back as a tool call (a small model
                sampled at temperature 0.6 does not call the tool every time)
+  compile cache  vLLM's and Triton's compile caches are found in SERVER_ENV's folders under the mounted Volume path
+               (the Modal server keeps them across cold starts there); a second run reports loading from them
+  offline      with SERVER_ENV's HF_HUB_OFFLINE, vLLM's log shows no contact with the Hugging Face Hub
 vLLM's whole log is kept in runs/replica/, with the lines about kernels compiled at run time summarized.
 Under WSL, vLLM needs VLLM_WSL2_ENABLE_PIN_MEMORY=1; that is added here only, as Modal does not run WSL.
 """
@@ -81,6 +84,11 @@ def build(s: dict) -> str:
     return tag
 
 
+def server_env_args(s: dict) -> list[str]:
+    """`docker run` options giving vLLM the Modal server process's own environment (SERVER_ENV)."""
+    return [x for k, v in s.get("SERVER_ENV", {}).items() for x in ("-e", f"{k}={v}")]
+
+
 def in_image(tag: str, script: str, extra=()) -> subprocess.CompletedProcess:
     return run(["docker", "run", "--rm", "--gpus", "all", "-v", f"{Path.home()}/.cache/huggingface:/root/.cache/huggingface",
                 *extra, tag, "python", "-c", script])
@@ -145,6 +153,7 @@ def main(args: list[str]) -> int:
 
     flags = list(s["FLAGS"])
     for k, v in LAPTOP.items():
+        assert k in flags, f"{k} is no longer among FLAGS: the laptop setting has nothing to replace"
         flags[flags.index(k) + 1] = v
     serve = ["vllm", "serve", SMALL[0], "--revision", SMALL[1], "--served-model-name", "llm", "--host", "0.0.0.0",
              "--port", str(s["PORT"]), *flags]
@@ -152,7 +161,7 @@ def main(args: list[str]) -> int:
     start = time.time()
     proc = subprocess.Popen(["docker", "run", "--rm", "--name", name, "--gpus", "all", "-p", f"{HOST_PORT}:{s['PORT']}",
                              "-v", f"{Path.home()}/.cache/huggingface:/root/.cache/huggingface",
-                             "-e", "VLLM_WSL2_ENABLE_PIN_MEMORY=1", tag,
+                             "-e", "VLLM_WSL2_ENABLE_PIN_MEMORY=1", *server_env_args(s), tag,
                              "python", "/root/vllm_server.py", str(s["PORT"]), "900", "--", *serve],
                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
     log = []
@@ -188,6 +197,19 @@ def main(args: list[str]) -> int:
         run(["docker", "stop", "-t", "20", name])
         proc.wait()
     time.sleep(1)
+    env = s.get("SERVER_ENV", {})
+    if "VLLM_CACHE_ROOT" in env:
+        mount, host = "/root/.cache/huggingface", Path.home() / ".cache/huggingface"
+        counts = {k: sum(1 for f in (host / env[k].removeprefix(mount + "/")).rglob("*") if f.is_file())
+                  for k in ("VLLM_CACHE_ROOT", "TRITON_CACHE_DIR")}
+        loaded = any("Directly load AOT compilation from path " + env["VLLM_CACHE_ROOT"] in x for x in log)
+        results["compile cache"] = (all(counts.values()), ", ".join(f"{k}: {n} files" for k, n in counts.items())
+                                    + ("; this run loaded vLLM's compiled graph from it" if loaded else
+                                       "; this run compiled (nothing to load yet)"))
+    if env.get("HF_HUB_OFFLINE") == "1":
+        hub = [x for x in log if any(k in x for k in ("unauthenticated requests to the HF Hub",
+                                                      "Error retrieving safetensors", "huggingface.co"))]
+        results["offline"] = (not hub, "no contact with the Hub in vLLM's log" if not hub else hub[0][:200])
     jit = [x for x in log if any(k in x.lower() for k in ("flashinfer", "nvcc", "jit", "ninja", "compil"))]
     print(f"\nvLLM log: {keep.relative_to(HERE.parent)}; lines about run-time compilation: {len(jit)}")
     for x in jit[:6]:

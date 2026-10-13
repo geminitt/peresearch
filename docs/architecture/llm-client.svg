@@ -1,0 +1,135 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="1240" viewBox="0 0 1500 1240">
+<defs><marker id="arrow-flow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#55554F"/></marker><marker id="arrow-back" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#8A877C"/></marker><marker id="arrow-error" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#C94343"/></marker><marker id="arrow-exit" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#C94343"/></marker></defs>
+<rect width="1500" height="1240" fill="#FCFCFA"/>
+<text x="28.0" y="42.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#1F1F1F" text-anchor="start">Model client: one LLM.chat call</text>
+<text x="28.0" y="68.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" fill="#5A5A55" text-anchor="start">llm.py. Streamed so that stop() ends a reply at once; retried while a cold server wakes. working tree on 5ca550a, 2026-10-12.</text>
+<rect x="470" y="100" width="460" height="96" rx="10" fill="#FCE8E8" stroke="#C94343" stroke-width="1.4"/>
+<text x="482.0" y="123.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#7D1F1F" text-anchor="start">Outbound filter</text>
+<text x="482.0" y="141.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#C94343" text-anchor="start">llm._outbound → guard.outbound</text>
+<text x="482.0" y="164.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">every message and tool-call argument:</text>
+<text x="482.0" y="181.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">secrets redacted, crossing audited</text>
+<rect x="470" y="236" width="460" height="62" rx="10" fill="#FDF0E2" stroke="#C9741A" stroke-width="1.4"/>
+<text x="482.0" y="259.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#7A4205" text-anchor="start">Try n of 5</text>
+<text x="482.0" y="277.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#C9741A" text-anchor="start">LLM._send</text>
+<rect x="470" y="338" width="460" height="112" rx="10" fill="#FDF0E2" stroke="#C9741A" stroke-width="1.4"/>
+<text x="482.0" y="361.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#7A4205" text-anchor="start">Profile and tool mode</text>
+<text x="482.0" y="379.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#C9741A" text-anchor="start">LLM.profile · prompt_tools</text>
+<text x="482.0" y="402.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">sampling only from the profile or the caller</text>
+<text x="482.0" y="419.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">reply-budget field selected by capability</text>
+<text x="482.0" y="436.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">prompt mode: tools described in the system prompt</text>
+<rect x="470" y="474" width="460" height="130" rx="10" fill="#FDF0E2" stroke="#C9741A" stroke-width="1.4"/>
+<text x="482.0" y="497.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#7A4205" text-anchor="start">_create(stop): streamed request</text>
+<text x="482.0" y="515.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#C9741A" text-anchor="start">chat.completions.create</text>
+<text x="482.0" y="538.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">observe submitted messages for evaluation</text>
+<text x="482.0" y="555.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">caller polls every 0.1 s: stop() → Interrupted</text>
+<text x="482.0" y="572.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">no first chunk after 5 s → &#x27;not started yet&#x27;</text>
+<rect x="470" y="644" width="460" height="62" rx="10" fill="#FDF0E2" stroke="#C9741A" stroke-width="1.4"/>
+<text x="482.0" y="667.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#7A4205" text-anchor="start">Reasoning left in the text moved out</text>
+<text x="482.0" y="685.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#C9741A" text-anchor="start">llm.split_reasoning</text>
+<rect x="470" y="746" width="460" height="146" rx="10" fill="#FDF0E2" stroke="#C9741A" stroke-width="1.4"/>
+<text x="482.0" y="769.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#7A4205" text-anchor="start">Tool calls</text>
+<text x="482.0" y="787.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#C9741A" text-anchor="start">llm._arguments</text>
+<text x="482.0" y="810.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">arguments: one JSON object, else {} + the reason</text>
+<text x="482.0" y="827.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">(the last call of a reply that used every token:</text>
+<text x="482.0" y="844.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">said cut); none → recovered from text or</text>
+<text x="482.0" y="861.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">reasoning: Qwen XML, Hermes JSON (vllm#39056)</text>
+<text x="482.0" y="878.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">refusal examples are never executed</text>
+<rect x="470" y="916" width="460" height="56" rx="10" fill="#EDEDED" stroke="#6B6B6B" stroke-width="1.4"/>
+<text x="482.0" y="939.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#2B2B2B" text-anchor="start">Reply: text, calls, reasoning, tokens, refusal</text>
+<rect x="990" y="236" width="480" height="96" rx="10" fill="#FFFFFF" stroke="#9A9A94" stroke-width="1.4" stroke-dasharray="7 5"/>
+<text x="1002.0" y="259.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#3D3B35" text-anchor="start">Model endpoint</text>
+<text x="1002.0" y="282.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">any OpenAI-compatible API: a provider&#x27;s, or</text>
+<text x="1002.0" y="299.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">the user&#x27;s server (Ollama, llama.cpp, vLLM…)</text>
+<rect x="990" y="100" width="480" height="112" rx="10" fill="#FDF0E2" stroke="#C9741A" stroke-width="1.4"/>
+<text x="1002.0" y="123.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#7A4205" text-anchor="start">Context the server runs with</text>
+<text x="1002.0" y="141.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#C9741A" text-anchor="start">LLM.context_length (once)</text>
+<text x="1002.0" y="164.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">setting &gt; server: vLLM max_model_len, llama.cpp</text>
+<text x="1002.0" y="181.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">meta.n_ctx, Ollama /api/ps &gt; the model table</text>
+<rect x="990" y="450" width="480" height="182" rx="10" fill="#FDF0E2" stroke="#C9741A" stroke-width="1.4"/>
+<text x="1002.0" y="473.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#7A4205" text-anchor="start">_read_stream (reader thread)</text>
+<text x="1002.0" y="491.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#C9741A" text-anchor="start">llm._read_stream</text>
+<text x="1002.0" y="514.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">joins text, refusal, reasoning and call pieces</text>
+<text x="1002.0" y="531.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">checks stop() between chunks</text>
+<text x="1002.0" y="548.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">closes the stream itself: a close from another</text>
+<text x="1002.0" y="565.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">thread left vLLM generating for 55.7 s</text>
+<text x="1002.0" y="582.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">no finish_reason → StreamCut</text>
+<rect x="990" y="672" width="480" height="96" rx="10" fill="#EDEDED" stroke="#6B6B6B" stroke-width="1.4"/>
+<text x="1002.0" y="695.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#2B2B2B" text-anchor="start">Interrupted</text>
+<text x="1002.0" y="718.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">stop() was true: the agent ends the question</text>
+<text x="1002.0" y="735.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">as cancelled; the reader closes the stream</text>
+<rect x="30" y="338" width="400" height="96" rx="10" fill="#FCE8E8" stroke="#C94343" stroke-width="1.4"/>
+<text x="42.0" y="361.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#7D1F1F" text-anchor="start">Raised to Agent.ask</text>
+<text x="42.0" y="384.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">non-retryable errors, a 400 left,</text>
+<text x="42.0" y="401.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">the last failed try → UI explains</text>
+<rect x="30" y="474" width="400" height="166" rx="10" fill="#FCE8E8" stroke="#C94343" stroke-width="1.4"/>
+<text x="42.0" y="497.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#7D1F1F" text-anchor="start">Refusals and parser failures</text>
+<text x="42.0" y="520.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">explicit tool refusal → prompt mode, kept;</text>
+<text x="42.0" y="537.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">parser failure → this request via the prompt;</text>
+<text x="42.0" y="554.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">only unsupported fields fall back; unrelated</text>
+<text x="42.0" y="571.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">400s keep capabilities; one alternate token</text>
+<text x="42.0" y="588.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">field; context overflow is raised</text>
+<rect x="30" y="664" width="400" height="130" rx="10" fill="#FCE8E8" stroke="#C94343" stroke-width="1.4"/>
+<text x="42.0" y="687.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#7D1F1F" text-anchor="start">Retryable errors</text>
+<text x="42.0" y="710.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">connection, timeout, 5xx, rate limit, StreamCut:</text>
+<text x="42.0" y="727.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">Retry-After ≤ 60 s, else wait 10·2ⁿ s</text>
+<text x="42.0" y="744.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">local server refused: 2 tries, 2 s apart</text>
+<text x="42.0" y="761.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">last try: raised</text>
+<path d="M 700.0 196.0 L 700.0 236.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<path d="M 1230.0 212.0 L 1230.0 236.0" fill="none" stroke="#C94343" stroke-width="2.2" marker-end="url(#arrow-exit)"/>
+<path d="M 700.0 298.0 L 700.0 338.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<path d="M 700.0 450.0 L 700.0 474.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<path d="M 700.0 604.0 L 700.0 644.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<path d="M 700.0 706.0 L 700.0 746.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<path d="M 700.0 892.0 L 700.0 916.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<path d="M 930.0 506.5 L 950.0 506.5 L 950.0 306.0 L 990.0 306.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<path d="M 1230.0 332.0 L 1230.0 450.0" fill="none" stroke="#C94343" stroke-width="2.2" marker-end="url(#arrow-exit)"/>
+<path d="M 990.0 559.2 L 930.0 559.2" fill="none" stroke="#8A877C" stroke-width="1.5" stroke-dasharray="6 4" marker-end="url(#arrow-back)"/>
+<path d="M 930.0 593.6 L 962.0 593.6 L 962.0 720.0 L 990.0 720.0" fill="none" stroke="#C94343" stroke-width="1.5" stroke-dasharray="6 4" marker-end="url(#arrow-error)"/>
+<path d="M 230.0 474.0 L 230.0 434.0" fill="none" stroke="#C94343" stroke-width="1.5" stroke-dasharray="6 4" marker-end="url(#arrow-error)"/>
+<path d="M 470.0 513.0 L 430.0 513.0" fill="none" stroke="#C94343" stroke-width="1.5" stroke-dasharray="6 4" marker-end="url(#arrow-error)"/>
+<path d="M 470.0 571.5 L 448.0 571.5 L 448.0 694.0 L 430.0 694.0" fill="none" stroke="#C94343" stroke-width="1.5" stroke-dasharray="6 4" marker-end="url(#arrow-error)"/>
+<path d="M 30.0 523.8 L 22.0 523.8 L 22.0 279.0 L 470.0 279.0" fill="none" stroke="#8A877C" stroke-width="1.5" stroke-dasharray="6 4" marker-end="url(#arrow-back)"/>
+<path d="M 30.0 755.0 L 12.0 755.0 L 12.0 255.0 L 470.0 255.0" fill="none" stroke="#8A877C" stroke-width="1.5" stroke-dasharray="6 4" marker-end="url(#arrow-back)"/>
+<text x="1000.0" y="810.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" font-weight="700" fill="#3D3B35" text-anchor="start">Legend</text>
+<rect x="1000" y="822" width="22" height="14" rx="3" fill="#FDF0E2" stroke="#C9741A"/>
+<text x="1030.0" y="833.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">model client</text>
+<rect x="1000" y="843" width="22" height="14" rx="3" fill="#FCE8E8" stroke="#C94343"/>
+<text x="1030.0" y="854.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">guard: access, redaction, checks</text>
+<rect x="1000" y="864" width="22" height="14" rx="3" fill="#F0EFEA" stroke="#8A877C"/>
+<text x="1030.0" y="875.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">files on disk</text>
+<rect x="1000" y="885" width="22" height="14" rx="3" fill="#FFFFFF" stroke="#9A9A94" stroke-dasharray="4 3"/>
+<text x="1030.0" y="896.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">outside this machine</text>
+<path d="M 1000 913 L 1022 913" stroke="#55554F" stroke-width="1.8" marker-end="url(#arrow-flow)"/>
+<text x="1030.0" y="917.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">call or data</text>
+<path d="M 1000 934 L 1022 934" stroke="#8A877C" stroke-width="1.8" stroke-dasharray="6 4" marker-end="url(#arrow-back)"/>
+<text x="1030.0" y="938.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">returns, next round</text>
+<path d="M 1000 955 L 1022 955" stroke="#C94343" stroke-width="1.8" stroke-dasharray="6 4" marker-end="url(#arrow-error)"/>
+<text x="1030.0" y="959.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">error path</text>
+<path d="M 1000 976 L 1022 976" stroke="#C94343" stroke-width="1.8" marker-end="url(#arrow-exit)"/>
+<text x="1030.0" y="980.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">leaves the machine</text>
+<text x="990.0" y="1030.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" font-weight="700" fill="#7D1F1F" text-anchor="start">Open items (numbers on the boxes)</text>
+<text x="990.0" y="1047.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#7D1F1F" text-anchor="start">working tree on 5ca550a, 2026-10-12; their state is kept in STATUS.md</text>
+<circle cx="999" cy="1071" r="9" fill="#C94343"/>
+<text x="999.0" y="1075.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="700" fill="#FFFFFF" text-anchor="middle">9</text>
+<text x="1016.0" y="1075.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">the endpoint is the user&#x27;s (any OpenAI-compatible API); checked with</text>
+<text x="1016.0" y="1092.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">small models on Ollama 0.32.15, llama.cpp and vLLM 0.29 (2026-10-06,</text>
+<text x="1016.0" y="1109.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">recorded in tests/data/servers); LM Studio and a provider&#x27;s API not yet run</text>
+<circle cx="1456" cy="250" r="10" fill="#C94343"/>
+<text x="1456.0" y="254.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="700" fill="#FFFFFF" text-anchor="middle">9</text>
+<rect x="1239.3" y="206.0" width="73.5" height="17" rx="4" fill="#FCFCFA" fill-opacity="0.92"/>
+<text x="1276.0" y="218.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" fill="#B23A3A" text-anchor="middle">asked once</text>
+<rect x="710.8" y="708.0" width="90.3" height="17" rx="4" fill="#FCFCFA" fill-opacity="0.92"/>
+<text x="756.0" y="720.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" fill="#3D3B35" text-anchor="middle">reply received</text>
+<rect x="924.0" y="388.2" width="52.0" height="17" rx="4" fill="#FCFCFA" fill-opacity="0.92"/>
+<text x="950.0" y="400.2" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" fill="#3D3B35" text-anchor="middle">request</text>
+<rect x="1239.6" y="373.0" width="48.8" height="17" rx="4" fill="#FCFCFA" fill-opacity="0.92"/>
+<text x="1264.0" y="385.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" fill="#B23A3A" text-anchor="middle">chunks</text>
+<rect x="941.4" y="541.2" width="37.1" height="17" rx="4" fill="#FCFCFA" fill-opacity="0.92"/>
+<text x="960.0" y="553.2" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" fill="#3D3B35" text-anchor="middle">reply</text>
+<rect x="941.1" y="638.8" width="41.8" height="17" rx="4" fill="#FCFCFA" fill-opacity="0.92"/>
+<text x="962.0" y="650.8" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" fill="#B23A3A" text-anchor="middle">stop()</text>
+<rect x="244.3" y="436.0" width="43.3" height="17" rx="4" fill="#FCFCFA" fill-opacity="0.92"/>
+<text x="266.0" y="448.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" fill="#B23A3A" text-anchor="middle">raised</text>
+<rect x="214.3" y="237.0" width="53.4" height="17" rx="4" fill="#FCFCFA" fill-opacity="0.92"/>
+<text x="241.0" y="249.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" fill="#3D3B35" text-anchor="middle">next try</text>
+</svg>

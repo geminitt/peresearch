@@ -4,6 +4,9 @@
     pixi run python eval/gold.py index                                      # index the copy (GPU, real models)
     pixi run python eval/gold.py pool [qid ...]                             # candidates for each question
     pixi run python eval/gold.py check                                      # every rule below; exit 1 on a fault
+    pixi run python eval/gold.py index --into indexes/<name>                # an index of the copy for one setting
+    pixi run python eval/gold.py evaluate <label> --index indexes/<name>    # score the dev split (test: once, last)
+    pixi run python eval/gold.py compare <label-a> <label-b>                # noise: two runs, question by question
 
 Everything lives in $PERESEARCH_HOME/eval/gold/ (private: it quotes the owner's files), never in the repository:
 corpus/ (the frozen files, under their path relative to the home folder), manifest.json (path, size, sha256),
@@ -28,6 +31,8 @@ import argparse
 import fnmatch
 import hashlib
 import json
+import math
+import os
 import shutil
 import sys
 import unicodedata
@@ -84,6 +89,7 @@ def freeze(live: Index, home: Path, user: Path, exclude: list[str]) -> list[dict
     except BaseException:
         shutil.rmtree(partial, ignore_errors=True)
         raise
+    assert len(manifest) + len(missing) == len(paths), "every indexed file is copied or listed as missing"
     (home / "manifest.json").write_text(json.dumps(manifest, indent=1))
     (home / "missing.json").write_text(json.dumps(missing, indent=1))
     partial.rename(corpus)
@@ -149,11 +155,12 @@ def locate(corpus: Path, file: str, quote: str) -> dict | None:
                 break
     if best is None:
         return None
+    assert q in "\n".join(norm(text[n]) for n in range(best[0], best[1] + 1)), "the located span lacks the quote"
     return {"file": file, "unit": kind, "start": best[0], "end": best[1], "quote": quote}
 
 
 def overlap(question: str, quotes: list[str]) -> float:
-    """Share of the question's words found in its quotes (the cut is fixed, as in eval/personal.py)."""
+    """Share of the question's words found in its quotes (the first design's word cut, kept fixed)."""
     q = set(legacy_tokenize(question, folded=False))
     e = set(w for t in quotes for w in legacy_tokenize(t, folded=False))
     return len(q & e) / max(len(q), 1)
@@ -167,6 +174,7 @@ def pool(index: Index, searcher, question: str, probes: list[str], corpus: Path,
     that found it."""
     ids, bm, vecs = index.snapshot()
     rows = {r[0]: r for r in index.rows()}
+    assert all(int(i) in rows for i in ids), "the snapshot names a chunk the index does not hold"
     found: dict[int, set] = {}
 
     def add(chunk_ids, how):
@@ -184,10 +192,131 @@ def pool(index: Index, searcher, question: str, probes: list[str], corpus: Path,
         add([r[0] for r in ranked[:depth]], "zetokrag")
     out = []
     for i in sorted(found):
-        _, path, section, unit, start, end, text, _ = rows[i]
+        _, path, section, unit, start, end, text, *_ = rows[i]
         out.append({"chunk": i, "file": Path(path).relative_to(corpus).as_posix(), "unit": unit, "start": start,
                     "end": end, "section": section, "text": text, "found_by": sorted(found[i])})
     return out
+
+
+# --- indexing the copy --------------------------------------------------------------------------------------------
+
+def index_corpus(home: Path, into: str):
+    """Index the frozen copy into home/`into`. The copy lives in peresearch's own folder, which the walk never enters
+    for a user; while this index is built, peresearch's own folder is the index's (the copy is walked, the index
+    and its extracted texts are not), then the setting is put back."""
+    before = os.environ.get("PERESEARCH_HOME")
+    target = home / into
+    os.environ["PERESEARCH_HOME"] = str(target)
+    try:
+        return Index(target).update([home / "corpus"])
+    finally:
+        os.environ.pop("PERESEARCH_HOME") if before is None else os.environ.__setitem__("PERESEARCH_HOME", before)
+
+
+# --- the ruler ----------------------------------------------------------------------------------------------------
+
+def score(ranked: list[dict], judged: list[dict], k: int = 10, groups: list[int] | None = None) -> dict | None:
+    """A question's ranked list against its judged passages, by overlapping lines (file, unit, start, end), so that
+    any chunking can be scored: nDCG@k with the grade as gain, each judged passage credited once, to the first chunk
+    that reaches it (a second chunk on it gains nothing); recall@3, @k and @30 of the passages graded 2; and the
+    share of the top k that reaches no judged passage (unjudged: pooling bias to watch). None when nothing judged
+    has a grade above 0 (an unanswerable question: scored elsewhere).
+
+    A ranked chunk reaches a passage through its own lines or those of the near-copies search folded into it
+    (`also`); judged passages that are near-copies of each other (`groups`, from copy_groups) are one passage:
+    credited once, with their best grade, and counted once in recall."""
+    groups = list(range(len(judged))) if groups is None else groups
+    assert len(groups) == len(judged), "one group a judged passage"
+    best_of: dict[int, int] = {}
+    for g, j in zip(groups, judged):
+        best_of[g] = max(best_of.get(g, 0), j["grade"])
+    best = sorted(best_of.values(), reverse=True)[:k]
+    if not any(best):
+        return None
+
+    def overlap(c, j):
+        return c["file"] == j["file"] and c["unit"] == j["unit"] and c["start"] <= j["end"] and j["start"] <= c["end"]
+
+    def reaches(c, j):
+        return overlap(c, j) or any(overlap(a, j) for a in c.get("also", ()))
+
+    credited, dcg, unjudged = set(), 0.0, 0
+    for r, c in enumerate(ranked[:k], start=1):
+        hit = {i for i, j in enumerate(judged) if reaches(c, j)}
+        unjudged += not hit
+        # a group's best grade, whichever copy was reached: the ideal ranking holds that best (it credited the copy's
+        # own grade, so finding the same text in a lower-graded copy scored less; 8 of 74 dev questions, 2026-10-05)
+        dcg += max((best_of[groups[i]] for i in hit if groups[i] not in credited), default=0) / math.log2(r + 1)
+        credited |= {groups[i] for i in hit}
+    idcg = sum(g / math.log2(r + 1) for r, g in enumerate(best, start=1))
+    answers = {groups[i] for i, j in enumerate(judged) if j["grade"] == 2}
+
+    def recall(n):
+        reached = {groups[i] for c in ranked[:n] for i, j in enumerate(judged) if groups[i] in answers and reaches(c, j)}
+        return len(reached) / len(answers) if answers else None
+    out = {f"ndcg@{k}": dcg / idcg, "recall@3": recall(3), f"recall@{k}": recall(k), "recall@30": recall(30),
+           f"unjudged@{k}": unjudged / len(ranked[:k]) if ranked[:k] else 0.0}
+    assert 0 <= out[f"ndcg@{k}"] <= 1 + 1e-9, f"nDCG {out[f'ndcg@{k}']} outside [0, 1]"
+    return out
+
+
+def copy_groups(judged: list[dict], corpus: Path) -> list[int]:
+    """A group number per judged passage: passages whose texts are near-copies (search.near_copy) share one."""
+    from peresearch.zetokrag.search import near_copy
+    texts = [passage(corpus, j) or "" for j in judged]
+    group = list(range(len(judged)))
+    for i in range(len(judged)):
+        for j in range(i):
+            if group[j] == j and texts[i] and texts[j] and near_copy(texts[i], texts[j]):
+                group[i] = j
+                break
+    return group
+
+
+def judged_passages(q: dict, judgments: list[dict]) -> list[dict]:
+    """A question's judged passages, with each evidence passage that no judged one already covers."""
+    mine = [j for j in judgments if j["id"] == q["id"]]
+    for e in q.get("evidence", []):
+        if not any(j["file"] == e["file"] and j["unit"] == e["unit"] and j["start"] <= e["end"] and e["start"] <= j["end"]
+                   and j["grade"] >= e["grade"] for j in mine):
+            mine.append({**{k: e[k] for k in ("file", "unit", "start", "end")}, "grade": e["grade"]})
+    return mine
+
+
+def evaluate(searcher, questions: list[dict], judgments: list[dict], corpus: Path, out: Path) -> dict:
+    """Score every answerable question's ranked list (Searcher.rank, before any cut) and write one line per
+    question to `out`; the means over the scored questions."""
+    rows = []
+    with open(out, "w", encoding="utf-8") as f:
+        for q in questions:
+            ranked, scores, copies = searcher.candidates(pool_query(q))         # what the model is shown
+            where = lambda r: {"file": Path(r[1]).relative_to(corpus).as_posix(), "unit": r[3], "start": r[4], "end": r[5]}
+            got = [{**where(r), "also": [where(c) for c in copies.get(i, [])]} for i, r in enumerate(ranked)]
+            judged = judged_passages(q, judgments)
+            s = score(got, judged, groups=copy_groups(judged, corpus)) if q["answerable"] else None   # answerable only
+            line = {"id": q["id"], "lang": q["lang"], "type": q["type"], "answerable": q["answerable"],
+                    # null when the first is not reranked (a depth under N_RERANK): NaN is not JSON
+                    "best": (None if math.isnan(scores[0]) else float(scores[0])) if len(scores) else 0.0, "metrics": s,
+                    "ranked": [[g["file"], g["unit"], g["start"], g["end"]] for g in got],
+                    "also": {str(i): [[a["file"], a["unit"], a["start"], a["end"]] for a in g["also"]]
+                             for i, g in enumerate(got) if g["also"]}}
+            f.write(json.dumps(line, ensure_ascii=False) + "\n")
+            f.flush()
+            rows.append(line)
+    scored = [r["metrics"] for r in rows if r["metrics"]]
+    return {k: sum(m[k] for m in scored if m[k] is not None) / max(1, sum(m[k] is not None for m in scored))
+            for k in ("ndcg@10", "recall@3", "recall@10", "recall@30", "unjudged@10")} | {"scored": len(scored)}
+
+
+def paired(new: list[float], old: list[float], resamples: int = 10_000, seed: int = 0) -> dict:
+    """Per-question differences new − old: their mean, a 95% interval from a paired bootstrap (the questions drawn
+    again with replacement, the mean taken each time), and how many questions won, tied and lost."""
+    import random
+    d = [a - b for a, b in zip(new, old, strict=True)]
+    rng = random.Random(seed)
+    means = sorted(sum(rng.choice(d) for _ in d) / len(d) for _ in range(resamples))
+    return {"mean": sum(d) / len(d), "low": means[int(0.025 * resamples)], "high": means[int(0.975 * resamples) - 1],
+            "wins": sum(x > 1e-9 for x in d), "ties": sum(abs(x) <= 1e-9 for x in d), "losses": sum(x < -1e-9 for x in d)}
 
 
 def pool_query(q: dict) -> str:
@@ -260,6 +389,7 @@ def split(questions: list[dict], share: float = 0.3, seed: int = 0) -> list[dict
                 break
     for q in questions:
         q["split"] = "test" if q["id"] in test else "dev"
+    assert sum(q["split"] == "test" for q in questions) == len(test), "a test id that names no question"
     return questions
 
 
@@ -348,10 +478,21 @@ def main(argv=None) -> int:
     sub = ap.add_subparsers(dest="cmd", required=True)
     f = sub.add_parser("freeze")
     f.add_argument("--exclude", action="append", default=[])
-    sub.add_parser("index")
+    ix = sub.add_parser("index")
+    ix.add_argument("--into", default="index", help="the index folder under eval/gold")
+    ix.add_argument("--chunking", default=None, help="a preset of zetokrag.chunk.PRESETS (default: chunk.DEFAULT)")
+    ix.add_argument("--context", default=None, help="what precedes a chunk when ranked: one of index.CONTEXTS "
+                                                    "(default: index.CONTEXT)")
     p = sub.add_parser("pool")
     p.add_argument("ids", nargs="*")
     sub.add_parser("check")
+    ev = sub.add_parser("evaluate", help="score ZetokRAG on the dev split (the test split once, at the end)")
+    ev.add_argument("label", help="a name for this run, e.g. baseline-2026-10-03")
+    ev.add_argument("--index", default="index", help="index folder under eval/gold (built by `index --into`)")
+    ev.add_argument("--split", default="dev", choices=["dev", "test"])
+    cmp_ = sub.add_parser("compare", help="two runs question by question: the noise between identical runs")
+    cmp_.add_argument("a")
+    cmp_.add_argument("b")
     sub.add_parser("split")
     j = sub.add_parser("judge")
     j.add_argument("id")
@@ -370,7 +511,13 @@ def main(argv=None) -> int:
         print(f"froze {len(manifest)} files, {sum(m['size'] for m in manifest) / 1e6:.1f} MB")
         return 0
     if args.cmd == "index":
-        r = Index(home / "index").update([corpus])
+        from peresearch.zetokrag import chunk
+        chunk.DEFAULT = chunk.PRESETS[args.chunking] if args.chunking else chunk.DEFAULT
+        if args.context:
+            import peresearch.zetokrag.index as index_module
+            assert args.context in index_module.CONTEXTS, f"context {args.context!r} not in {index_module.CONTEXTS}"
+            index_module.CONTEXT = args.context
+        r = index_corpus(home, args.into)
         print(f"{r.added} added · {r.chunks} chunks")
         return 0
     if args.cmd == "judge":
@@ -387,10 +534,38 @@ def main(argv=None) -> int:
         (home / "questions.jsonl").write_text("".join(json.dumps(q, ensure_ascii=False) + "\n" for q in qs))
         print(f"test {sum(q['split'] == 'test' for q in qs)} of {len(qs)}")
         return 0
+    if args.cmd == "evaluate":
+        from peresearch.zetokrag.search import N_RERANK, Searcher
+        runs = home / "runs"
+        runs.mkdir(exist_ok=True)
+        picked = [q for q in questions if q["split"] == args.split]
+        # the ruler reranks all N_RERANK, whatever this machine's PERESEARCH_RERANK_DEPTH
+        means = evaluate(Searcher(Index(home / args.index), depth=N_RERANK), picked, load_jsonl(home / "judgments.jsonl"),
+                         corpus.resolve(), runs / f"{args.label}.jsonl")
+        (runs / f"{args.label}.summary.json").write_text(json.dumps({"index": args.index, "split": args.split,
+                                                                    **means}, indent=1))
+        print(f"{args.label}: " + " · ".join(f"{k} {v:.3f}" if isinstance(v, float) else f"{k} {v}"
+                                             for k, v in means.items()))
+        return 0
+    if args.cmd == "compare":
+        a, b = ({r["id"]: r for r in load_jsonl(home / "runs" / f"{x}.jsonl")} for x in (args.a, args.b))
+        same_list = sum(a[i]["ranked"] == b[i]["ranked"] for i in a if i in b)
+        diffs = [abs(a[i]["metrics"]["ndcg@10"] - b[i]["metrics"]["ndcg@10"]) for i in a
+                 if i in b and a[i]["metrics"] and b[i]["metrics"]]
+        print(f"{same_list}/{len(a)} questions ranked identically; nDCG@10 changed on {sum(d > 1e-9 for d in diffs)} "
+              f"of {len(diffs)}, by {max(diffs, default=0):.4f} at most, {sum(diffs) / max(1, len(diffs)):.4f} on average")
+        both = [i for i in a if i in b and a[i]["metrics"] and b[i]["metrics"]]
+        for m in ("ndcg@10", "recall@10", "recall@30"):
+            pairs = [(b[i]["metrics"][m], a[i]["metrics"][m]) for i in both
+                     if a[i]["metrics"][m] is not None and b[i]["metrics"][m] is not None]
+            r = paired([x for x, _ in pairs], [y for _, y in pairs])
+            print(f"{args.b} − {args.a}, {m}: {r['mean']:+.3f} [{r['low']:+.3f}, {r['high']:+.3f}] 95% paired "
+                  f"bootstrap; {r['wins']} better, {r['ties']} same, {r['losses']} worse of {len(pairs)}")
+        return 0
     if args.cmd == "pool":
-        from peresearch.zetokrag.search import Searcher
+        from peresearch.zetokrag.search import N_RERANK, Searcher
         index = Index(home / "index")
-        searcher = Searcher(index)
+        searcher = Searcher(index, depth=N_RERANK)
         (home / "pools").mkdir(exist_ok=True)
         for q in questions:
             if args.ids and q["id"] not in args.ids:

@@ -1,0 +1,145 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="1230" viewBox="0 0 1500 1230">
+<defs><marker id="arrow-flow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#55554F"/></marker><marker id="arrow-back" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#8A877C"/></marker><marker id="arrow-error" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#C94343"/></marker><marker id="arrow-exit" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#C94343"/></marker></defs>
+<rect width="1500" height="1230" fill="#FCFCFA"/>
+<text x="28.0" y="42.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#1F1F1F" text-anchor="start">Threads in the TUI</text>
+<text x="28.0" y="68.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" fill="#5A5A55" text-anchor="start">tui.py, agent.py, llm.py, zetokrag/index.py, cli.py. Who runs where, how they wait on each other, and how quitting stops them. working tree on 5ca550a, 2026-10-12.</text>
+<rect x="20" y="92" width="360" height="840" rx="16" fill="none" stroke="#B5B3AA" stroke-width="1.4" stroke-dasharray="9 6"/>
+<text x="36.0" y="116.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14" font-weight="700" fill="#6B6963" text-anchor="start">Textual main thread</text>
+<rect x="400" y="92" width="360" height="840" rx="16" fill="none" stroke="#B5B3AA" stroke-width="1.4" stroke-dasharray="9 6"/>
+<text x="416.0" y="116.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14" font-weight="700" fill="#6B6963" text-anchor="start">Thread &#x27;agent&#x27; (daemon)</text>
+<rect x="780" y="92" width="340" height="840" rx="16" fill="none" stroke="#B5B3AA" stroke-width="1.4" stroke-dasharray="9 6"/>
+<text x="796.0" y="116.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14" font-weight="700" fill="#6B6963" text-anchor="start">Model reader thread (daemon)</text>
+<rect x="1140" y="92" width="340" height="300" rx="16" fill="none" stroke="#B5B3AA" stroke-width="1.4" stroke-dasharray="9 6"/>
+<text x="1156.0" y="116.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14" font-weight="700" fill="#6B6963" text-anchor="start">CLI process (no TUI)</text>
+<rect x="1140" y="412" width="340" height="520" rx="16" fill="none" stroke="#B5B3AA" stroke-width="1.4" stroke-dasharray="9 6"/>
+<text x="1156.0" y="436.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14" font-weight="700" fill="#6B6963" text-anchor="start">Thread &#x27;index&#x27; (daemon)</text>
+<rect x="40" y="130" width="320" height="78" rx="10" fill="#E8F0FE" stroke="#3B6FD8" stroke-width="1.4"/>
+<text x="52.0" y="153.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#1A3D8F" text-anchor="start">Prompt submitted</text>
+<text x="52.0" y="171.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#3B6FD8" text-anchor="start">App.on_prompt_submitted</text>
+<text x="52.0" y="194.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">→ run_agent(question)</text>
+<rect x="40" y="260" width="320" height="78" rx="10" fill="#E8F0FE" stroke="#3B6FD8" stroke-width="1.4"/>
+<text x="52.0" y="283.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#1A3D8F" text-anchor="start">on_agent_event</text>
+<text x="52.0" y="306.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">status line, spinner, tokens, answer</text>
+<rect x="40" y="390" width="320" height="96" rx="10" fill="#E8F0FE" stroke="#3B6FD8" stroke-width="1.4"/>
+<text x="52.0" y="413.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#1A3D8F" text-anchor="start">Permission dialog</text>
+<text x="52.0" y="431.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#3B6FD8" text-anchor="start">App.permission → show()</text>
+<text x="52.0" y="454.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">once · session · no; Esc refuses and stops</text>
+<rect x="40" y="532" width="320" height="78" rx="10" fill="#E8F0FE" stroke="#3B6FD8" stroke-width="1.4"/>
+<text x="52.0" y="555.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#1A3D8F" text-anchor="start">Esc</text>
+<text x="52.0" y="573.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#3B6FD8" text-anchor="start">App.action_escape</text>
+<text x="52.0" y="596.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">agent.cancel(), if a question runs</text>
+<rect x="40" y="660" width="320" height="96" rx="10" fill="#E8F0FE" stroke="#3B6FD8" stroke-width="1.4"/>
+<text x="52.0" y="683.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#1A3D8F" text-anchor="start">Folder check</text>
+<text x="52.0" y="701.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#3B6FD8" text-anchor="start">App.reindex</text>
+<text x="52.0" y="724.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">on open, /index, /add, /remove;</text>
+<text x="52.0" y="741.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">refused while a question runs</text>
+<rect x="40" y="812" width="320" height="96" rx="10" fill="#E8F0FE" stroke="#3B6FD8" stroke-width="1.4"/>
+<text x="52.0" y="835.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#1A3D8F" text-anchor="start">Ctrl+Q, /exit</text>
+<text x="52.0" y="853.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#3B6FD8" text-anchor="start">App.action_quit</text>
+<text x="52.0" y="876.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">stopping.set(), agent.cancel();</text>
+<text x="52.0" y="893.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">waits ≤ QUIT_GRACE 2 s, then exits</text>
+<rect x="420" y="130" width="320" height="96" rx="10" fill="#F1ECFB" stroke="#7A55C9" stroke-width="1.4"/>
+<text x="432.0" y="153.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#45288A" text-anchor="start">Agent.ask(question)</text>
+<text x="432.0" y="171.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#7A55C9" text-anchor="start">App.run_agent</text>
+<text x="432.0" y="194.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">agent built on the first question</text>
+<text x="432.0" y="211.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">events through _ui (none once quitting)</text>
+<rect x="420" y="390" width="240" height="96" rx="10" fill="#F1ECFB" stroke="#7A55C9" stroke-width="1.4"/>
+<text x="432.0" y="413.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#45288A" text-anchor="start">Toolbox.ask = permission</text>
+<text x="432.0" y="436.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">waits on a threading.Event</text>
+<text x="432.0" y="453.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">(0.1 s polls); &#x27;no&#x27; on quit</text>
+<rect x="420" y="532" width="240" height="78" rx="10" fill="#F1ECFB" stroke="#7A55C9" stroke-width="1.4"/>
+<text x="432.0" y="555.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#45288A" text-anchor="start">Agent.cancelled</text>
+<text x="432.0" y="578.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">read by the loop each round</text>
+<text x="432.0" y="595.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">and by the reader&#x27;s stop()</text>
+<rect x="420" y="650" width="320" height="78" rx="10" fill="#E3F4EC" stroke="#2E9467" stroke-width="1.4"/>
+<text x="432.0" y="673.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#155A3B" text-anchor="start">Searcher.find</text>
+<text x="432.0" y="696.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">Index.read / snapshot, under the RLock</text>
+<rect x="800" y="260" width="300" height="130" rx="10" fill="#FDF0E2" stroke="#C9741A" stroke-width="1.4"/>
+<text x="812.0" y="283.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#7A4205" text-anchor="start">_read_stream</text>
+<text x="812.0" y="301.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#C9741A" text-anchor="start">LLM._create helper</text>
+<text x="812.0" y="324.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">reads chunks, checks stop()</text>
+<text x="812.0" y="341.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">closes the stream at the next chunk</text>
+<text x="812.0" y="358.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">the caller is freed within 0.1 s</text>
+<rect x="1160" y="520" width="300" height="150" rx="10" fill="#E3F4EC" stroke="#2E9467" stroke-width="1.4"/>
+<text x="1172.0" y="543.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#155A3B" text-anchor="start">Index.update(stop)</text>
+<text x="1172.0" y="561.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#2E9467" text-anchor="start">Workspace.update</text>
+<text x="1172.0" y="584.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">shared lock across embedding changes</text>
+<text x="1172.0" y="601.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">a question asked meanwhile runs</text>
+<text x="1172.0" y="618.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">stop() checked before each file:</text>
+<text x="1172.0" y="635.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">commits what is done, raises Stopped</text>
+<rect x="1160" y="130" width="300" height="130" rx="10" fill="#E8F0FE" stroke="#3B6FD8" stroke-width="1.4"/>
+<text x="1172.0" y="153.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#1A3D8F" text-anchor="start">peresearch index, setup</text>
+<text x="1172.0" y="171.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#3B6FD8" text-anchor="start">cli.main → cli._update</text>
+<text x="1172.0" y="194.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">Ctrl+C: SIGINT, then once more</text>
+<text x="1172.0" y="211.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">from pixi: the first stops, the rest</text>
+<text x="1172.0" y="228.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">are ignored; exit status 130</text>
+<rect x="400" y="980" width="1080" height="96" rx="10" fill="#F0EFEA" stroke="#8A877C" stroke-width="1.4"/>
+<text x="412.0" y="1003.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#3D3B35" text-anchor="start">index.sqlite (WAL)</text>
+<text x="412.0" y="1021.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#8A877C" text-anchor="start">zetokrag/index.py</text>
+<text x="412.0" y="1044.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">reading connection `db` + RLock for searches · writer connection for updates · a search sees only committed</text>
+<text x="412.0" y="1061.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">data · the snapshot is rebuilt when PRAGMA data_version changes · an unfinished batch rolls back</text>
+<path d="M 360.0 169.0 L 420.0 169.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<path d="M 445.6 226.0 L 445.6 299.0 L 360.0 299.0" fill="none" stroke="#8A877C" stroke-width="1.5" stroke-dasharray="6 4" marker-end="url(#arrow-back)"/>
+<path d="M 532.0 226.0 L 532.0 390.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<path d="M 420.0 423.6 L 360.0 423.6" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<path d="M 360.0 462.0 L 420.0 462.0" fill="none" stroke="#8A877C" stroke-width="1.5" stroke-dasharray="6 4" marker-end="url(#arrow-back)"/>
+<path d="M 360.0 571.0 L 420.0 571.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<path d="M 660.0 571.0 L 770.0 571.0 L 770.0 350.0 L 800.0 350.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<path d="M 740.0 178.0 L 790.0 178.0 L 790.0 290.0 L 800.0 290.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<path d="M 692.0 226.0 L 692.0 650.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<path d="M 200.0 756.0 L 200.0 786.0 L 1130.0 786.0 L 1130.0 570.0 L 1160.0 570.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<path d="M 360.0 840.8 L 392.0 841.0 L 392.0 594.0 L 420.0 594.4" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<path d="M 360.0 879.2 L 1148.0 879.0 L 1148.0 640.0 L 1160.0 640.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<path d="M 1400.0 260.0 L 1400.0 520.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<path d="M 580.0 728.0 L 580.0 980.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<path d="M 1310.0 670.0 L 1310.0 980.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<text x="30.0" y="1000.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" font-weight="700" fill="#3D3B35" text-anchor="start">Legend</text>
+<rect x="30" y="1012" width="22" height="14" rx="3" fill="#E8F0FE" stroke="#3B6FD8"/>
+<text x="60.0" y="1023.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">interface</text>
+<rect x="30" y="1033" width="22" height="14" rx="3" fill="#F1ECFB" stroke="#7A55C9"/>
+<text x="60.0" y="1044.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">agent and tools</text>
+<rect x="30" y="1054" width="22" height="14" rx="3" fill="#FDF0E2" stroke="#C9741A"/>
+<text x="60.0" y="1065.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">model client</text>
+<rect x="30" y="1075" width="22" height="14" rx="3" fill="#E3F4EC" stroke="#2E9467"/>
+<text x="60.0" y="1086.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">ZetokRAG</text>
+<rect x="30" y="1096" width="22" height="14" rx="3" fill="#F0EFEA" stroke="#8A877C"/>
+<text x="60.0" y="1107.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">files on disk</text>
+<path d="M 30 1124 L 52 1124" stroke="#55554F" stroke-width="1.8" marker-end="url(#arrow-flow)"/>
+<text x="60.0" y="1128.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">call or data</text>
+<path d="M 30 1145 L 52 1145" stroke="#8A877C" stroke-width="1.8" stroke-dasharray="6 4" marker-end="url(#arrow-back)"/>
+<text x="60.0" y="1149.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">returns, next round</text>
+<path d="M 30 1166 L 52 1166" stroke="#C94343" stroke-width="1.8" stroke-dasharray="6 4" marker-end="url(#arrow-error)"/>
+<text x="60.0" y="1170.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">error path</text>
+<path d="M 30 1187 L 52 1187" stroke="#C94343" stroke-width="1.8" marker-end="url(#arrow-exit)"/>
+<text x="60.0" y="1191.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">leaves the machine</text>
+<rect x="367.0" y="151.0" width="45.9" height="17" rx="4" fill="#FCFCFA" fill-opacity="0.92"/>
+<text x="390.0" y="163.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" fill="#3D3B35" text-anchor="middle">thread</text>
+<rect x="379.4" y="281.0" width="46.7" height="17" rx="4" fill="#FCFCFA" fill-opacity="0.92"/>
+<text x="402.8" y="293.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" fill="#3D3B35" text-anchor="middle">events</text>
+<rect x="489.9" y="290.0" width="80.2" height="17" rx="4" fill="#FCFCFA" fill-opacity="0.92"/>
+<text x="530.0" y="302.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" fill="#3D3B35" text-anchor="middle">outside path</text>
+<rect x="371.1" y="405.6" width="37.7" height="17" rx="4" fill="#FCFCFA" fill-opacity="0.92"/>
+<text x="390.0" y="417.6" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" fill="#3D3B35" text-anchor="middle">show</text>
+<rect x="365.2" y="444.0" width="49.5" height="17" rx="4" fill="#FCFCFA" fill-opacity="0.92"/>
+<text x="390.0" y="456.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" fill="#3D3B35" text-anchor="middle">answer</text>
+<rect x="377.2" y="553.0" width="25.6" height="17" rx="4" fill="#FCFCFA" fill-opacity="0.92"/>
+<text x="390.0" y="565.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" fill="#3D3B35" text-anchor="middle">set</text>
+<rect x="749.1" y="486.7" width="41.8" height="17" rx="4" fill="#FCFCFA" fill-opacity="0.92"/>
+<text x="770.0" y="498.7" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" fill="#3D3B35" text-anchor="middle">stop()</text>
+<rect x="731.4" y="160.0" width="67.2" height="17" rx="4" fill="#FCFCFA" fill-opacity="0.92"/>
+<text x="765.0" y="172.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" fill="#3D3B35" text-anchor="middle">model call</text>
+<rect x="657.9" y="470.9" width="84.1" height="17" rx="4" fill="#FCFCFA" fill-opacity="0.92"/>
+<text x="700.0" y="482.9" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" fill="#3D3B35" text-anchor="middle">search_notes</text>
+<rect x="735.0" y="768.0" width="45.9" height="17" rx="4" fill="#FCFCFA" fill-opacity="0.92"/>
+<text x="758.0" y="780.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" fill="#3D3B35" text-anchor="middle">thread</text>
+<rect x="330.9" y="793.4" width="54.2" height="17" rx="4" fill="#FCFCFA" fill-opacity="0.92"/>
+<text x="358.0" y="805.4" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" fill="#3D3B35" text-anchor="middle">cancel()</text>
+<rect x="746.4" y="861.1" width="94.1" height="17" rx="4" fill="#FCFCFA" fill-opacity="0.92"/>
+<text x="793.4" y="873.1" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" fill="#3D3B35" text-anchor="middle">stopping.is_set</text>
+<rect x="1401.3" y="372.0" width="57.5" height="17" rx="4" fill="#FCFCFA" fill-opacity="0.92"/>
+<text x="1430.0" y="384.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" fill="#3D3B35" text-anchor="middle">update()</text>
+<rect x="586.9" y="836.0" width="34.2" height="17" rx="4" fill="#FCFCFA" fill-opacity="0.92"/>
+<text x="604.0" y="848.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" fill="#3D3B35" text-anchor="middle">read</text>
+<rect x="1315.5" y="807.0" width="36.9" height="17" rx="4" fill="#FCFCFA" fill-opacity="0.92"/>
+<text x="1334.0" y="819.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" fill="#3D3B35" text-anchor="middle">write</text>
+</svg>

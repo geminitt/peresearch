@@ -14,22 +14,32 @@ build-backend = "setuptools.build_meta"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+peresearch = ["data/*"]          # the secret rules (gitleaks.toml) and their license
+
 [tool.mutmut]
 # Mutation testing: `pixi run mutmut run --max-children 14`, then `pixi run mutmut results`. A surviving mutant is a
 # change to the code that no test notices. Each module listed here is tested by contract (tests/test_<module>.py);
 # a module joins the list when its tests are rewritten that way.
-source_paths = ["src/peresearch/zetokrag/", "src/peresearch/guard.py", "src/peresearch/tools.py",
-                "src/peresearch/web.py", "src/peresearch/workspace.py", "src/peresearch/settings.py",
-                "src/peresearch/llm.py", "src/peresearch/agent.py", "src/peresearch/cli.py",
-                "src/peresearch/tui.py"]
-also_copy = ["src/", "tests/", "eval/", "deploy/", "kaggle/", "pixi.toml", "pixi.lock", "pyproject.toml", "README.md"]
-pytest_add_cli_args_test_selection = ["tests/test_core.py", "tests/test_parse_chunk.py", "tests/test_index_search.py",
+source_paths = ["src/peresearch/zetokrag/", "src/peresearch/files.py", "src/peresearch/guard.py",
+                "src/peresearch/secret_rules.py",
+                "src/peresearch/tools.py",
+                "src/peresearch/web.py", "src/peresearch/papers.py", "src/peresearch/wiki.py",
+                "src/peresearch/workspace.py",
+                "src/peresearch/settings.py",
+                "src/peresearch/llm.py", "src/peresearch/profiles.py", "src/peresearch/agent.py", "src/peresearch/cli.py",
+                "src/peresearch/tui.py", "src/peresearch/mascot.py"]
+also_copy = ["src/", "tests/", "eval/", "deploy/", "kaggle/", "scripts/", "pixi.toml", "pixi.lock", "pyproject.toml", "README.md"]
+pytest_add_cli_args_test_selection = ["tests/test_core.py", "tests/test_files.py", "tests/test_parse_chunk.py",
+                                      "tests/test_index_search.py", "tests/test_datafilter.py",
                                       "tests/test_models.py", "tests/test_guard.py", "tests/test_canary.py",
-                                      "tests/test_tools.py", "tests/test_web.py", "tests/test_workspace.py",
-                                      "tests/test_llm.py", "tests/test_agent.py", "tests/test_cli.py",
+                                      "tests/test_tools.py", "tests/test_web.py", "tests/test_papers.py", "tests/test_wiki.py",
+                                      "tests/test_workspace.py",
+                                      "tests/test_llm.py", "tests/test_profiles.py", "tests/test_agent.py", "tests/test_cli.py",
                                       "tests/test_tui_text.py", "tests/test_tui_prompt.py", "tests/test_tui_commands.py",
-                                      "tests/test_tui.py",
-                                      "tests/test_tui_input.py"]
+                                      "tests/test_tui.py", "tests/test_mascot.py",
+                                      "tests/test_tui_input.py", "tests/test_stabilization.py", "tests/test_research.py",
+                                      "tests/test_checks.py"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]          # not mutants/, the copy mutation testing works in

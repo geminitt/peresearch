@@ -151,6 +151,7 @@ def metrics(ranked: list[str], rel: dict[str, int]) -> dict[str, float]:
     dcg = sum(rel.get(d, 0) / math.log2(i + 2) for i, d in enumerate(ranked[:10]))
     ideal = sum(s / math.log2(i + 2) for i, s in enumerate(sorted(rel.values(), reverse=True)[:10]))
     mrr = next((1 / (i + 1) for i, d in enumerate(ranked[:10]) if d in rel), 0.0)
+    assert len(set(ranked)) == len(ranked) and dcg <= ideal + 1e-9, "a ranking lists a document twice"
     return {"ndcg@10": dcg / ideal, "recall@10": len(set(ranked[:10]) & rel.keys()) / len(rel),
             "recall@100": len(set(ranked[:100]) & rel.keys()) / len(rel), "mrr@10": mrr}
 
@@ -159,7 +160,9 @@ def auroc(pos: list[float], neg: list[float]) -> float:
     """P(answerable score > unanswerable score), ties counting half."""
     p, n = np.sort(np.asarray(pos, dtype=float)), np.asarray(neg, dtype=float)
     right, left = np.searchsorted(p, n, side="right"), np.searchsorted(p, n, side="left")
-    return float(((len(p) - right).sum() + 0.5 * (right - left).sum()) / (len(p) * len(n)))
+    out = float(((len(p) - right).sum() + 0.5 * (right - left).sum()) / (len(p) * len(n)))
+    assert 0 <= out <= 1, f"AUROC {out}"
+    return out
 
 
 # --- run --------------------------------------------------------------------------------------------------
@@ -224,7 +227,10 @@ def document_embeddings(name, model, texts, base: Path) -> np.ndarray:
 
     path = base / f"docs-{model}.npy"
     if path.exists():
-        return np.load(path)
+        docs = np.load(path)
+        # a cache from another version of the corpus would pair vectors with the wrong documents, silently
+        assert docs.shape[0] == len(texts), f"{name}: {docs.shape[0]} cached vectors for {len(texts)} documents"
+        return docs
     step, parts, emb, t = 16384, [], None, time.time()
     for a in range(0, len(texts), step):
         part = base / f"docs-{model}.{a:08d}.npy"
@@ -234,6 +240,7 @@ def document_embeddings(name, model, texts, base: Path) -> np.ndarray:
             log(name, model, f"{min(a + step, len(texts))}/{len(texts)} docs, {time.time() - t:.0f}s;", gpu_memory())
         parts.append(part)
     docs = np.concatenate([np.load(x) for x in parts])
+    assert docs.shape[0] == len(texts), f"{name}: {docs.shape[0]} vectors for {len(texts)} documents"
     np.save(path, docs)
     for x in parts:
         x.unlink()
@@ -252,7 +259,10 @@ def first_stages(name, texts, qtexts, out: Path, own, base: Path) -> dict:
     path = out / "first_stage.npz"
     if path.exists():
         z = np.load(path)
-        return {k: (z[k + ":ids"], z[k + ":scores"]) for k in {k.split(":")[0] for k in z.files}}
+        cached = {k: (z[k + ":ids"], z[k + ":scores"]) for k in {k.split(":")[0] for k in z.files}}
+        assert all(len(ids) == len(qtexts) for ids, _ in cached.values()), \
+            f"{name}: cached first stage of other queries"
+        return cached
     device = "cuda" if torch.cuda.is_available() else "cpu"
     docs = {m: document_embeddings(name, m, texts, base) for m in EMBEDDERS}
     qvecs = {}
@@ -395,6 +405,8 @@ def run_dataset(name: str, setting: str = "as-typed") -> None:
     stages = first_stages(name, texts, qtexts, out, own, base)
     rels = [rel[q] for q in qs]
     rr = rerank_all(name, texts, qtexts, rels, doc_ids, stages, out)
+    assert len(rr["answerable"]) == len(rr["unanswerable"]) == len(qs) and \
+        all(len(o) == len(qs) for o in rr["orders"].values()), f"{name}: reranked results of other queries"
     per_method = {}
     for method, (view, reranked) in METHODS.items():
         orders = rr["orders"][view] if reranked else [[int(i) for i in row if i >= 0] for row in stages[view][0]]
