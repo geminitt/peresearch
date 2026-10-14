@@ -19,6 +19,7 @@ import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
+from types import SimpleNamespace
 
 from peresearch import guard, profiles, settings
 
@@ -216,9 +217,18 @@ class CallUnreadable(Exception):
     client reads the call itself. Raised inside the client only."""
 
 
+class ResponsesFailed(Exception):
+    """The Responses API ended a reply with a failure or an error event."""
+
+
 class ToolsRefused(Exception):
     """The server refused the request's `tools` (no tool-call parser, or a model without tool calls): the calls go
-    through the prompt from now on. Raised inside the client only."""
+    through the prompt from now on. Raised inside the client only. `field`: the `tools` field itself was refused, as
+    OpenAI refuses it for a model that takes tools only through the Responses API (then that route is tried)."""
+
+    def __init__(self, message: str, field: bool = False):
+        super().__init__(message)
+        self.field = field
 
 
 def _hf_name(root: str) -> str:
@@ -348,6 +358,88 @@ def _read_stream(stream, stop, on_first=None) -> dict:
     return _assembled(text, reasoning, calls, usage, finish, refusal)
 
 
+def responses_request(messages: list[dict], tools: list[dict] | None) -> dict:
+    """A chat request (messages, function tools) as the Responses API takes it: the system prompt as `instructions`,
+    the assistant's calls as `function_call` items and tool results as `function_call_output` items matched by call
+    id, function tools flat (no "function" wrapper). `store` is off: the provider keeps nothing of it."""
+    instructions, items = [], []
+    for m in messages:
+        role, content = m.get("role"), m.get("content") or ""
+        if role == "system":
+            instructions.append(content)
+        elif role == "tool":
+            items.append({"type": "function_call_output", "call_id": m.get("tool_call_id") or "", "output": content})
+        elif role == "assistant":
+            if content:
+                items.append({"role": "assistant", "content": content})
+            for call in m.get("tool_calls") or []:
+                fn = call.get("function") or {}
+                items.append({"type": "function_call", "call_id": call.get("id") or "", "name": fn.get("name") or "",
+                              "arguments": fn.get("arguments") or "{}"})
+        else:
+            items.append({"role": "user", "content": content})
+    request = {"input": items, "store": False}
+    if instructions:
+        request["instructions"] = "\n\n".join(instructions)
+    if tools:
+        request["tools"] = [{"type": "function", "name": t["function"]["name"],
+                             "description": t["function"].get("description", ""),
+                             "parameters": t["function"].get("parameters") or {"type": "object", "properties": {}}}
+                            for t in tools if t.get("type") == "function"]
+    return request
+
+
+def _read_responses(stream, stop, on_first=None) -> dict:
+    """A streamed Responses API reply put back together as `_read_stream` returns a chat completion's: text,
+    reasoning (its text or its summary), calls by output index with their call ids, token counts, and why it ended
+    ("length" for a reply cut at its token limit). An error or failure event raises with what came before it."""
+    text, reasoning, refusal, calls, usage, finish = [], [], [], {}, None, ""
+    try:
+        for event in stream:
+            if on_first is not None:
+                on_first()
+                on_first = None
+            if stop is not None and stop():
+                raise Interrupted("stopped by the user")
+            kind = getattr(event, "type", "")
+            if kind == "response.output_text.delta":
+                text.append(event.delta)
+            elif kind == "response.refusal.delta":
+                refusal.append(event.delta)
+            elif kind in ("response.reasoning_text.delta", "response.reasoning_summary_text.delta"):
+                reasoning.append(event.delta)
+            elif kind == "response.output_item.added" and getattr(event.item, "type", "") == "function_call":
+                calls[event.output_index] = {"id": event.item.call_id, "name": event.item.name or "",
+                                             "args": event.item.arguments or ""}
+            elif kind == "response.function_call_arguments.delta":
+                calls.setdefault(event.output_index, {"id": None, "name": "", "args": ""})["args"] += event.delta
+            elif kind == "response.function_call_arguments.done":     # the whole arguments: they win
+                calls.setdefault(event.output_index, {"id": None, "name": "", "args": ""})["args"] = event.arguments
+            elif kind in ("response.completed", "response.incomplete"):
+                done = event.response
+                got = getattr(done, "usage", None)
+                if got is not None:
+                    usage = SimpleNamespace(prompt_tokens=got.input_tokens, completion_tokens=got.output_tokens)
+                if kind == "response.incomplete":
+                    why = getattr(getattr(done, "incomplete_details", None), "reason", None)
+                    finish = "content_filter" if why == "content_filter" else "length"
+                else:
+                    finish = "tool_calls" if calls else "stop"
+            elif kind in ("response.failed", "error"):
+                said = getattr(event, "message", None) or getattr(getattr(event, "response", None), "error", None)
+                raise ResponsesFailed(str(said or "the Responses API reported a failure"))
+        if not finish:
+            raise StreamCut("the reply stream ended without a finish reason: the connection was cut mid-answer")
+    except Exception as e:
+        e.partial = _assembled(text, reasoning, calls, usage, finish, refusal)
+        raise
+    finally:
+        close = getattr(stream, "close", None)
+        if close:
+            close()
+    return _assembled(text, reasoning, calls, usage, finish, refusal)
+
+
 def _outbound(message: dict) -> dict:
     m = dict(message)
     if isinstance(m.get("content"), str):
@@ -386,6 +478,12 @@ class LLM:
         self.thinking, self.template_kwargs, self.usage_option = thinking, True, True
         self.reasoning_option, self._token_field = True, None
         self.on_request = None  # optional observer of submitted, filtered model-visible messages
+        # The API route: Chat Completions, or the Responses API for a model that takes tools only there. "auto" tries
+        # Responses once when Chat Completions refuses the `tools` field itself, and keeps what worked.
+        self.api = settings.get("PERESEARCH_LLM_API") or "auto"
+        if self.api not in ("auto", "chat", "responses"):
+            raise ValueError(f"PERESEARCH_LLM_API must be auto, chat or responses (got {self.api!r})")
+        self.route = "responses" if self.api == "responses" else "chat"
         self.local = False                             # a server on this machine: refused means not running
         if client is None:
             from openai import OpenAI
@@ -511,21 +609,30 @@ class LLM:
         thread, so the caller is free the moment stop() is true; the reader closes the stream itself at its next
         chunk (closing it from another thread does not wake a blocked read, and vLLM went on generating)."""
         kw["stream"] = True
-        if self.usage_option:
+        responses = self.route == "responses"
+        if self.usage_option and not responses:
             kw["stream_options"] = {"include_usage": True}
+        read = _read_responses if responses else _read_stream
+
         def create():
             if self.on_request is not None:
                 from copy import deepcopy
                 self.on_request(deepcopy(kw["messages"]))
-            return self.client.chat.completions.create(**kw)
+            if not responses:
+                return self.client.chat.completions.create(**kw)
+            request = responses_request(kw["messages"], kw.get("tools"))
+            tokens = kw.get("max_tokens") or kw.get("max_completion_tokens")
+            request.update(model=kw["model"], stream=True, **({"max_output_tokens": tokens} if tokens else {}),
+                           **{k: kw[k] for k in ("temperature", "top_p") if k in kw})
+            return self.client.responses.create(**request)
 
         if stop is None:
-            return _read_stream(create(), None)
+            return read(create(), None)
         done, first, out = threading.Event(), threading.Event(), {}
 
         def run():
             try:
-                out["reply"] = _read_stream(create(), stop, first.set)
+                out["reply"] = read(create(), stop, first.set)
             except BaseException as e:            # handed to the caller below
                 out["error"] = e
             done.set()
@@ -558,9 +665,11 @@ class LLM:
             try:
                 r = self._send(prompt_tools(sent, tools) if prompted else sent, None if prompted else tools,
                                thinking, stop)
-            except ToolsRefused:            # the server takes no `tools`: through the prompt, now and from now on
-                self.tool_mode = "prompt"
-                r = self._send(prompt_tools(sent, tools), None, thinking, stop)
+            except ToolsRefused as refused:  # the server takes no `tools`: Responses, else through the prompt
+                r = self._responses_instead(sent, tools, thinking, stop) if refused.field else None
+                if r is None:
+                    self.tool_mode = "prompt"
+                    r = self._send(prompt_tools(sent, tools), None, thinking, stop)
             except CallUnreadable as e:     # the server could not read this output: this request only
                 got = getattr(e.__cause__, "partial", None) or {}
                 calls = got.get("calls") or []
@@ -595,6 +704,28 @@ class LLM:
         if refusal and refusal != text:
             text = "\n".join(part for part in (text.strip(), refusal) if part)
         return Reply(text, calls, reasoning, r["prompt_tokens"], r["completion_tokens"], r["finish"], bool(thought), refusal)
+
+    def _responses_instead(self, sent, tools, thinking, stop) -> dict | None:
+        """The request again through the Responses API, when the model refused the `tools` field of Chat Completions
+        at OpenAI's endpoint and the route may be tried (auto, a client that has it); kept from then on if it
+        answers. None otherwise or when the endpoint has no such route: the caller sends the tools through the
+        prompt. PERESEARCH_LLM_API=responses chooses the route for any endpoint that serves it."""
+        if self.api != "auto" or self.route != "chat" or not hasattr(self.client, "responses"):
+            return None
+        from urllib.parse import urlparse        # models with tools only through Responses are OpenAI's: another
+        if urlparse(str(getattr(self.client, "base_url", ""))).hostname != "api.openai.com":   # server's refusal
+            return None                          # means no tools (Ollama: "gemma3:1b does not support tools")
+        self.route = "responses"
+        try:
+            return self._send(sent, tools, thinking, stop)
+        except Interrupted:
+            raise
+        except Exception as e:
+            if type(e).__name__ in ("NotFoundError", "BadRequestError", "UnprocessableEntityError",
+                                    "PermissionDeniedError", "ResponsesFailed"):
+                self.route = "chat"                    # no Responses API here: the prompt, as before
+                return None
+            raise
 
     def _send(self, sent: list[dict], tools, thinking, stop) -> dict:
         """Retry transport failures and precisely refused capabilities. Only an explicitly unsupported field
@@ -633,7 +764,7 @@ class LLM:
                 if too_long(e):                     # the conversation's length, not a field: the caller trims it
                     raise
                 if tools and (unsupported(e, "tools") or type(e).__name__ == "BadRequestError" and _TOOLS_REFUSED.search(str(e))):
-                    raise ToolsRefused(str(e)) from e
+                    raise ToolsRefused(str(e), unsupported(e, "tools")) from e
                 if type(e).__name__ == "APIError" and tools and _CALL_UNREADABLE.search(str(e)):
                     raise CallUnreadable(str(e)) from e
                 if budget and not budget_retried and unsupported(e, field):

@@ -194,7 +194,10 @@ without reporting it to the client; the count cannot detect that. In particular,
 peresearch reaches a model one way: an **OpenAI-compatible chat API** (a base URL ending in `/v1`). Behind it can be
 a provider's API, or a model you serve yourself on this machine or another — Ollama, llama.cpp's `llama-server`, LM
 Studio, vLLM. `/model` groups model roles and APIs. Add a connection with A, then select a listed or manually
-entered model ID with Enter. A server that exposes only one model can also retain the CLI's empty-model setting. `/check` explicitly tests the model after confirmation: whether and how it calls tools, where its reasoning comes back, the context it runs with, its speed.
+entered model ID with Enter. A model that takes tools only through OpenAI's Responses API (OpenAI documents GPT 6.1 Sol
+so) is reached through that API automatically: when OpenAI's endpoint refuses the tools of a chat request, the same
+request goes through Responses, with nothing stored at the provider, and that route is kept. `PERESEARCH_LLM_API` can
+set it (`auto`, `chat`, `responses`). A server that exposes only one model can also retain the CLI's empty-model setting. `/check` explicitly tests the model after confirmation: whether and how it calls tools, where its reasoning comes back, the context it runs with, its speed.
 
 | Where the model is | Endpoint, for example | Model name |
 |---|---|---|
