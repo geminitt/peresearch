@@ -179,6 +179,8 @@ def _clip(text: str, n: int) -> str:
 # runs to ~23,000 characters, and 12,289 + 4,096 tokens > 16,384). Characters a token are measured on each call
 # from what the server counted; before the first count, CHARS_PER_TOKEN, under the 2.69 measured then (Qwen3.5:
 # 33,033 characters, 12,289 tokens, tool schemas included).
+DRAFT_EVERY = 0.1        # seconds between two drafts of an answer being written (the interface redraws each one)
+_now = time.monotonic
 CHARS_PER_TOKEN = 2.5
 FRAMING = 8              # tokens a chat template adds around each message (Qwen's: ~5), estimated high on purpose
 CONTEXT_MARGIN = 0.05
@@ -903,6 +905,19 @@ class Agent:
             text[:n] + MORE.format(ref=ref, total=total, upto=start + n)    # nothing fits: said, never a loop
         return shown if len(shown) < len(text) else text                    # never longer than the result itself
 
+    def _drafter(self):
+        """on_text for one model call: the reply so far, sent to the interface as a "draft" event at most every
+        DRAFT_EVERY seconds (each one carries the whole text so far: a late one loses nothing)."""
+        text, sent = [], [None]
+
+        def piece(part: str) -> None:
+            text.append(part)
+            now = _now()
+            if sent[0] is None or now - sent[0] >= DRAFT_EVERY:
+                sent[0] = now
+                self.on_event("draft", "".join(text))
+        return piece
+
     def _chat(self, messages: list[dict], tools: list | None, **kw):
         """llm.chat with the conversation kept within the model's context (_fit); a request the server still refuses
         for its length is trimmed to what the server counted (or halved when it does not say) and sent again, at most
@@ -924,6 +939,9 @@ class Agent:
             self._filter_access(messages)
             size = _size(messages, tools)
             sending = {**kw, "stop": self._stop_with_access(kw.get("stop"))}
+            drafting = hasattr(self.llm, "on_text")     # a gateway that streams: the answer shown as it comes
+            if drafting:
+                self.llm.on_text = self._drafter()
             try:
                 reply = self.llm.chat(messages, tools, **sending)
             except Exception as e:
@@ -940,6 +958,9 @@ class Agent:
                 self.on_event("think", "the conversation was too long for the model; earlier results trimmed")
                 size = _size(messages, tools)
                 continue
+            finally:
+                if drafting:                    # never left set: summaries (_fold) are not drafts
+                    self.llm.on_text = None
             # a server that cut the conversation without saying so (Ollama: 36,015 tokens sent, 4,098 kept, HTTP 200,
             # 2026-10-06) answered from its end alone: its count is far below what was sent. Never the answer, never
             # the measure of a token: what it kept is taken as its context, and the request trimmed and sent again

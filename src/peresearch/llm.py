@@ -317,7 +317,7 @@ def _assembled(text, reasoning, calls, usage, finish, refusal=()) -> dict:
     return result
 
 
-def _read_stream(stream, stop, on_first=None) -> dict:
+def _read_stream(stream, stop, on_first=None, on_text=None) -> dict:
     """A streamed chat completion put back together: text, reasoning, tool calls (their pieces joined by index) and
     token counts. `stop()` is checked between chunks; the stream is always closed by this, the reading thread. A
     stream ended by an error carries what came before it as the error's `partial`."""
@@ -335,6 +335,8 @@ def _read_stream(stream, stop, on_first=None) -> dict:
                 delta = choice.delta
                 if getattr(delta, "content", None):
                     text.append(delta.content)
+                    if on_text is not None:        # the answer as it is written (the interface's draft)
+                        on_text(delta.content)
                 if getattr(delta, "refusal", None):
                     refusal.append(delta.refusal)
                 thought = getattr(delta, "reasoning_content", None) or getattr(delta, "reasoning", None)
@@ -393,7 +395,7 @@ def responses_request(messages: list[dict], tools: list[dict] | None) -> dict:
     return request
 
 
-def _read_responses(stream, stop, on_first=None) -> dict:
+def _read_responses(stream, stop, on_first=None, on_text=None) -> dict:
     """A streamed Responses API reply put back together as `_read_stream` returns a chat completion's: text,
     reasoning (its text or its summary), calls by output index with their call ids, token counts, and why it ended
     ("length" for a reply cut at its token limit). An error or failure event raises with what came before it."""
@@ -408,6 +410,8 @@ def _read_responses(stream, stop, on_first=None) -> dict:
             kind = getattr(event, "type", "")
             if kind == "response.output_text.delta":
                 text.append(event.delta)
+                if on_text is not None:
+                    on_text(event.delta)
             elif kind == "response.refusal.delta":
                 refusal.append(event.delta)
             elif kind in ("response.reasoning_text.delta", "response.reasoning_summary_text.delta"):
@@ -492,7 +496,7 @@ def anthropic_request(messages: list[dict], tools: list[dict] | None, blocks: di
     return request
 
 
-def _read_anthropic(manager, stop, on_first=None) -> dict:
+def _read_anthropic(manager, stop, on_first=None, on_text=None) -> dict:
     """A streamed Messages API reply put back together as `_read_stream` returns a chat completion's, plus `blocks`:
     the reply's content blocks as sent back with its calls. Reasoning comes from thinking deltas; a refusal's
     explanation is the refusal; the input tokens count the cached ones too."""
@@ -507,6 +511,8 @@ def _read_anthropic(manager, stop, on_first=None) -> dict:
                     raise Interrupted("stopped by the user")
                 if event.type == "text":
                     text.append(event.text)
+                    if on_text is not None:
+                        on_text(event.text)
                 elif event.type == "thinking":
                     reasoning.append(event.thinking)
             final = stream.get_final_message()
@@ -571,6 +577,7 @@ class LLM:
         self.reasoning_option, self._token_field = True, None
         self.on_request = None  # optional observer of submitted, filtered model-visible messages
         self._signatures = {}   # call id -> what the endpoint attached to the call (Gemini: its thought signature)
+        self.on_text, self._drafting = None, True    # on_text(piece): the answer as it streams (the agent's draft)
         # The API route: Chat Completions, or the Responses API for a model that takes tools only there. "auto" tries
         # Responses once when Chat Completions refuses the `tools` field itself, and keeps what worked.
         self.api = settings.get("PERESEARCH_LLM_API") or "auto"
@@ -736,13 +743,14 @@ class LLM:
                            **{k: kw[k] for k in ("temperature", "top_p") if k in kw})
             return self.client.responses.create(**request)
 
+        on_text = self.on_text if self._drafting else None
         if stop is None:
-            return read(create(), None)
+            return read(create(), None, None, on_text)
         done, first, out = threading.Event(), threading.Event(), {}
 
         def run():
             try:
-                out["reply"] = read(create(), stop, first.set)
+                out["reply"] = read(create(), stop, first.set, on_text)
             except BaseException as e:            # handed to the caller below
                 out["error"] = e
             done.set()
@@ -771,6 +779,7 @@ class LLM:
         thinking = self.thinking if thinking is None else thinking
         optional = (self.template_kwargs, self.usage_option, self.reasoning_option, self._token_field)
         prompted = tools and (self.tool_mode or self.profile().tools) == "prompt"
+        self._drafting = not prompted          # tools in the prompt: the text holds raw call syntax, not a draft
         try:
             try:
                 r = self._send(prompt_tools(sent, tools) if prompted else sent, None if prompted else tools,
@@ -778,7 +787,7 @@ class LLM:
             except ToolsRefused as refused:  # the server takes no `tools`: Responses, else through the prompt
                 r = self._responses_instead(sent, tools, thinking, stop) if refused.field else None
                 if r is None:
-                    self.tool_mode = "prompt"
+                    self.tool_mode, self._drafting = "prompt", False
                     r = self._send(prompt_tools(sent, tools), None, thinking, stop)
             except CallUnreadable as e:     # the server could not read this output: this request only
                 got = getattr(e.__cause__, "partial", None) or {}
@@ -788,6 +797,7 @@ class LLM:
                 elif calls and all(c["name"] and c["args"] and not _arguments(c["args"])[1] for c in calls):
                     r = {**got, "finish": "tool_calls"}     # whole calls before what the parser failed on: used
                 else:
+                    self._drafting = False
                     r = self._send(prompt_tools(sent, tools), None, thinking, stop)
         except BaseException:              # no request succeeded without a dropped field: it was not the cause
             self.template_kwargs, self.usage_option, self.reasoning_option, self._token_field = optional

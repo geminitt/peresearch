@@ -652,6 +652,7 @@ class Chat(App):
     .result { color: ansi_default; text-style: dim; text-wrap: nowrap; text-overflow: ellipsis; }
     .note { color: ansi_default; text-style: dim; margin: 1 0 0 0; }
     #log > Page { margin: 1 0 0 0; padding: 0 0 0 2; }
+    #log > Page.draft { color: ansi_default; }
     /* The mascot lies on the input box (mascot.py), on a layer of its own: three lines above the box hold its
        body; the status line keeps clear of it; the box's right padding keeps typed text from under its tail. */
     #status { width: 1fr; height: 100%; padding: 0 1; color: ansi_yellow; content-align: left bottom; }
@@ -861,7 +862,29 @@ class Chat(App):
         extra = f" · {self.tokens:,} tokens" if self.tokens else ""
         status.update(f"{spin} {guard.sanitize(self.doing)}… ({time.time() - self.started:.0f}s{extra} · esc to interrupt)")
 
+    def show_draft(self, text: str) -> None:
+        """The answer as the model writes it, under the conversation: one block, redrawn with the text so far."""
+        page = getattr(self, "_draft_page", None)       # held, not queried: a draft mounted a moment ago counts
+        if page is None:
+            self._draft_page = Page(guard.sanitize(text), classes="draft")
+            self.add(self._draft_page)
+        elif not page.is_mounted:              # Markdown renders its initial text when it mounts: that text moves on
+            page._initial_markdown = guard.sanitize(text)
+        else:
+            page.update(guard.sanitize(text))
+            self.query_one("#log", VerticalScroll).scroll_end(animate=False)
+
+    def drop_draft(self) -> None:
+        page, self._draft_page = getattr(self, "_draft_page", None), None
+        if page is not None:
+            page.remove()
+
     def on_agent_event(self, kind: str, detail: str) -> None:
+        if kind == "draft":
+            self.show_draft(detail)
+            return
+        if kind in ("tool", "think"):       # a call, or the next model call: the text drafted so far was not the answer
+            self.drop_draft()
         if kind == "tool":
             self.add(Static(Text.assemble(("● ", "green"), guard.sanitize(detail)), classes="tool"))   # its arguments
             self.doing = ("Searching" if detail.startswith(("search", "grep", "glob", "web")) else
@@ -968,6 +991,7 @@ class Chat(App):
             self._ui(self.done)
 
     def show_answer(self, answer) -> None:
+        self.drop_draft()                      # the checked answer, with its links, replaces what was drafted
         self.exchanges.append((self.asking, answer))
         page = Page(render(answer, self.show_reasoning))
         self.pages.append((page, answer))
@@ -1040,6 +1064,7 @@ class Chat(App):
 
     def done(self) -> None:
         self.busy = False
+        self.drop_draft()                      # interrupted or failed: no draft is left as if it were an answer
 
     def reindex(self, doing: str, opening: bool = False) -> None:
         notify = self._control_sink or (self.control_notice if opening else None)

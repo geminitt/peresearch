@@ -89,7 +89,8 @@ The installed command is `peresearch`, with no subcommand (`peresearch chat` rem
 The first launch without a model endpoint opens the model window. Saving settings or an API connection is local.
 `chat-local` starts a development test server; normal use does not need that launcher.
 
-Type `/` to choose a group; the command menu opens under the input box. Controls open in windows sized to their
+The answer appears as the model writes it; when it is done, the checked answer replaces the draft, with its citations
+as links. Type `/` to choose a group; the command menu opens under the input box. Controls open in windows sized to their
 content; they do not print configuration into the conversation. Windows have no buttons: lists show the chosen row with
 `❯`, fields are one line each (label, then value), and a dim line at the bottom names the keys. Shortcuts below work
 only inside their window. Esc closes the current window and returns to the previous one.
