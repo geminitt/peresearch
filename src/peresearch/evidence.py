@@ -73,6 +73,19 @@ def link(source: Source, ref: str, result: str) -> dict | None:
             "version": source.version, "ref": ref, "parts": parts}
 
 
+class Lookup:
+    """A store's results by ref, read one at a time (ResultStore.get reads one line) instead of all of them."""
+
+    def __init__(self, store):
+        self.store = store
+
+    def __getitem__(self, ref):
+        item = self.store.get(ref) if isinstance(ref, str) else None
+        if item is None:
+            raise KeyError(ref)
+        return item
+
+
 def restore(record: dict, results: dict, allowed=None) -> Source | None:
     """Verify the backing result and excerpt digest; malformed or unavailable evidence stays unknown."""
     try:
@@ -204,7 +217,7 @@ class Sources:
             if re.fullmatch(r"[NW][1-9]\d*", identifier):
                 self._register(unknown(identifier))
         selected = self.current | cited
-        results = {item["ref"]: item for item in store._lines()} if allowed is not None else {}
+        results = Lookup(store) if allowed is not None else {}   # the refs it needs, one line each
         out = {}
         for identifier, source in self.items.items():
             if identifier not in selected:

@@ -448,11 +448,46 @@ def usage(path: Path, conversation: str | None = None, since: float = 0.0) -> di
 class ResultStore:
     """Every tool result one conversation received, redacted as the model saw it, under refs R1, R2… in order:
     sessions/<project>/<conversation>.jsonl, readable by the user only. The base of restorable compression (Manus):
-    an old result can leave the context as its ref and be read back whole."""
+    an old result can leave the context as its ref and be read back whole.
+
+    A lookup reads one line: an index of where each ref's line lies, built by one pass over the file and extended by
+    what is appended later (by this store or another on the same file); a file replaced (another inode, or shorter
+    than the part indexed) is indexed again. Nothing kept is cut or dropped."""
 
     def __init__(self, project: str, conversation: str):
         self.conversation, self.path = conversation, history_file(project).with_suffix("") / f"{conversation}.jsonl"
         self._count = None                       # refs given so far: read from the file once
+        self._at, self._scopes = {}, {}          # ref -> (start, end) of its line; ref -> the paths of its scope
+        self._indexed, self._inode, self._refs = 0, None, 0   # bytes indexed, of which file; ref lines seen
+
+    def _index(self) -> None:
+        """Bring the index up to the file's last whole line; a line a crash left unfinished waits for its end."""
+        try:
+            stat = self.path.stat()
+        except FileNotFoundError:
+            stat = None
+        size, inode = (stat.st_size, stat.st_ino) if stat else (0, None)
+        if inode != self._inode or size < self._indexed:     # another file, or this one cut: index it again
+            self._at, self._scopes, self._indexed, self._inode, self._refs = {}, {}, 0, inode, 0
+        if size == self._indexed:
+            return
+        with self.path.open("rb") as f:
+            f.seek(self._indexed)
+            start = self._indexed
+            for raw in f:
+                if not raw.endswith(b"\n"):      # unfinished: indexed once a later write ends it
+                    break
+                end = start + len(raw)
+                try:
+                    t = json.loads(raw)
+                except ValueError:
+                    t = None                     # cut by a crash
+                if isinstance(t, dict) and isinstance(t.get("ref"), str):
+                    self._at.setdefault(t["ref"], (start, end))   # the first line of a ref, as a scan finds it
+                    self._refs += 1
+                elif isinstance(t, dict) and isinstance(t.get("scope_ref"), str) and isinstance(t.get("paths"), list):
+                    self._scopes[t["scope_ref"]] = t["paths"]
+                start = self._indexed = end
 
     def _lines(self) -> list[dict]:
         out, scopes = [], {}
@@ -472,7 +507,8 @@ class ResultStore:
 
     def put(self, tool: str, args: dict, text: str) -> str:
         if self._count is None:
-            self._count = len(self._lines())
+            self._index()
+            self._count = self._refs
         self._count += 1
         ref = f"R{self._count}"
         line = json.dumps({"ref": ref, "time": time.time(), "tool": tool, "args": args, "text": guard.redact(text)[0]},
@@ -481,7 +517,16 @@ class ResultStore:
         return ref
 
     def get(self, ref: str) -> dict | None:
-        return next((t for t in self._lines() if t["ref"] == ref), None)
+        self._index()
+        at = self._at.get(ref)
+        if at is None:
+            return None
+        with self.path.open("rb") as f:
+            f.seek(at[0])
+            item = json.loads(f.read(at[1] - at[0]))
+        if ref in self._scopes:
+            item["scope"] = self._scopes[ref]
+        return item
 
     def set_scope(self, ref: str, paths: list[str]) -> None:
         # Append metadata, not a second copy of a potentially large tool result.
