@@ -162,7 +162,7 @@ def welcome(project: str) -> str:
     """What the interface opens with, as Claude Code does: the model, the folders, and where to go next."""
     folders = sorted(_shown(p) for p in guard.outermost(guard.roots()))
     shown = (", ".join(folders[:3]) + (f" and {len(folders) - 3} more" if len(folders) > 3 else "") if folders
-             else "none yet: /add <folder> lets peresearch read one")
+             else "none yet: /folders, then a, lets peresearch read one")
     lines = ["✻ peresearch · research over your files and the web", "", f"  model    {_model()}",
              f"  folders  {shown}"]
     if project != "default":

@@ -346,6 +346,9 @@ def _read_stream(stream, stop, on_first=None) -> dict:
                     fn = getattr(piece, "function", None)
                     call["name"] += (getattr(fn, "name", None) or "") if fn else ""
                     call["args"] += (getattr(fn, "arguments", None) or "") if fn else ""
+                    extra = getattr(piece, "extra_content", None)
+                    if extra:                       # Gemini's thought signature: sent back with this call
+                        call["extra"] = extra
         if not finish:
             raise StreamCut("the reply stream ended without a finish reason: the connection was cut mid-answer")
     except Exception as e:
@@ -478,6 +481,7 @@ class LLM:
         self.thinking, self.template_kwargs, self.usage_option = thinking, True, True
         self.reasoning_option, self._token_field = True, None
         self.on_request = None  # optional observer of submitted, filtered model-visible messages
+        self._signatures = {}   # call id -> what the endpoint attached to the call (Gemini: its thought signature)
         # The API route: Chat Completions, or the Responses API for a model that takes tools only there. "auto" tries
         # Responses once when Chat Completions refuses the `tools` field itself, and keeps what worked.
         self.api = settings.get("PERESEARCH_LLM_API") or "auto"
@@ -657,7 +661,7 @@ class LLM:
     def chat(self, messages: list[dict], tools: list[dict] | None = None, thinking: bool | None = None,
              stop=None) -> Reply:
         """`stop()`, polled every 0.1 s, interrupts the request in flight or the wait before a retry."""
-        sent = [_outbound(m) for m in messages]
+        sent = self._with_signatures([_outbound(m) for m in messages])
         thinking = self.thinking if thinking is None else thinking
         optional = (self.template_kwargs, self.usage_option, self.reasoning_option, self._token_field)
         prompted = tools and (self.tool_mode or self.profile().tools) == "prompt"
@@ -689,6 +693,7 @@ class LLM:
         refusal = r.get("refusal", "")
         calls = [] if refusal else [ToolCall(c["id"], c["name"], *_arguments(c["args"], cut and i == len(r["calls"]) - 1))
                  for i, c in enumerate(r["calls"])]
+        self._signatures.update({c["id"]: c["extra"] for c in r["calls"] if c.get("extra")})
         thought, text = split_reasoning(r["text"])
         reasoning = "\n".join(part for part in (r["reasoning"], thought) if part)
         if not calls and not refusal:       # recovered from the text or the reasoning (vllm#39056)
@@ -704,6 +709,17 @@ class LLM:
         if refusal and refusal != text:
             text = "\n".join(part for part in (text.strip(), refusal) if part)
         return Reply(text, calls, reasoning, r["prompt_tokens"], r["completion_tokens"], r["finish"], bool(thought), refusal)
+
+    def _with_signatures(self, sent: list[dict]) -> list[dict]:
+        """The assistant's earlier calls with what the endpoint attached to them, sent back as it asks: Gemini's
+        OpenAI-compatible endpoint refuses a replayed call without its `extra_content` thought signature (400,
+        "Function call is missing a thought_signature"). `sent` holds copies (_outbound), changed in place."""
+        for m in sent:
+            for call in m.get("tool_calls") or []:
+                extra = self._signatures.get(call.get("id"))
+                if extra is not None:
+                    call["extra_content"] = extra
+        return sent
 
     def _responses_instead(self, sent, tools, thinking, stop) -> dict | None:
         """The request again through the Responses API, when the model refused the `tools` field of Chat Completions

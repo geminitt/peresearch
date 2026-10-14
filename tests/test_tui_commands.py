@@ -59,9 +59,9 @@ def test_every_command_answers_when_there_is_nothing_to_act_on(home, notes):
              "/status data_type", "/help", "/keys"]
     assert not any(x.startswith("❯ /") for x in app.before_exit.splitlines())
     lines = app.before_exit.splitlines()
-    assert "no folders declared: /add <folder>" in lines
+    assert "no folders declared: /folders, then a" in lines
     assert notes_of_shown(app.before_exit) == [
-        "no folders declared: /add <folder>", "folders cannot be changed here", "folders cannot be changed here",
+        "no folders declared: /folders, then a", "folders cannot be changed here", "folders cannot be changed here",
         "folders cannot be changed here", "nothing to retry yet", "no sources yet",
         "no earlier conversation in this project", "unknown command /bogus; / for the list"]
     assert "**Commands** (the keys: `/keys`)\n" + "\n".join(f"- `{c}` {d}" for c, d in COMMANDS.items()) in app.before_exit

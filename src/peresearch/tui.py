@@ -1236,7 +1236,7 @@ class Chat(App):
     def folder_command(self, name: str, text: str) -> None:
         if name == "/folders":
             folders = self.ws.folders() if self.ws else []
-            self.note("\n".join(map(str, folders)) or "no folders declared: /add <folder>")
+            self.note("\n".join(map(str, folders)) or "no folders declared: /folders, then a")
         else:
             if self.ws is None:
                 self.note("folders cannot be changed here")

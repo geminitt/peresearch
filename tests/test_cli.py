@@ -176,7 +176,7 @@ def test_the_welcome_names_the_model_the_folders_and_where_to_go_next(home, user
         d.mkdir()
     (user_home / "projects" / "a").mkdir(exist_ok=True) if folders else None
     guard.set_roots(made + ([user_home / "projects" / "a"] if folders else []))      # a folder inside: counted once
-    shown = {0: "none yet: /add <folder> lets peresearch read one", 2: "~/class, ~/projects",
+    shown = {0: "none yet: /folders, then a, lets peresearch read one", 2: "~/class, ~/projects",
              3: "~/class, ~/papers, ~/projects", 4: "~/class, ~/notes, ~/papers and 1 more",
              5: "~/books, ~/class, ~/notes and 2 more"}[folders]
     lines = ["✻ peresearch · research over your files and the web", "", f"  model    {model}", f"  folders  {shown}"]
