@@ -332,12 +332,9 @@ class ConnectWindow(Window):
         choice = event.option.id
         if choice.startswith("entry:"):
             entry = next((e for e in connections.load() if e.id == choice[6:]), None)
-            if entry is not None:
-                if entry.models:
-                    self.app.push_screen(PickWindow(entry, entry.models, self.chosen))
-                else:
-                    self.app.push_screen(CredentialWindow(self.role, entry.name, entry.url, "saved", self.discover_models,
-                                                          self.chosen))
+            if entry is not None:                      # its models listed again; the saved list if that fails
+                self.app.push_screen(CredentialWindow(self.role, entry.name, entry.url, "saved", self.discover_models,
+                                                      self.chosen, saved=entry))
         elif choice.startswith("preset:"):
             name, url, kind = next(p for p in PRESETS if p[0] == choice[7:])
             self.app.push_screen(CredentialWindow(self.role, name, url, kind, self.discover_models, self.chosen))
@@ -352,12 +349,12 @@ class CredentialWindow(Window):
 
     BINDINGS = Window.BINDINGS + [Binding("ctrl+s", "connect", show=False), Binding("ctrl+t", "enter_id", show=False, priority=True)]
 
-    def __init__(self, role: str, name: str, url: str, kind: str, discover, chosen):
+    def __init__(self, role: str, name: str, url: str, kind: str, discover, chosen, saved=None):
         super().__init__(id="api-window")
         self.add_class("-medium")                    # a short step: OpenCode's medium width
         self.role, self.place, self.url, self.kind = role, name, url, kind
         self.discover_models, self.chosen = discover, chosen
-        self.entry, self._generation = None, 0
+        self.entry, self._generation = saved, 0
 
     def compose(self) -> ComposeResult:
         title = self.place or "Another OpenAI-compatible endpoint"
@@ -380,6 +377,8 @@ class CredentialWindow(Window):
     def on_mount(self) -> None:
         inputs = self.query(Input)
         (inputs.last() if inputs else self).focus()
+        if self.kind == "saved":                       # chosen in step 1: that was the request to list
+            self.action_connect()
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
         event.stop()
@@ -395,7 +394,7 @@ class CredentialWindow(Window):
         if self.kind == "cloud" and not key:
             raise ValueError("Enter the API key of " + self.place + ".")
         if self.kind == "saved":
-            return next(e for e in connections.load() if e.role == self.role and e.url == self.url)
+            return next(e for e in connections.load() if e.id == self.entry.id)
         return connections.connect(self.role, self.place, url, key)
 
     def action_connect(self) -> None:
@@ -436,7 +435,12 @@ class CredentialWindow(Window):
 
     def _failed(self, entry, error, generation) -> None:
         if self._current(generation):
-            error = error.replace(entry.key, "[REDACTED]") if entry.key else error
+            error = display_text(error.replace(entry.key, "[REDACTED]") if entry.key else error)
+            if self.kind == "saved" and entry.models:  # the IDs listed before stay usable
+                self.app.push_screen(PickWindow(entry, entry.models, self.chosen,
+                                                note="Could not list the models again: " + error +
+                                                     ". These are the IDs listed before."))
+                return
             self.message("Could not list the models: " + error + ". Check the address and key, or press ctrl+t to "
                          "type a model ID.")
 
@@ -464,15 +468,32 @@ class CredentialWindow(Window):
             self.chosen(entry, model)
 
 
+def capability(model: str, role: str) -> Text:
+    """What the pinned models.dev snapshot (profiles.py) says of a chat model: tool calls and context, or that it
+    does not know it. A note only: a listed model is never hidden, and the endpoint, not the table, decides."""
+    if role != "chat":
+        return Text("")
+    from peresearch import profiles
+    try:
+        found = profiles.lookup(model)
+    except (OSError, ValueError):
+        found = None
+    if found is None:
+        return Text("not in the catalog", style="dim")
+    _, tool_call, _, _, context, _ = found[1]
+    size = f" · {context // 1000:,}k context" if context else ""
+    return Text.assemble(("tools" if tool_call else "no tool calls", "dim" if tool_call else "yellow"), (size, "dim"))
+
+
 class PickWindow(Window):
     """Step 3: the model, chosen from the IDs the endpoint listed; typing filters them."""
 
     BINDINGS = Window.BINDINGS + [Binding("up", "move(-1)", show=False), Binding("down", "move(1)", show=False)]
 
-    def __init__(self, entry, models: list[str], chosen):
+    def __init__(self, entry, models: list[str], chosen, note: str = ""):
         super().__init__(id="pick-window")
         self.add_class("-medium")                    # a short step: OpenCode's medium width
-        self.entry, self.models, self.chosen = entry, list(models), chosen
+        self.entry, self.models, self.chosen, self.note = entry, list(models), chosen, note
 
     def compose(self) -> ComposeResult:
         with Vertical(id="window"):
@@ -493,9 +514,11 @@ class PickWindow(Window):
         listing.clear_options()
         words = text.lower().split()
         shown = [m for m in self.models if all(word in m.lower() for word in words)]
-        listing.add_options([Option(row(display_text(m)), id=m) for m in shown])
+        width = min(max((len(m) for m in shown), default=0), 40)
+        listing.add_options([Option(row(Text.assemble(display_text(m).ljust(width), "  ",
+                                                      capability(m, self.entry.role))), id=m) for m in shown])
         listing.highlighted = 0 if shown else None
-        self.message("" if shown else "No listed ID matches.")
+        self.message(self.note if shown else "No listed ID matches.")
 
     def on_input_changed(self, event: Input.Changed) -> None:
         self.show(event.value)
@@ -516,8 +539,7 @@ class PickWindow(Window):
 
 
 class ModelWindow(Window):
-    BINDINGS = Window.BINDINGS + [Binding("a", "add", show=False), Binding("d", "discover", show=False),
-                                 Binding("m", "manual", show=False), Binding("o", "off", show=False),
+    BINDINGS = Window.BINDINGS + [Binding("a", "add", show=False), Binding("o", "off", show=False),
                                  Binding("left", "section(-1)", show=False), Binding("right", "section(1)", show=False)]
 
     def __init__(self, changed, discover=None):
@@ -535,8 +557,8 @@ class ModelWindow(Window):
                             yield SelectList(id="models-" + role)
             yield Static("Model IDs listed here have not been tested for inference or tool calling; /check tests "
                          "the chosen ones.", id="window-detail", markup=False)
-            yield from self.footer(("←→", "role"), ("enter", "use"), ("a", "add API"), ("d", "list IDs"),
-                                   ("m", "enter ID"), ("o", "off"), ("esc", "close"))
+            yield from self.footer(("←→", "role"), ("enter", "use"), ("a", "connect a model"),
+                                   ("o", "turn off"), ("esc", "close"))
 
     @property
     def role(self) -> str:
@@ -573,9 +595,10 @@ class ModelWindow(Window):
                     and settings.get(prefix + "_KEY") == entry.key
                 host = display_text(connections.host(entry.url))
                 where = display_text(entry.name) + ("" if entry.name == host else " · " + host)   # a name, then where
-                title = Text.assemble((display_text(model) or "no model ID yet: d lists them, m enters one"),
+                title = Text.assemble((display_text(model) or "no model ID yet: a, then this connection"),
                                       "  ", (where, "dim"), ("  ✔ in use" if active else "", "green"))
                 listing.add_option(Option(row(title), id=str(i)))
+            listing.display = bool(pairs)               # no empty row where nothing is connected
             if pairs:
                 listing.highlighted = next((i for i, (entry, _) in enumerate(pairs) if entry.id == prefer), 0)
         note = self.role_note()
@@ -592,7 +615,14 @@ class ModelWindow(Window):
             model = settings.get(prefix + "_MODEL")
             return ("In use from the environment: " + connections.host(url) + (" · " + model if model else "") +
                     ". Press a to connect another.")
-        return "" if self.choices.get(self.role) else "No API connected for this role. Press a to add one."
+        if self.choices.get(self.role):
+            return ""
+        if self.role == "embedding":                   # the search without it: words only (REFERENCE.md, measured)
+            return ("No embeddings: your files are searched by their words only, not by meaning. Press a to connect "
+                    "an embedding server, e.g. Ollama or LM Studio on this machine.")
+        if self.role == "rerank":
+            return "No reranker (optional): results keep the search's own order. Press a to connect one."
+        return "No model connected yet. Press a to connect one."
 
     def selected(self):
         pairs = self.choices.get(self.role, [])
@@ -643,59 +673,6 @@ class ModelWindow(Window):
             try:
                 self.apply_settings(self.changed, {prefix + "_URL": "", prefix + "_MODEL": ""})
                 self.refresh_models()
-            except (ValueError, OSError) as error:
-                self.message(str(error))
-
-    def action_discover(self) -> None:
-        selected = self.selected()
-        if not selected:
-            self.message("Add an API first.")
-            return
-        entry = deepcopy(selected[0])
-        app = self.app  # retain the app while the window can be detached during the request
-        self._generation += 1
-        generation = self._generation
-        self.message("Listing model IDs from " + connections.host(entry.url) + "…")
-
-        def run():
-            try:
-                models = self.discover_models(entry)
-                app._ui(self._discovered, entry, models, generation)
-            except Exception as error:
-                app._ui(self._discovery_failed, entry, str(error), generation)
-        app._in_background(run)
-
-    def _discovered(self, entry, models, generation) -> None:
-        selected = self.selected() if self.is_attached else None
-        if generation != self._generation or not selected or selected[0].id != entry.id:
-            return
-        try:
-            connections.update_models(entry.id, models, entry)
-            self.refresh_models(entry.id)
-            self.message(f"Listed {len(models)} model IDs. Choose one with enter.")
-        except (ValueError, OSError) as error:
-            self.message(str(error))
-
-    def _discovery_failed(self, entry, error, generation) -> None:
-        selected = self.selected() if self.is_attached else None
-        if generation == self._generation and selected and selected[0].id == entry.id:
-            error = error.replace(entry.key, "[REDACTED]") if entry.key else error
-            self.message("Model listing failed: " + error + ". Use m to enter a known ID.")
-
-    def action_manual(self) -> None:
-        selected = self.selected()
-        if selected:
-            entry = deepcopy(selected[0])
-            self.app.push_screen(TextEntry("Model ID", "Model ID", id="model-id-window"),
-                                 lambda model: self._manual(entry, model))
-        else:
-            self.message("Add an API first.")
-
-    def _manual(self, entry, model) -> None:
-        if model:
-            try:
-                connections.update_models(entry.id, list(dict.fromkeys(entry.models + [model])), entry)
-                self.refresh_models(entry.id)
             except (ValueError, OSError) as error:
                 self.message(str(error))
 

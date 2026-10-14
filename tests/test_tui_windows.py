@@ -253,43 +253,6 @@ def test_settings_and_checks_keep_outputs_out_of_chat_and_do_not_overlap(home):
             endpoint_check=lambda: checked.append("endpoints") or ["fixture endpoints"])
 
 
-@pytest.mark.parametrize("stale", ["closed", "selection", "role"])
-def test_delayed_model_list_cannot_apply_after_leaving_its_target(home, stale):
-    import threading
-    from textual.widgets import OptionList, TabbedContent
-    from peresearch.windows import ModelWindow
-    entry = connections.add("chat", "First", "http://first.test/v1", "", "first-id")
-    connections.add("chat", "Second", "http://second.test/v1", "", "second-id")
-    release = threading.Event()
-    def discovered(target):
-        assert target.id == entry.id
-        release.wait(2)
-        return ["late-id"]
-
-    async def steps(app, pilot):
-        window = ModelWindow(app.setup_done, discovered)
-        app.push_screen(window)
-        await pilot.pause()
-        await pilot.press("d")
-        if stale == "closed":
-            await pilot.press("escape")
-        elif stale == "selection":
-            window.query_one("#models-chat", OptionList).highlighted = 1
-        else:
-            window.query_one(TabbedContent).active = "role-embedding"
-        await pilot.pause()
-        release.set()
-        await settle(app, pilot, lambda: not any(t.is_alive() for t in app.background))
-        assert connections.load()[0].models == ["first-id"]
-        assert not settings.get("PERESEARCH_LLM_MODEL")
-        assert texts(app) == ""
-
-    try:
-        tui_run(lambda event: None, steps)
-    finally:
-        release.set()
-
-
 def test_optional_model_can_be_disabled_inside_its_role(home):
     from textual.widgets import TabbedContent
     settings.save({"PERESEARCH_LLM_URL": "http://chat.test/v1", "PERESEARCH_LLM_MODEL": "chat-id",
@@ -327,32 +290,6 @@ def test_source_preview_is_floating_and_closing_releases_its_links(home):
         await pilot.pause()
         assert page not in app.sources_of
         assert texts(app) == ""
-
-    tui_run(lambda event: None, steps)
-
-
-def test_discovery_error_for_old_selection_does_not_replace_current_message(home):
-    from textual.widgets import OptionList
-    from peresearch.windows import ModelWindow
-    connections.add("chat", "First", "http://first.test/v1", "", "first-id")
-    connections.add("chat", "Second", "http://second.test/v1", "", "second-id")
-
-    async def steps(app, pilot):
-        window = ModelWindow(app.setup_done)
-        app.push_screen(window)
-        await pilot.pause()
-        import threading
-        release = threading.Event()
-        def failed(entry):
-            release.wait(2)
-            raise ValueError("old failure")
-        window.discover_models = failed
-        window.action_discover()
-        window.query_one("#models-chat", OptionList).highlighted = 1
-        window.message("Current selection")
-        release.set()
-        await settle(app, pilot, lambda: not any(t.is_alive() for t in app.background))
-        assert "Current selection" in str(window.query_one("#window-message", Static).render())
 
     tui_run(lambda event: None, steps)
 
@@ -418,60 +355,6 @@ def test_folder_window_refuses_application_storage_and_busy_mutations(home, tmp_
         await pilot.press("escape")
         assert texts(app) == ""
     tui_run(lambda event: None, steps, workspace=ws)
-
-
-def test_model_discovery_lists_then_selects_an_id_and_failure_allows_manual_entry(home):
-    from peresearch.windows import ModelWindow
-    from textual.widgets import OptionList
-    entry = connections.add("chat", "Fixture", "http://model.test/v1", "synthetic-key")
-    calls = []
-    def discover(target):
-        calls.append(target.id)
-        if len(calls) > 1:
-            raise ValueError("metadata unavailable")
-        return ["first-id", "second-id"]
-    async def steps(app, pilot):
-        app.push_screen(ModelWindow(app.setup_done, discover))
-        await pilot.pause()
-        await pilot.press("d")
-        await settle(app, pilot, lambda: not any(t.is_alive() for t in app.background))
-        assert connections.load()[0].models == ["first-id", "second-id"]
-        assert not settings.get("PERESEARCH_LLM_MODEL")
-        listing = app.screen.query_one("#models-chat", OptionList)
-        listing.highlighted = 1
-        await pilot.press("enter")
-        assert settings.get("PERESEARCH_LLM_MODEL") == "second-id"
-        await pilot.press("d")
-        await settle(app, pilot, lambda: not any(t.is_alive() for t in app.background))
-        assert "metadata unavailable" in str(app.screen.query_one("#window-message", Static).render())
-        await pilot.press("m")
-        await pilot.pause()
-        app.screen.query_one(Input).value = "manual-id"
-        await pilot.press("ctrl+s")
-        await pilot.pause()
-        assert "manual-id" in connections.load()[0].models
-        assert settings.get("PERESEARCH_LLM_MODEL") == "second-id"
-        await pilot.press("escape")
-        assert texts(app) == ""
-    tui_run(lambda event: None, steps)
-    assert calls == [entry.id, entry.id]
-
-
-def test_model_listing_error_never_displays_the_saved_connection_key(home):
-    from peresearch.windows import ModelWindow
-    key = "synthetic-never-display"
-    connections.add("chat", "Fixture", "http://model.test/v1", key, "id")
-    def failing(entry):
-        raise ValueError("Provider rejected key " + entry.key)
-    async def steps(app, pilot):
-        app.push_screen(ModelWindow(app.setup_done, failing))
-        await pilot.pause()
-        await pilot.press("d")
-        await settle(app, pilot, lambda: not any(t.is_alive() for t in app.background))
-        message = str(app.screen.query_one("#window-message", Static).render())
-        assert "Provider rejected key" in message
-        assert key not in message
-    tui_run(lambda event: None, steps)
 
 
 def test_model_selection_explains_an_environment_override_in_its_window(home, monkeypatch):

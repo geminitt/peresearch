@@ -97,7 +97,7 @@ only inside their window. Esc closes the current window and returns to the previ
 | Command | Window and controls |
 |---|---|
 | `/folders` | Declared folders: A adds a path, R removes the selected folder, I updates the index. Changes use the existing access rules. |
-| `/model` | Chat, embedding and reranker sections (← → switch), each with saved model IDs. Enter selects; A connects a model; D lists model IDs again; M enters a known ID; O disables an optional role. |
+| `/model` | Chat, embedding and reranker sections (← → switch), each with its saved connections and model IDs. Enter selects; A connects a model (a saved connection lists its models again); O turns an optional role off. An empty section says what is missing, e.g. search by meaning without embeddings. |
 | `/settings` | Research limits and search services in one list. Tab moves between fields; Enter or Ctrl+S saves. Empty limits reset defaults; empty saved-key fields keep credentials. |
 | `/status` | Setup/index, usage and context tabs. |
 | `/sessions` | Saved conversations. Enter resumes; N starts a new one; R names the current one; E exports it as Markdown. |
@@ -108,6 +108,8 @@ only inside their window. Esc closes the current window and returns to the previ
 Connecting a model (A) takes three steps, as in OpenCode: choose where it runs (a saved connection, OpenAI, OpenRouter,
 Groq, Ollama, LM Studio, another local server or any OpenAI-compatible endpoint); give only what that place needs (a
 cloud's API key, a local server's address); choose the model from the IDs the endpoint lists, typing to filter them.
+For a chat model the list notes what the pinned models.dev snapshot says of it (tool calls, context) or that it does
+not know it; no listed model is hidden.
 Keys are hidden. Typing sends nothing; Enter on the second step saves the connection and requests its model IDs
 without sending a prompt. Ctrl+T types an ID when the endpoint lists none. The chosen model becomes the role's. Listing IDs does not prove chat, embedding, reranking or tool-call compatibility.
 Servers without a model-list API can use a manually entered ID. Active service settings stay in `settings.env`;

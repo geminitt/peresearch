@@ -214,3 +214,115 @@ def test_an_endpoint_from_the_environment_is_named_as_in_use(home, monkeypatch):
         app.said = str(app.screen.query_one("#window-message").render())
     app = tui_run(lambda event: None, steps)
     assert "env-model.test" in app.said and "environment" in app.said and "No API connected" not in app.said
+
+
+# Contracts moved here from the removed /setup screen and the removed d/m keys of /model (2026-10-14).
+
+def test_a_saved_connection_lists_its_models_again_when_chosen(home):
+    entry = connections.connect("chat", "Local server", "http://127.0.0.1:8000/v1", "")
+    connections.update_models(entry.id, ["old-id"], entry)
+    asked = []
+
+    async def steps(app, pilot):
+        await submit(app, pilot, "/model")
+        app.screen.discover_models = lambda target: asked.append(target.id) or ["new-id", "old-id"]
+        await pilot.press("a")
+        await pilot.pause()
+        choose(app, "entry:" + entry.id)
+        await pilot.press("enter")
+        await settle(app, pilot, lambda: app.screen.id == "pick-window")
+        listing = app.screen.query_one("#pick-list")
+        app.listed = [listing.get_option_at_index(i).id for i in range(listing.option_count)]
+    app = tui_run(lambda event: None, steps)
+    assert asked == [entry.id] and app.listed == ["new-id", "old-id"]
+    assert connections.load()[0].models == ["new-id", "old-id"]
+
+
+def test_a_failed_listing_never_shows_the_key_and_keeps_the_ids_listed_before(home):
+    key = "synthetic-never-display"
+    listed = connections.connect("chat", "Listed before", "http://listed.test/v1", key)
+    connections.update_models(listed.id, ["kept-id"], listed)
+    fresh = connections.connect("chat", "Never listed", "http://fresh.test/v1", key)
+
+    def failing(target):
+        raise ValueError("Provider rejected key " + target.key)
+
+    async def steps(app, pilot):
+        app.seen = {}
+        for target in (listed, fresh):
+            await submit(app, pilot, "/model")
+            app.screen.discover_models = failing
+            await pilot.press("a")
+            await pilot.pause()
+            choose(app, "entry:" + target.id)
+            await pilot.press("enter")
+            await settle(app, pilot, lambda: "Provider rejected" in str(app.screen.query_one("#window-message").render()))
+            listing = app.screen.query("#pick-list")
+            app.seen[target.name] = (app.screen.id, str(app.screen.query_one("#window-message").render()),
+                                     [listing.first().get_option_at_index(0).id] if listing else [])
+            while len(app.screen_stack) > 1:
+                app.pop_screen()
+            await pilot.pause()
+    app = tui_run(lambda event: None, steps)
+    assert app.seen["Listed before"][0] == "pick-window" and app.seen["Listed before"][2] == ["kept-id"]
+    assert app.seen["Never listed"][0] == "api-window" and "ctrl+t" in app.seen["Never listed"][1]
+    assert all(key not in said for _, said, _ in app.seen.values())
+
+
+def test_no_model_changes_while_a_question_runs(home):
+    entry = connections.connect("chat", "Local server", "http://127.0.0.1:8000/v1", "")
+    connections.update_models(entry.id, ["model-id"], entry)
+
+    async def steps(app, pilot):
+        await submit(app, pilot, "/model")
+        app.busy = True
+        await pilot.press("enter")                                    # the saved row
+        await pilot.pause()
+        app.said = str(app.screen.query_one("#window-message").render())
+        app.busy = False
+    app = tui_run(lambda event: None, steps)
+    assert not settings.get("PERESEARCH_LLM_MODEL") and "Wait for the current operation" in app.said
+
+
+def test_keys_stay_hidden_saving_is_private_and_local_and_an_override_is_named(home, monkeypatch):
+    """/settings (search services) and the connect flow (models) replace /setup: a key's field starts empty and
+    hidden, only "set" or "not set" is shown, empty keeps a key, saving writes the private settings file and sends
+    no request, a setting the environment overrides is named, an endpoint that is not http(s) is refused."""
+    monkeypatch.setenv("SEMANTIC_SCHOLAR_API_KEY", "from-the-environment")
+    settings.save({"PERESEARCH_SEARCH_MCP_KEY": "EXA_API_KEY=old-exa-secret", "OTHER": "kept"})
+    checks = []
+
+    async def steps(app, pilot):
+        await submit(app, pilot, "/settings")
+        window = app.screen
+        app.text = " ".join(str(w.render()) for w in window.query("Static"))
+        key_field = window.query_one("#service-peresearch_search_mcp_key")
+        app.key_field = (key_field.value, key_field.password, key_field.placeholder)
+        window.query_one("#service-semantic_scholar_api_key").value = "s2-file-key"
+        window.query_one("#service-peresearch_search_mcp").value = "npx -y tavily-mcp"
+        await pilot.press("ctrl+s")
+        await pilot.pause()
+        app.override = str(window.query_one("#window-message").render())
+        await pilot.press("escape")
+        await pilot.pause()
+        await submit(app, pilot, "/model")
+        await pilot.press("a")
+        await pilot.pause()
+        choose(app, "other")
+        await pilot.press("enter")
+        await pilot.pause()
+        app.screen.query_one("#api-url").value = "localhost:8000"
+        await pilot.press("enter")
+        await pilot.pause()
+        app.refused = str(app.screen.query_one("#window-message").render())
+        app.shown = texts(app)
+    app = tui_run(lambda event: None, steps, model_check=lambda: checks.append("model") or (True, []),
+                  endpoint_check=lambda: checks.append("search") or [])
+    assert "old-exa-secret" not in app.text and app.key_field == ("", True, "set: empty keeps it")
+    saved = settings.saved()
+    assert saved["PERESEARCH_SEARCH_MCP_KEY"] == "EXA_API_KEY=old-exa-secret" and saved["OTHER"] == "kept"
+    assert saved["PERESEARCH_SEARCH_MCP"] == "npx -y tavily-mcp" and saved["SEMANTIC_SCHOLAR_API_KEY"] == "s2-file-key"
+    assert (home / "settings.env").stat().st_mode & 0o777 == 0o600 and checks == []
+    assert "SEMANTIC_SCHOLAR_API_KEY" in app.override and "environment" in app.override
+    assert "http://" in app.refused and connections.load() == []
+    assert "old-exa-secret" not in app.shown and "s2-file-key" not in app.shown

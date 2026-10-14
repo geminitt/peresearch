@@ -17,7 +17,7 @@
   │ Model IDs listed here have not been tested for inference or tool calling; /check tests the   │
   │ chosen ones.                                                                                 │
   │                                                                                              │
-  │ ←→ role · enter use · a add API · d list IDs · m enter ID · o off · esc close                │
+  │ ←→ role · enter use · a connect a model · o turn off · esc close                             │
   ╰──────────────────────────────────────────────────────────────────────────────────────────────╯
 
 

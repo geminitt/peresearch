@@ -148,7 +148,7 @@ def test_busy_guards_retry_sources_new_clear_and_setup(home, notes):
 
     async def steps(app, pilot):
         await say(app, pilot, "How does BPE work?")
-        for text in ("/new", "/clear", "/retry", "/resume", "/setup", "another question"):
+        for text in ("/new", "/clear", "/retry", "/resume", "another question"):   # /setup: a window now
             await say(app, pilot, text)
         app.busy_notes = list(notes_of(app))
         gate.set()
@@ -162,7 +162,7 @@ def test_busy_guards_retry_sources_new_clear_and_setup(home, notes):
         await say(app, pilot, "something else")
         await settle(app, pilot, lambda: not app.busy and len(llm.seen) >= 4)
     app = tui_run(lambda e: Agent(llm, toolbox(home, notes)), steps)
-    assert app.busy_notes == ["wait for the current question to finish, or press esc"] * 5 + [
+    assert app.busy_notes == ["wait for the current question to finish, or press esc"] * 4 + [
         "still working on the previous question (esc to interrupt it)"]
     retried = [m["content"] for m in llm.seen[2][0] if m["role"] == "user"]
     assert retried[-1].endswith("How does BPE work?")                    # /retry asks the same question again
@@ -753,130 +753,6 @@ def test_a_path_named_with_at_is_completed_by_tab_and_handed_to_the_model(home, 
                      f"{notes / 'bpe.md'} (a file: read it with read), {notes / 'sub'} (a folder: look at it with "
                      "tree))"]
     assert "❯ summarize @bpe.md and @sub and @~/nothing.md and mail@bpe.md" in app.shown       # shown as typed
-
-
-def test_setup_changes_the_model_and_keys_without_ever_showing_a_key(home, notes, monkeypatch):
-    """/setup: the model and the search services' keys in a dialog (settings.FIELDS, as `peresearch setup`): a key's
-    field is hidden and starts empty (empty keeps it; only "(set)" or "(not set)" is shown), a model URL that is not
-    http(s) is refused in the dialog, ctrl+s saves through settings.save (private file) and the next question gets a
-    new agent on the same conversation; esc changes nothing; a setting the environment overrides is named."""
-    monkeypatch.delenv("PERESEARCH_LLM_URL", raising=False)
-    monkeypatch.setenv("SEMANTIC_SCHOLAR_API_KEY", "from-the-environment")
-    home.mkdir(parents=True, exist_ok=True)
-    (home / "settings.env").write_text("PERESEARCH_SEARCH_MCP_KEY=EXA_API_KEY=old-exa-secret\nOTHER=kept\n"
-                                       "PERESEARCH_LLM_URL=http://old:1/v1\n")
-    made = []
-
-    def make(event):
-        a, _ = agent(home, notes, Reply("one"), Reply("two"))
-        made.append(a)
-        return a
-
-    async def steps(app, pilot):
-        from textual.widgets import Input, Static
-        await say(app, pilot, "first question")
-        await settle(app, pilot, lambda: not app.busy)
-        await say(app, pilot, "/setup")
-        await pilot.pause()
-        dialog = app.screen
-        app.dialog = "\n".join(str(w.render()) for w in dialog.query(Static))
-        app.values = {w.id: (w.value, w.password) for w in dialog.query(Input)}
-        app.placeholders = {w.id: w.placeholder for w in dialog.query(Input)}
-        app.error_at_first = str(dialog.query_one("#setup-error", Static).render())
-        app.focused_ids = [app.focused.id]
-        for key in ("tab", "tab", "shift+tab"):                  # Tab moves between the fields, as in any form
-            await pilot.press(key)
-            app.focused_ids.append(app.focused.id if app.focused else None)
-        dialog.query_one("#peresearch_llm_url", Input).value = "localhost:8000"
-        await pilot.press("ctrl+s")
-        await pilot.pause()
-        app.refused = str(dialog.query_one("#setup-error", Static).render())
-        app.still_open = app.screen is dialog
-        dialog.query_one("#peresearch_llm_url", Input).value = "https://localhost:8000/v1"
-        dialog.query_one("#peresearch_embed_url", Input).value = "localhost:11434"
-        await pilot.press("ctrl+s")
-        await pilot.pause()
-        app.refused_embed = str(dialog.query_one("#setup-error", Static).render())
-        dialog.query_one("#peresearch_embed_url", Input).value = "http://localhost:11434/v1"
-        dialog.query_one("#peresearch_search_mcp", Input).value = "npx -y tavily-mcp"
-        dialog.query_one("#peresearch_search_mcp_key", Input).value = "TAVILY_API_KEY=tvly-new-secret"
-        dialog.query_one("#semantic_scholar_api_key", Input).value = "s2-file-key"
-        await pilot.press("ctrl+s")
-        await pilot.pause()
-        app.closed = app.screen is not dialog
-        await say(app, pilot, "/check")
-        await pilot.pause()
-        await pilot.press("r")                                       # r runs the checks: a deliberate key
-        await settle(app, pilot, lambda: not app._checking_connections)
-        await say(app, pilot, "second question")
-        await settle(app, pilot, lambda: not app.busy)
-        await say(app, pilot, "/setup")
-        await pilot.pause()
-        await pilot.press("escape")
-        await pilot.pause()
-        app.shown = texts(app)
-    app = tui_run(make, steps, workspace=None)
-    assert "old-exa-secret" not in app.dialog and "Model endpoint" in app.dialog
-    assert "enter save · esc close without saving" in app.dialog
-    assert app.placeholders["peresearch_llm_url"] == "" and app.error_at_first == ""         # a URL: no state
-    states = {app.placeholders[n.lower()] for n, _, hidden in settings.FIELDS if hidden}
-    assert states == {"set: empty keeps it", "not set"}              # a key's state, never the key
-    fields = [n.lower() for n, _, _ in settings.FIELDS]
-    assert list(app.values) == fields
-    assert app.values["peresearch_llm_url"] == ("http://old:1/v1", False)                 # a URL is shown, a key never
-    assert all(app.values[n.lower()] == ("", True) for n, _, hidden in settings.FIELDS if hidden)
-    assert app.refused == "the model endpoint must start with http:// or https://" and app.still_open and app.closed
-    assert app.focused_ids == ["peresearch_llm_url", "peresearch_llm_model", "peresearch_llm_key", "peresearch_llm_model"]
-    assert "Checking configured connections…" in app.shown and "**Model check** · it works with the agent" in app.shown
-    assert app.refused_embed == "the embeddings endpoint must start with http:// or https://"
-    assert "**Search endpoints**" in app.shown
-    assert "embeddings: checked" in app.shown                                               # an endpoint changed
-    env = (home / "settings.env").read_text().splitlines()
-    assert sorted(env) == sorted(["OTHER=kept", "PERESEARCH_LLM_URL=https://localhost:8000/v1",
-                                  "PERESEARCH_EMBED_URL=http://localhost:11434/v1",
-                                  "PERESEARCH_SEARCH_MCP=npx -y tavily-mcp",
-                                  "PERESEARCH_SEARCH_MCP_KEY=TAVILY_API_KEY=tvly-new-secret",
-                                  "SEMANTIC_SCHOLAR_API_KEY=s2-file-key"])
-    import stat
-    assert stat.S_IMODE((home / "settings.env").stat().st_mode) == 0o600
-    said = [x for x in app.shown.splitlines() if x.startswith(("Saved to", "Setup closed"))]
-    assert said == [f"Saved to {home / 'settings.env'}. The new settings take effect from the next question. "
-                    "SEMANTIC_SCHOLAR_API_KEY is set in the environment, which wins over the file.",
-                    "Setup closed; nothing changed."]
-    assert len(made) == 2 and made[1].conversation == made[0].conversation                 # same conversation
-    assert "tvly-new-secret" not in app.shown and "s2-file-key" not in app.shown and "/model" in tui.COMMANDS and "/setup" not in tui.COMMANDS
-    # a first setup (nothing saved yet): an empty URL field; two settings the environment overrides; an unchanged
-    # URL the environment also sets is not named
-    (home / "settings.env").write_text("PERESEARCH_LLM_URL=http://same:1/v1\n")
-    monkeypatch.setenv("PERESEARCH_LLM_URL", "http://env:2/v1")
-    monkeypatch.setenv("PERESEARCH_SEARCH_MCP_KEY", "BRAVE_API_KEY=from-the-environment")
-
-    async def again(app, pilot):
-        from textual.widgets import Input
-        await say(app, pilot, "/setup")
-        await pilot.pause()
-        dialog = app.screen
-        dialog.query_one("#peresearch_search_mcp_key", Input).value = "BRAVE_API_KEY=t2"
-        dialog.query_one("#semantic_scholar_api_key", Input).value = "s2"
-        await pilot.press("ctrl+s")
-        await pilot.pause()
-        (home / "settings.env").unlink()
-        await say(app, pilot, "/setup")
-        await pilot.pause()
-        app.empty_url = app.screen.query_one("#peresearch_llm_url", Input).value
-        app.screen.query_one("#peresearch_search_mcp", Input).value = "https://mcp.exa.ai/mcp"
-        await pilot.press("ctrl+s")
-        await pilot.pause()
-        app.shown = texts(app)
-    monkeypatch.delenv("SEMANTIC_SCHOLAR_API_KEY")
-    monkeypatch.setenv("SEMANTIC_SCHOLAR_API_KEY", "env-s2")
-    app = tui_run(make, again, workspace=None)
-    said = [x for x in app.shown.splitlines() if x.startswith("Saved to")]
-    assert said == [f"Saved to {home / 'settings.env'}. The new settings take effect from the next question. "
-                    "PERESEARCH_SEARCH_MCP_KEY, SEMANTIC_SCHOLAR_API_KEY are set in the environment, which wins over "
-                    "the file.",
-                    f"Saved to {home / 'settings.env'}. The new settings take effect from the next question."]
-    assert app.empty_url == "" and (home / "settings.env").read_text() == "PERESEARCH_SEARCH_MCP=https://mcp.exa.ai/mcp\n"
 
 
 def test_a_config_broken_while_the_interface_runs_is_said_by_the_folder_commands(home, notes):

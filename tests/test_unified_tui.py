@@ -48,11 +48,11 @@ def test_installed_console_opens_first_run_setup_and_quits_in_a_terminal(home):
         os.close(slave)
         slave = None
         deadline = time.monotonic() + 20
-        while not (b"Models and APIs" in output and b"add API" in output) and time.monotonic() < deadline:
+        while not (b"Models and APIs" in output and b"connect a model" in output) and time.monotonic() < deadline:
             if select.select([master], [], [], 0.1)[0]:
                 output.extend(os.read(master, 65536))
             assert process.poll() is None, output.decode(errors="replace")
-        assert b"Models and APIs" in output and b"add API" in output
+        assert b"Models and APIs" in output and b"connect a model" in output
         assert not (home / "settings.env").exists()
         os.write(master, b"\x1b")
         time.sleep(0.1)
@@ -72,48 +72,6 @@ def test_installed_console_opens_first_run_setup_and_quits_in_a_terminal(home):
         if slave is not None:
             os.close(slave)
         os.close(master)
-
-
-def test_setup_save_is_local_and_actions_fit_small_terminal(home):
-    checks = []
-
-    async def steps(app, pilot):
-        app.action_command("/setup")
-        await pilot.pause()
-        dialog = app.screen
-        hint = dialog.query_one("#setup > .hint", Static)                # the keys that save and close: on screen
-        assert "enter save" in str(hint.render()) and "esc close" in str(hint.render())
-        assert hint.region.bottom <= 24 and hint.region.right <= 80 and hint.region.width > 0
-        dialog.query_one("#peresearch_llm_url", Input).value = "https://example.test/v1"
-        dialog.query_one("#peresearch_llm_model", Input).value = "chosen-model"
-        dialog.query_one("#peresearch_llm_key", Input).value = "synthetic-test-key"
-        await pilot.press("ctrl+s")
-        await pilot.pause()
-        assert not isinstance(app.screen, tui.Setup)
-        assert settings.saved()["PERESEARCH_LLM_MODEL"] == "chosen-model"
-        assert "synthetic-test-key" not in texts(app)
-
-    tui_run(lambda event: None, steps, size=(80, 24),
-            model_check=lambda: checks.append("model") or (True, []),
-            endpoint_check=lambda: checks.append("search") or [])
-    assert checks == []
-    assert (home / "settings.env").stat().st_mode & 0o777 == 0o600
-
-
-def test_setup_can_disable_optional_endpoint_without_clearing_existing_key(home):
-    settings.save({"PERESEARCH_LLM_URL": "http://model.test/v1", "PERESEARCH_LLM_KEY": "synthetic-key",
-                   "PERESEARCH_EMBED_URL": "http://embed.test/v1"})
-
-    async def steps(app, pilot):
-        app.action_command("/setup")
-        await pilot.pause()
-        app.screen.query_one("#peresearch_embed_url", Input).value = ""
-        await pilot.press("ctrl+s")
-        await pilot.pause()
-
-    tui_run(lambda event: None, steps)
-    assert settings.get("PERESEARCH_EMBED_URL") == ""
-    assert settings.saved()["PERESEARCH_LLM_KEY"] == "synthetic-key"
 
 
 def test_saving_service_changes_does_not_start_connection_requests(home):

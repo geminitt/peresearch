@@ -58,7 +58,7 @@ from peresearch import connections, guard, mascot, settings
 from peresearch.agent import (Answer, Check, USAGE, _CITE, check, clean_name, conversations, find_conversation, history_file, read_turns,
                               usage)
 from peresearch.tools import Source
-from peresearch.widgets import GUTTER, Field, SelectList, hints, home_path, row
+from peresearch.widgets import GUTTER, SelectList, hints, home_path, row
 from peresearch.workspace import brief, complete, quiet
 from peresearch.zetokrag import parse
 from peresearch.zetokrag.index import Stopped
@@ -171,8 +171,6 @@ REASONING_SHOWN = 8000     # characters of reasoning drawn per answer: tens of t
 MODEL_FIELDS = ("PERESEARCH_LLM_URL", "PERESEARCH_LLM_MODEL", "PERESEARCH_LLM_KEY")
 ENDPOINT_FIELDS = tuple(f"PERESEARCH_{kind}_{part}" for kind in ("EMBED", "RERANK") for part in ("URL", "MODEL", "KEY")) \
     + ("PERESEARCH_SEARCH_MCP", "PERESEARCH_SEARCH_MCP_KEY", "PERESEARCH_SEARCH_TOOL")
-URL_NAMES = {"PERESEARCH_LLM_URL": "the model endpoint", "PERESEARCH_EMBED_URL": "the embeddings endpoint",
-             "PERESEARCH_RERANK_URL": "the rerank endpoint"}
 
 
 def config_listing() -> str:
@@ -519,68 +517,6 @@ WINDOW_CSS = """
     #{box} > .title {{ height: 1; text-style: bold; margin-bottom: 1; }}
     #{box} > .hint {{ height: auto; color: ansi_default; text-style: dim; margin-top: 1; }}
 """
-
-
-class Setup(ModalScreen):
-    """The model and the search services' keys (settings.FIELDS). A key's field is hidden and starts empty: empty
-    keeps the current key, and a key is never shown, only whether one is set. Dismissed with the changed values
-    (enter or ctrl+s) or None (esc)."""
-
-    CSS = WINDOW_CSS.format(name="Setup", box="setup", color="ansi_blue") + """
-    #setup-fields { height: auto; max-height: 70vh; scrollbar-size-vertical: 1; }
-    #setup-error { color: ansi_red; height: auto; }
-    #setup-detail { height: auto; max-height: 2; text-style: dim; margin-top: 1; }
-    """
-    BINDINGS = [Binding("escape", "cancel", show=False), Binding("ctrl+s", "save", show=False)]
-    SHORT = {"PERESEARCH_LLM_URL": "Model endpoint", "PERESEARCH_LLM_MODEL": "Model", "PERESEARCH_LLM_KEY": "Model key",
-             "PERESEARCH_EMBED_URL": "Embeddings endpoint", "PERESEARCH_EMBED_MODEL": "Embedding model",
-             "PERESEARCH_EMBED_KEY": "Embeddings key", "PERESEARCH_RERANK_URL": "Rerank endpoint",
-             "PERESEARCH_RERANK_MODEL": "Rerank model", "PERESEARCH_RERANK_KEY": "Rerank key"}
-
-    def __init__(self, current: dict):
-        super().__init__()
-        self.current = current
-
-    def compose(self) -> ComposeResult:
-        from peresearch.windows import short_label
-        with Vertical(id="setup"):
-            yield Static("Setup · the model and the search services", classes="title", markup=False)
-            with VerticalScroll(id="setup-fields"):
-                for name, label, hidden in settings.FIELDS:
-                    state = ("set: empty keeps it" if self.current.get(name) else "not set") if hidden else ""
-                    yield Field(self.SHORT.get(name) or short_label(name, label),
-                                "" if hidden else self.current.get(name, ""), id=name.lower(), password=hidden,
-                                placeholder=state, note=label[:1].upper() + label[1:])
-            yield Static("", id="setup-error")
-            yield Static("", id="setup-detail", markup=False)
-            yield Static(hints(("tab", "next"), ("enter", "save"), ("esc", "close without saving")) +
-                         ". Saving contacts no service; /check tests the connections.", classes="hint", markup=False)
-
-    def on_mount(self) -> None:
-        self.query_one(Input).focus()
-
-    def on_descendant_focus(self, event: events.DescendantFocus) -> None:
-        field = event.widget.parent
-        if isinstance(field, Field):
-            self.query_one("#setup-detail", Static).update(field.note_text)
-
-    def on_input_submitted(self, event: Input.Submitted) -> None:
-        event.stop()
-        self.action_save()
-
-    def action_save(self) -> None:
-        values = {name: self.query_one(f"#{name.lower()}", Input).value.strip() for name, _, _ in settings.FIELDS}
-        for name, said in URL_NAMES.items():
-            url = values[name]
-            if url and not url.startswith(("http://", "https://")):
-                self.query_one("#setup-error", Static).update(f"{said} must start with http:// or https://")
-                return
-        hidden = {name for name, _, secret in settings.FIELDS if secret}
-        self.dismiss({name: v for name, v in values.items()
-                      if (v or name not in hidden) and v != self.current.get(name, "")})
-
-    def action_cancel(self) -> None:
-        self.dismiss(None)
 
 
 class ConnectionCheck(ModalScreen[bool]):
@@ -1238,11 +1174,8 @@ class Chat(App):
             self.note("Local only: the web is off for this session (/local turns it back on)." if self.local_only
                       else "The web is on again.")
             self.update_setup_line(now=True)
-        elif name == "/setup":
-            if self.busy or self._checking_connections:
-                self.note("wait for the current question to finish, or press esc")
-                return
-            self.push_screen(Setup(settings.saved()), self.setup_done)
+        elif name == "/setup":                         # the old name of /model's window
+            self.window_command("/model")
         elif name == "/check":
             if self.busy or self.indexing or self._checking_connections:
                 self.note("Wait for the current operation to finish before checking connections.")
