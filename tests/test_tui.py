@@ -18,6 +18,7 @@ from peresearch.tools import Source
 from peresearch.zetokrag.index import Index
 from tests.conftest import FakeEmbedder
 from tests.helpers import ScriptedLLM, notes, toolbox, agent, tui_run, settle, texts, user_home
+from tests.helpers import DictModel
 
 
 def test_the_terminal_interface_shows_tools_answer_and_sources(home, notes):
@@ -332,13 +333,13 @@ def test_a_question_is_shown_as_typed_and_esc_stops_it_at_once(home, notes):
     from peresearch.tui import Prompt, SPINNER
 
     class SlowLLM(ScriptedLLM):
-        def chat(self, messages, tools=None, thinking=None, stop=None):
+        def answer(self, messages, tools=None, thinking=None, stop=None):
             end = time.time() + 30                               # a long answer on a slow model
             while time.time() < end:
                 if stop and stop():
                     raise Interrupted("stopped")
                 time.sleep(0.05)
-            return super().chat(messages, tools, thinking)
+            return super().answer(messages, tools, thinking)
 
     def make(on_event):
         return Agent(SlowLLM(Reply("never")), toolbox(home, notes), on_event=on_event)
@@ -638,10 +639,10 @@ def test_a_model_that_does_not_answer_is_explained_and_retry_asks_again(home, no
     class Flaky(ScriptedLLM):
         fail = True
 
-        def chat(self, messages, tools=None, thinking=None, stop=None):
+        def answer(self, messages, tools=None, thinking=None, stop=None):
             if Flaky.fail:
                 raise APIConnectionError("Connection error.")
-            return super().chat(messages, tools, thinking)
+            return super().answer(messages, tools, thinking)
 
     def make(on_event):
         llm = Flaky(Reply("BPE merges pairs [N1]."))
@@ -732,8 +733,8 @@ def test_quitting_returns_at_once_whatever_runs_in_the_background(home, notes, b
                 time.sleep(0.5)                              # commits its open batch: what the grace waits for
             raise tui.Stopped("asked to stop")
 
-    class Stuck:                                            # the model never answers, but hears the interrupt
-        def chat(self, messages, tools=None, thinking=None, stop=None):
+    class Stuck(DictModel):                                            # the model never answers, but hears the interrupt
+        def answer(self, messages, tools=None, thinking=None, stop=None):
             started.set()
             while not stop():
                 time.sleep(0.05)

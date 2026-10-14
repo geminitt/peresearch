@@ -55,6 +55,7 @@ from urllib.parse import urlsplit, urlunsplit
 import numpy as np
 
 from peresearch import guard, settings
+from peresearch.messages import Message, Request
 
 ROOT = Path(__file__).resolve().parent.parent
 RUNS = Path(os.environ.get("PERESEARCH_RUNS", ROOT / "runs")) / "research"
@@ -149,7 +150,7 @@ def grade(judge, question: str, gold: str, predicted: str) -> str:
     if not (predicted or "").strip():
         return "NOT_ATTEMPTED"
     prompt = GRADER.format(question=question, target=gold, predicted_answer=predicted)
-    reply = judge.chat([{"role": "user", "content": prompt}], None, thinking=False)
+    reply = judge.chat(Request("", (Message.user(prompt),)), thinking=False)
     label = (reply.text or "").strip()
     if label not in ("A", "B", "C"):
         raise ValueError("judge must return exactly A, B, or C; question not checkpointed")

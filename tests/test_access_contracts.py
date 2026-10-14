@@ -9,6 +9,8 @@ from peresearch.agent import Agent, ResultStore, REVOKED_RESULT, EARLIER, SUMMAR
 from peresearch.llm import Interrupted, Reply, ToolCall
 from peresearch.tools import Toolbox
 from tests.test_access_isolation import Scripted
+from peresearch.messages import Message
+from tests.helpers import request
 
 
 def test_scope_metadata_ignores_incomplete_updates_without_losing_valid_result(home, tmp_path):
@@ -71,7 +73,7 @@ def test_legacy_invalid_explicit_scope_is_withheld_without_breaking_followup(hom
     agent.history_path.parent.mkdir(parents=True)
     agent.history_path.write_text(json.dumps({"conversation": agent.conversation, "question": "Inspect",
         "answer": "INVALID-SCOPE-EVIDENCE", "scope": [{}]}) + "\n")
-    assert agent.history()[-1]["content"] == REVOKED_RESULT
+    assert agent.history()[-1].text == REVOKED_RESULT
     agent.ask("Continue.")
     assert "INVALID-SCOPE-EVIDENCE" not in json.dumps(agent.llm.seen[-1])
 
@@ -89,15 +91,14 @@ def test_legacy_web_sources_do_not_require_local_file_permissions(home):
 @pytest.mark.parametrize("cancelled,external", [(False, True), (True, False)])
 def test_replay_stop_wrapper_preserves_both_cancellation_channels(home, cancelled, external):
     class Respecting(Scripted):
-        def chat(self, messages, tools=None, **kwargs):
+        def answer(self, messages, tools=None, **kwargs):
             if kwargs["stop"]():
                 raise Interrupted("stopped")
             return Reply("Should not complete.")
     agent = Agent(Respecting(), Toolbox(), record=False)
-    agent.cancelled = cancelled
+    agent.cancelled, agent._prompt = cancelled, "rules"
     with pytest.raises(Interrupted):
-        agent._chat([{"role": "system", "content": "rules"}, {"role": "user", "content": "question"}],
-                    None, stop=lambda: external)
+        agent._chat([Message.user("question")], None, stop=lambda: external)
 
 
 def test_repeated_revoked_recalls_stop_after_three_refused_rounds(home, tmp_path):
@@ -107,7 +108,7 @@ def test_repeated_revoked_recalls_stop_after_three_refused_rounds(home, tmp_path
     path.write_text("private text")
     guard.set_roots([notes])
     class Repeating(Scripted):
-        def chat(self, messages, tools=None, **kwargs):
+        def answer(self, messages, tools=None, **kwargs):
             self.seen.append(json.loads(json.dumps(messages)))
             if tools is None:
                 return Reply("Cannot use revoked evidence.")
@@ -135,10 +136,11 @@ def retained_turns(agent, paths, answers):
 
 
 def fold_messages(agent):
-    agent._base = "base rules"
+    """The messages of the next question; the system prompt, sent before them, is agent._prompt."""
+    agent._base = agent._prompt = "base rules"
     past = agent.history()
     agent._past = len(past) // 2
-    return [{"role": "system", "content": agent._base}, *past, {"role": "user", "content": "Continue."}]
+    return [*past, Message.user("Continue.")]
 
 
 def test_direct_history_retains_permitted_turns_and_withholds_revoked_answers(home, tmp_path):
@@ -146,7 +148,7 @@ def test_direct_history_retains_permitted_turns_and_withholds_revoked_answers(ho
     agent = Agent(Scripted(), Toolbox(roots=paths))
     retained_turns(agent, paths, ["PERMITTED [N1]", "PRIVATE [N2]"])
     agent.toolbox.roots = [paths[0]]
-    assert [m["content"] for m in agent.history() if m["role"] == "assistant"] == ["PERMITTED [N1]", REVOKED_RESULT]
+    assert [m.text for m in agent.history() if m.role == "assistant"] == ["PERMITTED [N1]", REVOKED_RESULT]
     assert "PRIVATE" in agent.history_path.read_text()
 
 
@@ -159,23 +161,23 @@ def test_access_filter_reports_changes_and_preserves_useful_context(home, tmp_pa
     messages = fold_messages(agent)
     if retained == "summary":
         agent._summary, agent._done, agent._past = "PRIVATE SUMMARY", 1, 0
-        messages = [messages[0], messages[-1]]
-        messages[0]["content"] += EARLIER.format(summary=agent._summary)
+        messages = [messages[-1]]
+        agent._prompt += EARLIER.format(summary=agent._summary)
     elif retained == "tool":
         agent._past = 0
         agent._kept["read"] = ("R1", "read", {}, 7)
         agent._scopes["R1"] = ("read", [str(path)])
-        messages = [messages[0], messages[-1], {"role": "tool", "tool_call_id": "read", "content": "PRIVATE"}]
+        messages = [messages[-1], Message.tool("read", "read", "PRIVATE")]
     assert agent._filter_access(messages) is False
     toolbox.roots = []
     assert agent._filter_access(messages) is True
-    assert "PRIVATE" not in json.dumps(messages)
-    assert messages[0]["content"] == "base rules"
+    assert "PRIVATE" not in agent._prompt + "".join(m.text for m in messages)     # nothing sent holds it
+    assert agent._prompt == "base rules"
     if retained == "summary":
         assert agent._summary == ""
         assert agent._fold(messages, 100) is False
     else:
-        assert REVOKED_RESULT in [m["content"] for m in messages]
+        assert REVOKED_RESULT in [m.text for m in messages]
     assert agent._filter_access(messages) is False
 
 
@@ -214,7 +216,7 @@ def test_injected_toolbox_without_policy_keeps_history_and_results_usable(home, 
     from tests.test_agent import FakeToolbox
     agent = Agent(Scripted(Reply("", [ToolCall("tree", "tree", {})]), Reply("Allowed answer")), FakeToolbox())
     retained_turns(agent, [tmp_path / "injected.md"], ["PERMITTED HISTORY"])
-    assert agent.history()[1]["content"] == "PERMITTED HISTORY"
+    assert agent.history()[1].text == "PERMITTED HISTORY"
     assert not agent._stop_with_access(None)()
     agent.ask("Continue.")
     assert agent._recall("R1", "recall")[0] == "R1"
@@ -231,35 +233,35 @@ def test_gateway_accepts_plain_stop_and_explains_scoped_preflight(home, scoped):
     if scoped:
         stop.access_paths = {"revoked.md"}
         with pytest.raises(Interrupted, match="^stopped before the model request$"):
-            model.chat([{"role": "user", "content": "Question"}], stop=stop)
+            model.chat(request([{"role": "user", "content": "Question"}]), stop=stop)
         assert not sent
     else:
-        assert model.chat([{"role": "user", "content": "Question"}], stop=stop).text == "Permitted"
+        assert model.chat(request([{"role": "user", "content": "Question"}]), stop=stop).text == "Permitted"
 
 
 def test_revoked_summary_blocks_further_folds_but_preserves_remaining_allowed_turn(home, tmp_path):
     class Folding(Scripted):
         def context_length(self):
             return 1024
-        def chat(self, *args, **kwargs):
+        def answer(self, *args, **kwargs):
             pytest.fail("a revoked summary cannot be extended")
     denied, permitted = tmp_path / "denied.md", tmp_path / "permitted.md"
     agent = Agent(Folding(), Toolbox(roots=[permitted]))
     retained_turns(agent, [denied, permitted], ["PRIVATE", "PERMITTED " * 1000])
     agent._base, agent._summary, agent._done, agent._past = "base rules", "PRIVATE SUMMARY", 1, 1
-    messages = [{"role": "system", "content": "PRIVATE SUMMARY"}, {"role": "user", "content": "Read"},
-                {"role": "assistant", "content": "PERMITTED " * 1000}, {"role": "user", "content": "Continue"}]
+    agent._prompt = "PRIVATE SUMMARY"
+    messages = [Message.user("Read"), Message.assistant("PERMITTED " * 1000), Message.user("Continue")]
     assert agent._fold(messages, 100) is False
-    assert messages[0]["content"] == "base rules" and messages[2]["content"].startswith("PERMITTED")
+    assert agent._prompt == "base rules" and messages[1].text.startswith("PERMITTED")
 
 
 def test_history_that_fits_keeps_verbatim_answers_without_summary_requests(home):
     class Roomy(Scripted):
         def context_length(self):
             return 16384
-        def chat(self, messages, tools=None, **kwargs):
+        def answer(self, messages, tools=None, **kwargs):
             assert messages[0]["content"] != SUMMARIZE
-            return super().chat(messages, tools, **kwargs)
+            return super().answer(messages, tools, **kwargs)
     model = Roomy(Reply("PERMITTED VERBATIM ANSWER"), Reply("Follow-up answer"))
     agent = Agent(model, Toolbox())
     agent.ask("First question")
@@ -316,7 +318,7 @@ def test_versioned_turn_with_missing_scope_requires_a_new_read(home):
     agent.history_path.parent.mkdir(parents=True)
     agent.history_path.write_text(json.dumps({"conversation": agent.conversation, "question": "Read",
         "answer": "UNKNOWN-PRIVATE-EVIDENCE", "sources": {}, "scope_version": 2, "scope": None}) + "\n")
-    assert agent.history()[1]["content"] == REVOKED_RESULT
+    assert agent.history()[1].text == REVOKED_RESULT
 
 
 def test_fresh_allowed_history_does_not_inherit_already_withheld_dependencies(home, tmp_path):
@@ -371,7 +373,7 @@ def test_summary_requests_preserve_cancellation_channels(home, tmp_path, channel
     class Folding(Scripted):
         def context_length(self):
             return 1024
-        def chat(self, messages, tools, **kwargs):
+        def answer(self, messages, tools, **kwargs):
             assert messages[0]["content"] == SUMMARIZE and tools is None
             if channel == "agent":
                 agent.cancel()
@@ -394,7 +396,7 @@ def test_multi_part_fold_abandons_serialized_evidence_after_revocation(home, tmp
     class Folding(Scripted):
         def context_length(self):
             return 1024
-        def chat(self, messages, tools, **kwargs):
+        def answer(self, messages, tools, **kwargs):
             assert tools is None and kwargs["stop"] is not None and kwargs["thinking"] is False
             self.seen.append(json.loads(json.dumps(messages)))
             guard.set_roots([])
@@ -411,5 +413,20 @@ def test_multi_part_fold_abandons_serialized_evidence_after_revocation(home, tmp
     messages = fold_messages(agent)
     assert agent._fold(messages, 100) is False
     assert len(model.seen) == 1
-    assert REVOKED_RESULT in [m["content"] for m in messages]
+    assert REVOKED_RESULT in [m.text for m in messages]
     assert '"summary"' not in agent.history_path.read_text()
+
+
+def test_a_later_earlier_turn_revoked_mid_question_is_withheld_at_its_own_place(home, tmp_path):
+    """Earlier turns sit at the start of the messages, question then answer: a turn whose evidence is revoked after
+    the messages were built has its own answer withheld, at 1 + 2·i, and no other message changes."""
+    paths = [tmp_path / "first.md", tmp_path / "second.md", tmp_path / "third.md"]
+    agent = Agent(Scripted(), Toolbox(roots=paths))
+    retained_turns(agent, paths, ["FIRST [N1]", "SECOND [N2]", "THIRD [N3]"])
+    messages = fold_messages(agent)
+    before = list(messages)
+    agent.toolbox.roots = [paths[0], paths[2]]                  # the second turn's evidence is revoked
+    assert agent._filter_access(messages) is True
+    assert [m.text for m in messages] == ["Read the evidence.", "FIRST [N1]", "Read the evidence.", REVOKED_RESULT,
+                                          "Read the evidence.", "THIRD [N3]", "Continue."]
+    assert [i for i, (a, b) in enumerate(zip(before, messages)) if a != b] == [3]

@@ -314,7 +314,7 @@ def agent_loop():
     limit = d.box("limit", 550, 366, 300, 56, "decision", "≥ 12 calls or > 900 s?")
     n_limit = d.box("n_limit", 980, 356, 330, 80, "agent", "Limit reached", None, [
         "message: answer now with what you have", "no tools offered on this call"])
-    call = d.box("call", 480, 470, 440, 112, "llm", "Agent._chat → LLM.chat(messages, tools, stop)", "agent._fit · _fold", [
+    call = d.box("call", 480, 470, 440, 112, "llm", "Agent._chat → LLM.chat(Request, stop)", "agent._fit · _fold", [
         "oldest results trimmed, then the oldest turns", "summarized by the model, to fit the context; a 400",
         "for length: trimmed to the server's count, again"])
     calls = d.box("calls", 550, 614, 300, 56, "decision", "tool calls, no limit?")

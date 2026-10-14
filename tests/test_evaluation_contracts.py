@@ -12,6 +12,8 @@ from peresearch.llm import LLM
 from peresearch.profiles import Profile
 from peresearch.zetokrag.index import Index
 from peresearch.zetokrag.search import Searcher
+from peresearch.messages import Message
+from tests.helpers import request
 
 
 @pytest.fixture
@@ -113,7 +115,7 @@ def test_gateway_observer_receives_only_the_actual_outbound_messages():
     model, requests = gateway()
     observed = []
     model.on_request = observed.append
-    model.chat([{"role": "user", "content": "Benign question."}])
+    model.chat(request([{"role": "user", "content": "Benign question."}]))
     assert observed == [requests[0]["messages"]]
 
 
@@ -127,7 +129,7 @@ def test_injection_exposure_uses_gateway_messages_instead_of_registered_sources(
     def factory(notes, web):
         model, _ = gateway()
         def ask(question):
-            model.chat([{"role": "user", "content": attack["payload"] if actual_payload else question}])
+            model.chat(request([{"role": "user", "content": attack["payload"] if actual_payload else question}]))
             source = Source("N1", "file", str(notes / "checkpointing-extra.md") + ":L1", "Attack", attack["payload"])
             return Answer("Benign answer.", {"N1": source}, Check(), 1)
         return SimpleNamespace(llm=model, ask=ask)
@@ -186,8 +188,8 @@ def test_fold_exposure_counts_summary_requests_and_actual_summary_text(evaluatio
     agent = Agent(model, Toolbox(), record=False)
     agent._past, agent._done, agent._summary = 1, 0, ""
     agent._base, agent._side = "Base system.", [0, 0]
-    messages = [{"role": "system", "content": agent._base}, {"role": "user", "content": "Old question."},
-                {"role": "assistant", "content": "Benign old answer."}, {"role": "user", "content": "Next question."}]
+    agent._prompt = agent._base
+    messages = [Message.user("Old question."), Message.assistant("Benign old answer."), Message.user("Next question.")]
     with evaluation._exposure(model, payload) as measured:
         assert agent._fold(messages, 1)
         assert measured["exposed"] is False  # the summarizer has not received the payload
@@ -211,7 +213,7 @@ def test_observation_includes_precise_capability_retries_and_restores_previous_o
     callback = model.on_request
     payload = "Complete synthetic instruction."
     with evaluation._exposure(model, payload) as measured:
-        model.chat([{"role": "user", "content": payload}], stop=(lambda: False) if threaded else None)
+        model.chat(request([{"role": "user", "content": payload}]), stop=(lambda: False) if threaded else None)
     assert measured["exposed"] is True and measured["requests_observed"] == 2
     assert len(previous) == 2 and model.on_request is callback
 
@@ -223,7 +225,7 @@ def test_exposure_observer_sees_guard_filtered_text_and_cannot_modify_a_request(
         messages[0]["content"] = "Observer changed its own copy."
     model.on_request = previous
     with evaluation._exposure(model, secret) as measured:
-        model.chat([{"role": "user", "content": "Synthetic fixture credential " + secret}])
+        model.chat(request([{"role": "user", "content": "Synthetic fixture credential " + secret}]))
     assert measured["exposed"] is False and measured["requests_observed"] == 1
     assert secret not in requests[0]["messages"][0]["content"]
     assert requests[0]["messages"][0]["content"] != "Observer changed its own copy."
@@ -305,7 +307,7 @@ def test_configured_step_limit_is_exercised_by_evaluation_agent(evaluation, monk
     answer = agent.ask("Inspect the tree.")
     assert answer.stopped == "steps" and answer.steps == 2
     assert [name for name, args in answer.calls] == ["tree"]
-    assert agent.toolbox.local_only and not any(s["function"]["name"].startswith("search_p")
+    assert agent.toolbox.local_only and not any(s.name.startswith("search_p")
                                                for s in agent.toolbox.schemas())
 
 
@@ -463,8 +465,8 @@ def test_injection_records_keep_cumulative_exposure_known_utility_and_checkpoint
         model, _ = gateway()
         def ask(question):
             assert question == attack["question"]
-            model.chat([{"role": "user", "content": attack["payload"]}])
-            model.chat([{"role": "user", "content": "Benign final request."}])
+            model.chat(request([{"role": "user", "content": attack["payload"]}]))
+            model.chat(request([{"role": "user", "content": "Benign final request."}]))
             where = "https://ml.example/checkpointing" if "web" in mode else f"{notes / 'checkpointing.md'}:L1"
             if mode == "unrelated":
                 where = "https://unrelated.example/evidence"

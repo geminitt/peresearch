@@ -1,6 +1,8 @@
-"""The model behind the agent, through one gateway: any OpenAI-compatible API — a server the user runs (Ollama,
-llama.cpp, LM Studio, vLLM…) or a provider's. How the user gets that API is theirs; adapting to the model behind it
-(its profile, tool calls through the prompt, reasoning left in the text) is done here.
+"""The model behind the agent, through one gateway: a server the user runs (Ollama, llama.cpp, LM Studio, vLLM…) or
+a provider's API, reached through the protocol the provider registry names (Chat Completions, the Responses API,
+Anthropic Messages). The agent sends a `messages.Request` and gets a `Reply`; each protocol's format is made here.
+How the user gets that API is theirs; adapting to the model behind it (its profile, tool calls through the prompt,
+reasoning left in the text) is done here.
 
 Every message passes `guard.outbound` before it leaves the machine. Tool calls normally come back structured;
 when a model leaves one as text inside its reasoning or its answer instead (Qwen's XML, Hermes' JSON; e.g.
@@ -22,14 +24,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from peresearch import guard, profiles, providers, settings
-
-
-@dataclass
-class ToolCall:
-    id: str
-    name: str
-    args: dict
-    error: str = ""                # why the arguments could not be read ({} then): not run, the model is told
+from peresearch.messages import Message, Reasoning, Request, Text, Tool, ToolCall
 
 
 @dataclass
@@ -42,6 +37,14 @@ class Reply:
     finish: str = ""               # the server's finish_reason: "stop", "tool_calls", "length" (cut at max_tokens)…
     reasoning_in_text: bool = False   # the reasoning came inside the text (<think>) and was moved out
     refusal: str = ""              # structured refusal, preserved separately from content/reasoning
+    provider: dict = field(default_factory=dict)   # what the provider attached to the turn (messages.Message)
+
+    @property
+    def message(self) -> Message:
+        """The reply as the assistant's message, to add to the conversation: its reasoning, text and calls, with what
+        the provider attached to them."""
+        return Message("assistant", ((Reasoning(self.reasoning),) if self.reasoning else ()) + (Text(self.text),)
+                       + tuple(self.calls), self.provider)
 
 
 _QWEN_XML = re.compile(r"<tool_call>\s*<function=([\w\-.]+)>(.*?)</function>\s*</tool_call>", re.S)
@@ -538,6 +541,50 @@ def _read_anthropic(manager, stop, on_first=None, on_text=None) -> dict:
     return result
 
 
+def chat_messages(request: Request, provider: bool = True) -> list[dict]:
+    """A request's messages as Chat Completions takes them: the system prompt first, an assistant turn's calls as
+    `tool_calls` (with what the endpoint attached to each, when `provider`: Gemini's thought signature), each tool
+    result as a `tool` message. Reasoning is not sent back on this protocol."""
+    out = [{"role": "system", "content": request.system}] if request.system else []
+    for m in request.messages:
+        if m.role == "tool":
+            out.append({"role": "tool", "tool_call_id": m.call_id, "content": m.text})
+        elif m.role == "assistant" and m.calls:
+            calls = []
+            for c in m.calls:
+                call = {"id": c.id, "type": "function",
+                        "function": {"name": c.name, "arguments": json.dumps(c.args, ensure_ascii=False)}}
+                extra = (c.provider.get("chat") or {}).get("extra_content") if provider else None
+                if extra is not None:
+                    call["extra_content"] = extra
+                calls.append(call)
+            out.append({"role": "assistant", "content": m.text, "tool_calls": calls})
+        else:
+            out.append({"role": m.role, "content": m.text})
+    return out
+
+
+def request_size(request: Request) -> int:
+    """The characters a request sends, counted on its Chat Completions body (the measure the agent's characters per
+    token and framing were fitted on): every message's text and calls, and the tool schemas."""
+    return sum(len(m.get("content") or "") + len(json.dumps(m.get("tool_calls") or "", ensure_ascii=False))
+               for m in chat_messages(request, provider=False)) + \
+        len(json.dumps(chat_tools(request.tools), ensure_ascii=False))
+
+
+def chat_tools(tools) -> list[dict]:
+    """Tools as Chat Completions declares them: function tools."""
+    return [{"type": "function", "function": {"name": t.name, "description": t.description,
+                                              "parameters": t.parameters}} for t in tools]
+
+
+def anthropic_blocks(request: Request) -> dict:
+    """The content blocks the Messages API returned for each assistant turn with calls, by its first call's id: they
+    go back unchanged (thinking blocks keep their signatures)."""
+    return {m.calls[0].id: m.provider["anthropic"]["content"] for m in request.messages
+            if m.role == "assistant" and m.calls and "anthropic" in m.provider}
+
+
 def _outbound(message: dict) -> dict:
     m = dict(message)
     if isinstance(m.get("content"), str):
@@ -576,7 +623,6 @@ class LLM:
         self.thinking, self.template_kwargs, self.usage_option = thinking, True, True
         self.reasoning_option, self._token_field = True, None
         self.on_request = None  # optional observer of submitted, filtered model-visible messages
-        self._signatures = {}   # call id -> what the endpoint attached to the call (Gemini: its thought signature)
         self.on_text, self._drafting = None, True    # on_text(piece): the answer as it streams (the agent's draft)
         # The API route: Chat Completions, or the Responses API for a model that takes tools only there. "auto" tries
         # Responses once when Chat Completions refuses the `tools` field itself, and keeps what worked.
@@ -587,7 +633,6 @@ class LLM:
             providers.guess(url or settings.get("PERESEARCH_LLM_URL"))
         native = providers.protocol(self.provider) == "anthropic"
         self.route = "anthropic" if native else "responses" if self.api == "responses" else "chat"
-        self._blocks = {}       # first call id -> the Messages API content blocks of that turn (thinking signed)
         self.local = False                             # a server on this machine: refused means not running
         if client is None:
             from openai import OpenAI
@@ -715,7 +760,7 @@ class LLM:
         known = [n for n in (self.max_tokens, self.profile().output, context // 4 if context else None) if n]
         return min(known) if known else None
 
-    def _create(self, stop, **kw) -> dict:
+    def _create(self, stop, blocks=None, **kw) -> dict:
         """One streamed request, put back together by `_read_stream`. With `stop`, the stream is read in a helper
         thread, so the caller is free the moment stop() is true; the reader closes the stream itself at its next
         chunk (closing it from another thread does not wake a blocked read, and vLLM went on generating)."""
@@ -730,7 +775,7 @@ class LLM:
                 from copy import deepcopy
                 self.on_request(deepcopy(kw["messages"]))
             if native:                         # sampling and template fields are not sent: current Claude refuses them
-                request = anthropic_request(kw["messages"], kw.get("tools"), self._blocks)
+                request = anthropic_request(kw["messages"], kw.get("tools"), blocks or {})
                 request.update(model=kw["model"], cache_control={"type": "ephemeral"},
                                max_tokens=kw.get("max_tokens") or kw.get("max_completion_tokens")
                                or ANTHROPIC_REPLY_TOKENS)
@@ -772,10 +817,11 @@ class LLM:
             raise out["error"]
         return out["reply"]
 
-    def chat(self, messages: list[dict], tools: list[dict] | None = None, thinking: bool | None = None,
-             stop=None) -> Reply:
+    def chat(self, request: Request, thinking: bool | None = None, stop=None) -> Reply:
         """`stop()`, polled every 0.1 s, interrupts the request in flight or the wait before a retry."""
-        sent = self._with_signatures([_outbound(m) for m in messages])
+        sent = [_outbound(m) for m in chat_messages(request)]
+        tools = chat_tools(request.tools) or None
+        blocks = anthropic_blocks(request)
         thinking = self.thinking if thinking is None else thinking
         optional = (self.template_kwargs, self.usage_option, self.reasoning_option, self._token_field)
         prompted = tools and (self.tool_mode or self.profile().tools) == "prompt"
@@ -783,7 +829,7 @@ class LLM:
         try:
             try:
                 r = self._send(prompt_tools(sent, tools) if prompted else sent, None if prompted else tools,
-                               thinking, stop)
+                               thinking, stop, blocks)
             except ToolsRefused as refused:  # the server takes no `tools`: Responses, else through the prompt
                 r = self._responses_instead(sent, tools, thinking, stop) if refused.field else None
                 if r is None:
@@ -807,11 +853,10 @@ class LLM:
         budget = self.reply_tokens()
         cut = r["finish"] == "length" or bool(budget) and budget <= r["completion_tokens"]
         refusal = r.get("refusal", "")
-        calls = [] if refusal else [ToolCall(c["id"], c["name"], *_arguments(c["args"], cut and i == len(r["calls"]) - 1))
+        calls = [] if refusal else [ToolCall(c["id"], c["name"], *_arguments(c["args"], cut and i == len(r["calls"]) - 1),
+                                             provider={"chat": {"extra_content": c["extra"]}} if c.get("extra") else {})
                  for i, c in enumerate(r["calls"])]
-        self._signatures.update({c["id"]: c["extra"] for c in r["calls"] if c.get("extra")})
-        if r.get("blocks") and r["calls"]:
-            self._blocks[r["calls"][0]["id"]] = r["blocks"]
+        attached = {"anthropic": {"content": r["blocks"]}} if r.get("blocks") and r["calls"] else {}
         thought, text = split_reasoning(r["text"])
         reasoning = "\n".join(part for part in (r["reasoning"], thought) if part)
         if not calls and not refusal:       # recovered from the text or the reasoning (vllm#39056)
@@ -826,18 +871,8 @@ class LLM:
             f"tool-call arguments not a dict, or kept with an error: {[(c.name, type(c.args).__name__) for c in calls]}"
         if refusal and refusal != text:
             text = "\n".join(part for part in (text.strip(), refusal) if part)
-        return Reply(text, calls, reasoning, r["prompt_tokens"], r["completion_tokens"], r["finish"], bool(thought), refusal)
-
-    def _with_signatures(self, sent: list[dict]) -> list[dict]:
-        """The assistant's earlier calls with what the endpoint attached to them, sent back as it asks: Gemini's
-        OpenAI-compatible endpoint refuses a replayed call without its `extra_content` thought signature (400,
-        "Function call is missing a thought_signature"). `sent` holds copies (_outbound), changed in place."""
-        for m in sent:
-            for call in m.get("tool_calls") or []:
-                extra = self._signatures.get(call.get("id"))
-                if extra is not None:
-                    call["extra_content"] = extra
-        return sent
+        return Reply(text, calls, reasoning, r["prompt_tokens"], r["completion_tokens"], r["finish"], bool(thought),
+                     refusal, attached)
 
     def _responses_instead(self, sent, tools, thinking, stop) -> dict | None:
         """The request again through the Responses API, when the model refused the `tools` field of Chat Completions
@@ -861,7 +896,7 @@ class LLM:
                 return None
             raise
 
-    def _send(self, sent: list[dict], tools, thinking, stop) -> dict:
+    def _send(self, sent: list[dict], tools, thinking, stop, blocks=None) -> dict:
         """Retry transport failures and precisely refused capabilities. Only an explicitly unsupported field
         falls back without using a transport try. Unrelated 400s propagate unchanged; chat restores unsuccessful
         capability changes. A token field gets one alternate, never an unbounded toggle."""
@@ -890,7 +925,7 @@ class LLM:
             field = self._token_field or prof.token_field
             budget = {field: tokens} if tokens else {}                  # nothing known: the server's own
             try:
-                return self._create(stop, model=self._name(), messages=sent, tools=tools or None,
+                return self._create(stop, blocks, model=self._name(), messages=sent, tools=tools or None,
                                     **budget, **sampling, **extra)
             except Interrupted:
                 raise
@@ -901,8 +936,8 @@ class LLM:
                         and _THINKING_SIGNATURE.search(str(e)):
                     # a thinking block bound to a history that changed (a trimmed result, a summary in the system
                     # prompt): sent again once without thinking blocks, the recovery Anthropic documents
-                    self._blocks = {k: [b for b in v if b.get("type") not in ("thinking", "redacted_thinking")]
-                                    for k, v in self._blocks.items()}
+                    blocks = {k: [b for b in v if b.get("type") not in ("thinking", "redacted_thinking")]
+                              for k, v in (blocks or {}).items()}
                     stripped = True
                     continue
                 if tools and (unsupported(e, "tools") or type(e).__name__ == "BadRequestError" and _TOOLS_REFUSED.search(str(e))):
@@ -940,11 +975,10 @@ class LLM:
                 attempt += 1
 
 
-CHECK_TOOL = {"type": "function", "function": {"name": "tree", "description": "List what the user's folders contain.",
-                                               "parameters": {"type": "object", "properties": {}}}}
-CHECK_MESSAGES = [{"role": "system", "content": "You are being checked. When asked to call a tool, call it."},
-                  {"role": "user", "content": "Call the tree tool now."}]
-REASONING_PROBE = [{"role": "user", "content": "What is 17 * 23? Answer briefly."}]
+CHECK_TOOL = Tool("tree", "List what the user's folders contain.", {"type": "object", "properties": {}})
+CHECK_REQUEST = Request("You are being checked. When asked to call a tool, call it.",
+                        (Message.user("Call the tree tool now."),), (CHECK_TOOL,))
+REASONING_PROBE = Request("", (Message.user("What is 17 * 23? Answer briefly."),))
 
 
 SMALL_CONTEXT = 16_384     # below it the model check says the context is small for the agent
@@ -960,21 +994,21 @@ def check_model(llm: LLM) -> tuple[bool, list[str]]:
                                                                       else "not in the model table: defaults")]
     keep, llm.max_tokens = llm.max_tokens, min(llm.max_tokens or 1024, 1024)
     try:
-        r = llm.chat(CHECK_MESSAGES, [CHECK_TOOL], thinking=False)
+        r = llm.chat(CHECK_REQUEST, thinking=False)
         mode = llm.tool_mode or p.tools
         called = any(c.name == "tree" for c in r.calls)
         advice = ""
         if not called and llm.tool_mode is None:     # the table may be wrong: the other way (not after a refusal)
             other = "prompt" if mode == "native" else "native"
             llm.tool_mode = other
-            again = llm.chat(CHECK_MESSAGES, [CHECK_TOOL], thinking=False)
+            again = llm.chat(CHECK_REQUEST, thinking=False)
             if any(c.name == "tree" for c in again.calls):
                 r, called, mode = again, True, other
                 advice = f" (set PERESEARCH_LLM_TOOLS={other} to keep it)"
             elif llm.tool_mode == other:
                 llm.tool_mode = None
         t0 = time.monotonic()               # timed last: the first request may wait for the server to load the model
-        thought = llm.chat(REASONING_PROBE, None, thinking=True)   # where reasoning comes back, with no tools sent
+        thought = llm.chat(REASONING_PROBE, thinking=True)   # where reasoning comes back, with no tools sent
         took = time.monotonic() - t0
     finally:
         llm.max_tokens = keep

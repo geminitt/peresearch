@@ -11,6 +11,7 @@ import pytest
 from peresearch import agent as agent_module, tui
 from peresearch.llm import LLM
 from tests.helpers import notes, settle, streamed, toolbox, tui_run
+from tests.helpers import request, DictModel
 
 USER = [{"role": "user", "content": "q"}]
 TOOLS = [{"type": "function", "function": {"name": "search_notes", "description": "d",
@@ -28,7 +29,7 @@ def test_the_gateway_hands_over_answer_text_as_it_streams(home):
     llm = LLM(client=NS(chat=NS(completions=NS(create=lambda **kw: streamed(content="BPE merges pairs.", piece=5)))),
               model="m", retries=1)
     llm.on_text = pieces.append
-    assert llm.chat(USER).text == "BPE merges pairs." and "".join(pieces) == "BPE merges pairs." and len(pieces) == 4
+    assert llm.chat(request(USER)).text == "BPE merges pairs." and "".join(pieces) == "BPE merges pairs." and len(pieces) == 4
 
 
 def test_tools_in_the_prompt_are_not_handed_over(home, monkeypatch):
@@ -37,7 +38,7 @@ def test_tools_in_the_prompt_are_not_handed_over(home, monkeypatch):
     llm = LLM(client=NS(chat=NS(completions=NS(create=lambda **kw: streamed(
         content='<tool_call>{"name": "search_notes", "arguments": {}}</tool_call>')))), model="m", retries=1)
     llm.on_text = pieces.append
-    assert [c.name for c in llm.chat(USER, tools=TOOLS).calls] == ["search_notes"] and pieces == []
+    assert [c.name for c in llm.chat(request(USER, TOOLS)).calls] == ["search_notes"] and pieces == []
 
 
 def test_the_agent_drafts_at_most_every_interval(home, notes, monkeypatch):
@@ -45,10 +46,10 @@ def test_the_agent_drafts_at_most_every_interval(home, notes, monkeypatch):
     monkeypatch.setattr(agent_module, "_now", lambda: next(clock))
     events = []
 
-    class Writer:
+    class Writer(DictModel):
         on_text = None
 
-        def chat(self, messages, tools=None, thinking=None, stop=None):
+        def answer(self, messages, tools=None, thinking=None, stop=None):
             from peresearch.llm import Reply
             for piece in ("a", "b", "c", "d", "e"):
                 self.on_text(piece)
@@ -101,14 +102,14 @@ def test_the_responses_and_anthropic_routes_hand_over_their_text(home, monkeypat
     llm = LLM(client=responses_client(lambda **kw: None, lambda **kw: iter(events(text="abcdefgh"))), model="m",
               retries=1)
     llm.on_text = pieces.append
-    llm.chat(USER)
+    llm.chat(request(USER))
     assert "".join(pieces) == "abcdefgh" and len(pieces) == 2
     monkeypatch.delenv("PERESEARCH_LLM_API")
     native = []
     claude_llm = LLM(client=claude([], [reply([Block(type="text", text="hi")])]), model="m", retries=1,
                      provider="anthropic")
     claude_llm.on_text = native.append
-    claude_llm.chat(USER)
+    claude_llm.chat(request(USER))
     assert native == ["hi"]
 
 
@@ -117,7 +118,7 @@ def test_the_threaded_read_hands_over_too(home):
     llm = LLM(client=NS(chat=NS(completions=NS(create=lambda **kw: streamed(content="abcdef", piece=3)))), model="m",
               retries=1)
     llm.on_text = pieces.append
-    llm.chat(USER, stop=lambda: False)                                 # the agent always passes a stop
+    llm.chat(request(USER), stop=lambda: False)                                 # the agent always passes a stop
     assert pieces == ["abc", "def"]
 
 
@@ -131,7 +132,7 @@ def test_falling_back_to_tools_in_the_prompt_stops_drafting(home):
         return streamed(content='<tool_call>{"name": "search_notes", "arguments": {}}</tool_call>')
     llm = LLM(client=NS(chat=NS(completions=NS(create=refuse))), model="m", retries=1)
     llm.on_text = pieces.append
-    llm.chat(USER, tools=TOOLS)
+    llm.chat(request(USER, TOOLS))
     assert pieces == []
 
     class APIError(Exception):
@@ -145,7 +146,7 @@ def test_falling_back_to_tools_in_the_prompt_stops_drafting(home):
         return streamed(content='<tool_call>{"name": "search_notes", "arguments": {}}</tool_call>')
     other, later = LLM(client=NS(chat=NS(completions=NS(create=parser_fails))), model="m", retries=1), []
     other.on_text = later.append
-    other.chat(USER, tools=TOOLS)
+    other.chat(request(USER, TOOLS))
     assert len(sent) == 2 and later == []
 
 

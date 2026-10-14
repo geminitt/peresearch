@@ -9,7 +9,8 @@ import httpx
 import pytest
 
 from peresearch.agent import Agent
-from peresearch.llm import Reply
+from peresearch.llm import Reply, chat_messages, chat_tools
+from peresearch.messages import Message, Request, Text, Tool, ToolCall
 from peresearch.tools import Toolbox
 from peresearch.mcp import MCPError
 from peresearch.web import McpSearch, Web
@@ -45,13 +46,71 @@ def streamed(content="", reasoning="", tool_calls=(), usage=None, piece=5, finis
     return chunks
 
 
-class ScriptedLLM:
+def request(messages, tools=None) -> Request:
+    """A Request from a conversation written as Chat Completions messages (the system prompt first, calls as
+    `tool_calls`, results as `tool` messages, a call's `extra_content` kept as its provider data) and tools as
+    Chat Completions function tools or Tools: test inputs keep the shape they were written in."""
+    system, out, names = [], [], {}
+    for m in messages:
+        role, content = m["role"], m.get("content") or ""
+        if role == "system":
+            system.append(content)
+        elif role == "assistant" and m.get("tool_calls"):
+            calls = []
+            for c in m["tool_calls"]:
+                fn = c["function"]
+                try:
+                    args = json.loads(fn.get("arguments") or "{}")
+                except ValueError:
+                    args = {}
+                names[c["id"]] = fn["name"]
+                calls.append(ToolCall(c["id"], fn["name"], args if isinstance(args, dict) else {},
+                                      provider={"chat": {"extra_content": c["extra_content"]}}
+                                      if "extra_content" in c else {}))
+            out.append(Message("assistant", (Text(content),) + tuple(calls)))
+        elif role == "tool":
+            out.append(Message.tool(m.get("tool_call_id") or "", names.get(m.get("tool_call_id"), "tool"), content))
+        else:
+            out.append(Message(role, (Text(content),)))
+    return Request("\n\n".join(system), tuple(out), tuple(as_tool(t) for t in tools or ()))
+
+
+def as_tool(t) -> Tool:
+    if isinstance(t, Tool):
+        return t
+    fn = t["function"]
+    return Tool(fn["name"], fn.get("description", ""), fn.get("parameters", {"type": "object", "properties": {}}))
+
+
+class DictModel:
+    """A test model gateway (messages.ModelGateway) that sees each request as the agent used to send it: Chat
+    Completions messages, the system prompt first, and the tools offered as Chat Completions function tools (None
+    when none). A subclass writes `answer(messages, tools=None, thinking=None, stop=None)`; `max_tokens`, when set,
+    is the reply budget."""
+
+    on_text = None
+
+    def chat(self, request, thinking=None, stop=None):
+        return self.answer(chat_messages(request, provider=False), chat_tools(request.tools) or None,
+                           thinking=thinking, stop=stop)
+
+    def answer(self, messages, tools=None, thinking=None, stop=None):
+        raise NotImplementedError
+
+    def context_length(self):
+        return None
+
+    def reply_tokens(self):
+        return getattr(self, "max_tokens", None)
+
+
+class ScriptedLLM(DictModel):
     """Replies in order; records every message list it was sent."""
 
     def __init__(self, *replies):
         self.replies, self.seen = list(replies), []
 
-    def chat(self, messages, tools=None, thinking=None, stop=None):
+    def answer(self, messages, tools=None, thinking=None, stop=None):
         self.seen.append((json.loads(json.dumps(messages)), tools))
         self.thinking = getattr(self, "thinking", []) + [thinking]
         return self.replies.pop(0) if self.replies else Reply("fallback answer [N1]")

@@ -13,6 +13,8 @@ import pytest
 
 from peresearch import providers
 from peresearch.llm import LLM
+from peresearch.messages import Message, Request
+from tests.helpers import request
 
 TOOLS = [{"type": "function", "function": {"name": "search_notes", "description": "search the notes",
                                            "parameters": {"type": "object", "properties": {"query": {"type": "string"}}}}}]
@@ -68,13 +70,14 @@ def claude(sent, replies, models=()):
 
 
 def ask_with_tool(llm):
-    first = llm.chat(QUESTION, tools=TOOLS)
+    """A question, then the conversation continued as the agent continues it: the model's turn as its message (what
+    the provider attached travels with it), then the tool's result."""
+    question = request(QUESTION, TOOLS)
+    first = llm.chat(question)
     call = first.calls[0]
-    followed = QUESTION + [{"role": "assistant", "content": first.text, "tool_calls": [
-                               {"id": call.id, "type": "function",
-                                "function": {"name": call.name, "arguments": json.dumps(call.args)}}]},
-                           {"role": "tool", "tool_call_id": call.id, "content": "[N1] bpe.md: BPE merges pairs"}]
-    return first, llm.chat(followed, tools=TOOLS)
+    followed = Request(question.system, question.messages + (
+        first.message, Message.tool(call.id, call.name, "[N1] bpe.md: BPE merges pairs")), question.tools)
+    return first, llm.chat(followed)
 
 
 @pytest.fixture(autouse=True)
@@ -101,13 +104,13 @@ def test_a_question_with_a_tool_round_goes_through_the_messages_api(home):
     assert [(c.id, c.name, c.args) for c in first.calls] == [("toolu_1", "search_notes", {"query": "bpe"})]
     assert (first.text, first.reasoning, first.finish) == ("Looking.", "search first", "tool_calls")
     assert (first.prompt_tokens, first.completion_tokens) == (135, 20)          # cached input counted
-    request = sent[0]
-    assert request["model"] == "claude-opus-5-5" and request["system"] == "rules" and request["max_tokens"] > 0
-    assert request["messages"] == [{"role": "user", "content": "what is bpe?"}]
-    assert request["tools"] == [{"name": "search_notes", "description": "search the notes",
+    body = sent[0]
+    assert body["model"] == "claude-opus-5-5" and body["system"] == "rules" and body["max_tokens"] > 0
+    assert body["messages"] == [{"role": "user", "content": "what is bpe?"}]
+    assert body["tools"] == [{"name": "search_notes", "description": "search the notes",
                                  "input_schema": TOOLS[0]["function"]["parameters"]}]
-    assert request["cache_control"] == {"type": "ephemeral"}
-    assert not {"temperature", "top_p"} & set(request)                           # current models refuse them
+    assert body["cache_control"] == {"type": "ephemeral"}
+    assert not {"temperature", "top_p"} & set(body)                           # current models refuse them
     assert second.text == "BPE merges pairs [N1]." and second.finish == "stop"
     assert sent[1]["messages"][1:] == [
         {"role": "assistant", "content": [{"type": "thinking", "thinking": "search first", "signature": "sig-1"},
@@ -138,9 +141,9 @@ def test_a_refusal_a_cut_and_the_context_are_reported(home):
                reply([Block(type="text", text="half")], stop="max_tokens")]
     models = [NS(id="claude-opus-5-5", max_input_tokens=1_000_000, max_tokens=128_000)]
     llm = LLM(client=claude(sent, replies, models), model="claude-opus-5-5", retries=1, provider="anthropic")
-    refused = llm.chat(QUESTION)
+    refused = llm.chat(request(QUESTION))
     assert refused.refusal == "declined for safety" and refused.calls == []
-    cut = llm.chat(QUESTION)
+    cut = llm.chat(request(QUESTION))
     assert cut.text == "half" and cut.finish == "length"
     assert llm.context_length() == 1_000_000
 
@@ -153,14 +156,14 @@ def test_consecutive_tool_results_go_back_in_one_user_message(home):
                            {"role": "tool", "tool_call_id": "a", "content": "A"},
                            {"role": "tool", "tool_call_id": "b", "content": "B"},
                            {"role": "user", "content": "Limit reached: answer now."}]
-    request = anthropic_request(messages, None, {})
-    assert request["messages"][1] == {"role": "assistant", "content": [
+    body = anthropic_request(messages, None, {})
+    assert body["messages"][1] == {"role": "assistant", "content": [
         {"type": "tool_use", "id": "a", "name": "x", "input": {}},
         {"type": "tool_use", "id": "b", "name": "y", "input": {"q": 1}}]}
-    assert request["messages"][2] == {"role": "user", "content": [
+    assert body["messages"][2] == {"role": "user", "content": [
         {"type": "tool_result", "tool_use_id": "a", "content": "A"},
         {"type": "tool_result", "tool_use_id": "b", "content": "B"}]}
-    assert request["messages"][3] == {"role": "user", "content": "Limit reached: answer now."}
+    assert body["messages"][3] == {"role": "user", "content": "Limit reached: answer now."}
 
 
 # Paths the mutation run of the registry and the Anthropic route found untested (2026-10-14).
@@ -258,11 +261,11 @@ def test_the_reply_budget_reaches_max_tokens(home):
     llm = LLM(client=claude(sent, [reply([Block(type="text", text="a")])] * 3), model="m", retries=1,
               provider="anthropic")
     llm.reply_tokens = lambda: None
-    llm.chat(QUESTION)
+    llm.chat(request(QUESTION))
     assert sent[0]["max_tokens"] == 32_000                             # required: the default when nothing is known
     for field in ("max_tokens", "max_completion_tokens"):
         llm.reply_tokens, llm._token_field = (lambda: 777), field
-        llm.chat(QUESTION)
+        llm.chat(request(QUESTION))
         assert sent[-1]["max_tokens"] == 777
 
 
@@ -284,7 +287,7 @@ def test_the_thinking_recovery_is_once_and_only_on_the_anthropic_route(home):
         raise invalid
     other = LLM(client=NS(chat=NS(completions=NS(create=chat))), model="m", retries=1)
     with pytest.raises(BadRequestError):
-        other.chat(QUESTION)
+        other.chat(request(QUESTION))
     assert len(chat_sent) == 1                                         # no recovery on another route
 
 
@@ -403,7 +406,7 @@ def test_a_refused_token_field_is_switched_once_and_requests_are_bounded(home):
                 raise BadRequestError(f"Unsupported parameter: '{field}' is not supported with this model.", field)
         return streamed(content="ok")
     llm = LLM(client=NS(chat=NS(completions=NS(create=create))), model="m", retries=1, max_tokens=50)
-    assert llm.chat(QUESTION).text == "ok" and len(sent) == 2
+    assert llm.chat(request(QUESTION)).text == "ok" and len(sent) == 2
     assert {"max_tokens", "max_completion_tokens"} == {sent[0][0], sent[1][0]}
 
     refused = []
@@ -422,7 +425,7 @@ def test_a_refused_token_field_is_switched_once_and_requests_are_bounded(home):
         raise BadRequestError(f"Unsupported parameter: '{field}' is not supported with this model.", field)
     bounded = LLM(client=NS(chat=NS(completions=NS(create=refuse_all))), model="unknown-model", retries=1,
                   max_tokens=50, thinking=False)
-    assert bounded.chat(QUESTION).text == "done" and len(refused) == 5      # retries (1) + four fallbacks
+    assert bounded.chat(request(QUESTION)).text == "done" and len(refused) == 5      # retries (1) + four fallbacks
 
 
 def test_a_selection_saved_without_a_provider_is_adopted_with_the_guessed_one(home):

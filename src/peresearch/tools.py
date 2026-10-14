@@ -25,6 +25,7 @@ from pathlib import Path
 
 from peresearch import files, guard
 from peresearch.evidence import Source, Sources
+from peresearch.messages import Tool
 from peresearch.web import site_kind
 from peresearch.zetokrag import extracted, parse
 from peresearch.zetokrag.index import sha256
@@ -796,7 +797,7 @@ class Toolbox:
                   {"url": ("string", "a URL from search results")}, ["url"]),
     }
 
-    def schemas(self, web: bool = True) -> list[dict]:
+    def schemas(self, web: bool = True) -> list[Tool]:
         web = web and not self.local_only
         out = []
         for name, (desc, props, required) in self.SPECS.items():
@@ -808,11 +809,9 @@ class Toolbox:
                     (name == "search_wikipedia" and not encyclopedia) or \
                     (name in ("gaps", "fetch") and not (pages or scholarly or encyclopedia)):
                 continue
-            out.append({"type": "function", "function": {
-                "name": name, "description": desc,
-                "parameters": {"type": "object", "required": required, "properties": {
-                    k: {"type": t, "description": d, **({"items": {"type": "string"}} if t == "array" else {})}
-                    for k, (t, d) in props.items()}}}})
+            out.append(Tool(name, desc, {"type": "object", "required": required, "properties": {
+                k: {"type": t, "description": d, **({"items": {"type": "string"}} if t == "array" else {})}
+                for k, (t, d) in props.items()}}))
         return out
 
     def call(self, name: str, args: dict) -> str:

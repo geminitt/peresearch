@@ -137,13 +137,13 @@ def test_busy_guards_retry_sources_new_clear_and_setup(home, notes):
     gate = threading.Event()
 
     class Slow(ScriptedLLM):
-        def chat(self, messages, tools=None, thinking=None, stop=None):
+        def answer(self, messages, tools=None, thinking=None, stop=None):
             while not gate.is_set():
                 if stop and stop():
                     from peresearch.llm import Interrupted
                     raise Interrupted("stopped")
                 time.sleep(0.02)
-            return super().chat(messages, tools, thinking, stop)
+            return super().answer(messages, tools, thinking, stop)
     llm = Slow(Reply("", [ToolCall("c", "read", {"path": "bpe.md"})]), Reply("BPE merges pairs [N1]."),
                Reply("again [N1]."), Reply("fresh."))
 

@@ -26,7 +26,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from peresearch import guard, settings
-from peresearch.llm import Interrupted, too_long
+from peresearch.llm import Interrupted, request_size, too_long
+from peresearch.messages import Message, Request, Tool
 from peresearch.tools import _whole, Source, Toolbox
 
 SYSTEM = """You are peresearch, a personal research assistant. You can look through the user's own files (their
@@ -192,14 +193,13 @@ SILENT_KEPT = 256        # a cutting server keeps half its context (Ollama; 2,04
 TRIMMED = "[trimmed to fit the model's context: {n} characters shown earlier; call the tool again if you need them]"
 # Restorable compression (Manus; Anthropic's context editing clears old tool results the same way, oldest first): an
 # agent that keeps its conversation keeps every result in its ResultStore, so a trimmed one leaves its ref behind
-RECALL = {"type": "function", "function": {
-    "name": "recall", "description": "Read a tool result kept outside the context, by the ref its note gives (R1, "
-                                     "R2…): a result trimmed from the conversation, or the rest of one too long to "
-                                     "show at once (its note says where to read on: from=…).",
-    "parameters": {"type": "object", "properties": {
-        "ref": {"type": "string", "description": "the ref, e.g. R3"},
-        "from": {"type": "integer", "description": "the character to read on from, as the note says (default 0)"}},
-        "required": ["ref"]}}}
+RECALL = Tool("recall", "Read a tool result kept outside the context, by the ref its note gives (R1, R2…): a result "
+                        "trimmed from the conversation, or the rest of one too long to show at once (its note says "
+                        "where to read on: from=…).",
+              {"type": "object", "properties": {
+                  "ref": {"type": "string", "description": "the ref, e.g. R3"},
+                  "from": {"type": "integer", "description": "the character to read on from, as the note says (default 0)"}},
+               "required": ["ref"]})
 MORE = '\n… [{ref}: {total:,} characters in all, up to {upto:,} shown; recall("{ref}", from={upto}) reads on]'
 FULL = "[{ref}: {total:,} characters, and the model's context has no room left to show any: answer with what you have]"
 _MORE = re.compile(r'\n… \[R\d+: (?P<total>[\d,]+) characters in all, up to [\d,]+ shown; recall\("R\d+", from=(?P<upto>\d+)\) '
@@ -253,45 +253,44 @@ def _shown(text: str) -> tuple[str, int]:
     return (text[:cut.start()], cut.start() + int(cut.group(1))) if cut else (text, len(text))
 
 
-def _size(messages: list[dict], tools: list | None) -> int:
-    """The characters a request sends: every message's text and calls, and the tool schemas."""
-    return sum(len(m.get("content") or "") + len(json.dumps(m.get("tool_calls") or "", ensure_ascii=False))
-               for m in messages) + len(json.dumps(tools or [], ensure_ascii=False))
+def _size(system: str, messages: list[Message], tools) -> int:
+    """The characters a request sends: the system prompt, every message's text and calls, and the tool schemas."""
+    return request_size(Request(system, tuple(messages), tuple(tools or ())))
 
 
-def _note_of(m: dict, kept: dict | None) -> str:
+def _note_of(m: Message, kept: dict | None) -> str:
     """What _fit would make of a tool message from an earlier round: its kept note, else the trimmed note, never
     longer than the message."""
-    held = (kept or {}).get(m.get("tool_call_id"))
-    note = kept_note(*held) if held else TRIMMED.format(n=_shown(m["content"])[1])
-    return note if len(note) < len(m["content"]) else m["content"]
+    held = (kept or {}).get(m.call_id)
+    note = kept_note(*held) if held else TRIMMED.format(n=_shown(m.text)[1])
+    return note if len(note) < len(m.text) else m.text
 
 
-def _fit(messages: list[dict], tools: list | None, limit: float, kept: dict | None = None) -> None:
+def _fit(system: str, messages: list[Message], tools, limit: float, kept: dict | None = None) -> None:
     """Make the conversation fit `limit` characters, in place: tool results trimmed to a note, the oldest first; the
     latest round (the results after the last call) cut, the longest first, only when the rest is not enough. The
     system prompt, the user's messages and the calls stay: what the citations rest on is in the sources. A result
-    in `kept` (tool_call_id -> its ref, tool, arguments and length as the tool returned it) becomes the line naming
+    in `kept` (the call id -> its ref, tool, arguments and length as the tool returned it) becomes the line naming
     them (kept_note)."""
-    over = _size(messages, tools) - limit
-    last = max((i for i, m in enumerate(messages) if m["role"] == "assistant"), default=len(messages))
+    over = _size(system, messages, tools) - limit
+    last = max((i for i, m in enumerate(messages) if m.role == "assistant"), default=len(messages))
     for i, m in enumerate(messages[:last]):
         if over <= 0:
             return
-        if m["role"] == "tool" and not m["content"].startswith(TRIMMED[:20]) and not _KEPT.match(m["content"]):
-            whole = _shown(m["content"])[1]
-            held = (kept or {}).get(m.get("tool_call_id"))
+        if m.role == "tool" and not m.text.startswith(TRIMMED[:20]) and not _KEPT.match(m.text):
+            whole = _shown(m.text)[1]
+            held = (kept or {}).get(m.call_id)
             note = kept_note(*held) if held else TRIMMED.format(n=whole)
-            if len(note) < len(m["content"]):
-                over -= len(m["content"]) - len(note)
-                messages[i] = {**m, "content": note}
-    newest = sorted((i for i in range(last, len(messages)) if messages[i]["role"] == "tool"),
-                    key=lambda i: -len(messages[i]["content"]))
+            if len(note) < len(m.text):
+                over -= len(m.text) - len(note)
+                messages[i] = m.with_text(note)
+    newest = sorted((i for i in range(last, len(messages)) if messages[i].role == "tool"),
+                    key=lambda i: -len(messages[i].text))
     for i in newest:
         if over <= 0:
             return
-        held = (kept or {}).get(messages[i].get("tool_call_id"))
-        wrapped = _WRAPPED.match(messages[i]["content"])
+        held = (kept or {}).get(messages[i].call_id)
+        wrapped = _WRAPPED.match(messages[i].text)
         if held and wrapped:            # kept: a shorter head and where to read on, never a loss
             name, inner = wrapped["name"], wrapped["inner"]
             more = _MORE.search(inner)
@@ -302,19 +301,19 @@ def _fit(messages: list[dict], tools: list | None, limit: float, kept: dict | No
             keep = max(0, len(head) - int(over) - note + (len(inner) - len(head)) - 1)
             shown = head[:keep] + MORE.format(ref=held[0], total=total, upto=start + keep) if keep else \
                 FULL.format(ref=held[0], total=total)
-            before = len(messages[i]["content"])
+            before = len(messages[i].text)
             if len(_wrap(name, shown)) >= before:       # no shorter way to show it: left as it is
                 continue
-            messages[i] = {**messages[i], "content": _wrap(name, shown)}
-            over -= before - len(messages[i]["content"])
+            messages[i] = messages[i].with_text(_wrap(name, shown))
+            over -= before - len(messages[i].text)
             continue
-        text = messages[i]["content"]
+        text = messages[i].text
         body, whole = _shown(text)                      # cut again: from what it shows, saying all it left out
         keep = max(500, len(text) - int(over) - 80 - (len(text) - len(body)))
         if keep < len(body):
             cut = body[:keep] + CUT.format(n=whole - keep)
             over -= len(text) - len(cut)
-            messages[i] = {**messages[i], "content": cut}
+            messages[i] = messages[i].with_text(cut)
 
 
 def _wrap(name: str, result: str) -> str:
@@ -566,22 +565,23 @@ class Agent:
         self.conversation = _new_id()                  # every agent (every opening of the interface) starts afresh
         self._results = None                           # the conversation's tool-result store (results())
         self._source_conversation = None
-        self._kept = {}                                # this question's tool_call_id -> (ref, tool, args)
+        self._kept = {}                                # this question's call id -> (ref, tool, args)
         self._scopes = {}                              # current result refs -> local tool and accessed paths
         self._replayed_scope = set()                   # provenance inherited from model-visible history
         self._ratio = CHARS_PER_TOKEN                  # characters a token, measured on each call (_chat)
         # this question's: the system prompt without the summary, the summary and the turns it covers, the earlier
         # turns still in the messages, and the tokens summarizing used (_fold)
         self._base, self._summary, self._done, self._past, self._side = "", "", 0, 0, [0, 0]
+        self._prompt = ""                              # the system prompt as sent: _base, then the summary
         self._fold_blocked = False
 
     # --- history ---
 
-    def history(self) -> list[dict]:
-        """The current conversation's turns the model has not summarized (earlier()), whole, as chat messages."""
+    def history(self) -> list[Message]:
+        """The current conversation's turns the model has not summarized (earlier()), whole, as messages."""
         return [m for t in self._turns()[self.earlier()[1]:]
-                for m in ({"role": "user", "content": t["question"]},
-                          {"role": "assistant", "content": t["answer"] if self._turn_allowed(t) else REVOKED_RESULT})]
+                for m in (Message.user(t["question"]),
+                          Message.assistant(t["answer"] if self._turn_allowed(t) else REVOKED_RESULT))]
 
     def _turn_scope(self, turn: dict) -> list:
         scope = turn.get("scope")
@@ -609,25 +609,25 @@ class Agent:
         return (policy is None or name not in LOCAL_TOOLS or
                 isinstance(scope, list) and all(isinstance(path, str) and policy(path) for path in scope))
 
-    def _filter_access(self, messages: list[dict]) -> bool:
+    def _filter_access(self, messages: list[Message]) -> bool:
         """Recheck retained evidence at each request, including after folds/retries."""
         changed = False
         turns = self._turns()
         if self._summary and any(not self._turn_allowed(t) for t in turns[:self._done]):
             self._summary = ""
-            messages[0]["content"] = self._base
+            self._prompt = self._base
             self._fold_blocked = True
             changed = True
         for i, turn in enumerate(turns[self._done:self._done + self._past]):
-            message = messages[2 + 2 * i]
-            if not self._turn_allowed(turn) and message["content"] != REVOKED_RESULT:
-                message["content"] = REVOKED_RESULT
+            answer = messages[1 + 2 * i]                # each earlier turn: its question, then its answer
+            if not self._turn_allowed(turn) and answer.text != REVOKED_RESULT:
+                messages[1 + 2 * i] = answer.with_text(REVOKED_RESULT)
                 changed = True
-        for message in messages:
-            held = self._kept.get(message.get("tool_call_id")) if message["role"] == "tool" else None
+        for j, message in enumerate(messages):
+            held = self._kept.get(message.call_id) if message.role == "tool" else None
             if held and held[0] in self._scopes and not self._result_allowed(*self._scopes[held[0]]) \
-                    and message["content"] != REVOKED_RESULT:
-                message["content"] = REVOKED_RESULT
+                    and message.text != REVOKED_RESULT:
+                messages[j] = message.with_text(REVOKED_RESULT)
                 changed = True
         return changed
 
@@ -699,9 +699,9 @@ class Agent:
         tb = self.toolbox
         return SYSTEM + f"\n\nToday is {time.strftime('%Y-%m-%d, %A')}." + (
             LOCAL_ONLY if getattr(tb, "local_only", False) else
-            "" if any(t["function"]["name"] in WEB_SEARCHES for t in tb.schemas()) else NO_WEB)
+            "" if any(t.name in WEB_SEARCHES for t in tb.schemas()) else NO_WEB)
 
-    def _tools(self) -> list[dict]:
+    def _tools(self) -> list[Tool]:
         """The tool schemas sent with a request: the toolbox's, and recall (every result is kept)."""
         return self.toolbox.schemas() + [RECALL]
 
@@ -712,9 +712,9 @@ class Agent:
         tools, past = self._tools(), self.history()
         summary, covered = self.earlier()
         parts = [("system prompt", len(self._system())),
-                 (f"tools ({len(tools)})", len(json.dumps(tools, ensure_ascii=False))),
+                 (f"tools ({len(tools)})", request_size(Request("", (), tuple(tools)))),
                  *([(f"summary of earlier turns ({covered})", len(EARLIER.format(summary=summary)))] if summary else []),
-                 (f"earlier turns ({len(past) // 2})", sum(len(m["content"]) for m in past))]
+                 (f"earlier turns ({len(past) // 2})", sum(len(m.text) for m in past))]
         context = self._context()
         return {"parts": parts, "ratio": self._ratio, "tokens": round(sum(n for _, n in parts) / self._ratio),
                 "context": context}
@@ -771,25 +771,24 @@ class Agent:
         wins over a larger one known before — a setting too large, or the model's own maximum where the server runs
         less (Llama-3.2-1B: 131,072 in the table, 8,192 on Ollama, 2026-10-06); forgotten, every later call was
         refused or cut again."""
-        known = getattr(self.llm, "context_length", lambda: None)()
+        known = self.llm.context_length()
         return min(known, self._told) if known and self._told else known or self._told
 
     def _reserve(self) -> int:
         """The tokens a reply may use, kept free (llm.reply_tokens); unknown: none."""
-        budget = getattr(self.llm, "reply_tokens", None)
-        return (budget() if budget else getattr(self.llm, "max_tokens", 0)) or 0
+        return self.llm.reply_tokens() or 0
 
     def _room(self, tokens: int, messages: int) -> float:
         """The characters that fit in a context of `tokens` beside the reply, after each message's framing."""
         return ((tokens - self._reserve()) * (1 - CONTEXT_MARGIN) - FRAMING * messages) * self._ratio
 
-    def _floor(self, messages: list[dict]) -> list[dict]:
+    def _floor(self, messages: list[Message]) -> list[Message]:
         """`messages` as _fit makes them before it cuts the latest round: earlier rounds' results as their notes."""
-        last = max((i for i, m in enumerate(messages) if m["role"] == "assistant"), default=len(messages))
-        return [{**m, "content": _note_of(m, self._kept)} if m["role"] == "tool" and i < last else m
+        last = max((i for i, m in enumerate(messages) if m.role == "assistant"), default=len(messages))
+        return [m.with_text(_note_of(m, self._kept)) if m.role == "tool" and i < last else m
                 for i, m in enumerate(messages)]
 
-    def _fold(self, messages: list[dict], need: float, enough: bool = False, stop=None) -> bool:
+    def _fold(self, messages: list[Message], need: float, enough: bool = False, stop=None) -> bool:
         """Free `need` characters of `messages` by summarizing the oldest earlier turns (they follow the system
         prompt) with the user's model: as few turns as free it — all when the summary's length is not known (no reply
         budget) or when even all do not (`enough`: then none). The summary, with the one before it, ends the system
@@ -802,7 +801,7 @@ class Agent:
         if need <= 0 or not self._past or not context:
             return False
         frame = 2 * FRAMING * self._ratio                             # a turn's two messages, framed
-        gains = [len(messages[1 + 2 * i]["content"]) + len(messages[2 + 2 * i]["content"]) + frame
+        gains = [len(messages[2 * i].text) + len(messages[2 * i + 1].text) + frame
                  for i in range(self._past)]
         longest = self._reserve() * self._ratio                       # what a summary may run to
         freed = lambda k: sum(gains[:k]) + len(self._summary) - longest     # noqa: E731
@@ -811,7 +810,7 @@ class Agent:
             if enough:
                 return False
             k = self._past
-        texts = [f"User: {messages[1 + 2 * i]['content']}\nAssistant: {messages[2 + 2 * i]['content']}"
+        texts = [f"User: {messages[2 * i].text}\nAssistant: {messages[2 * i + 1].text}"
                  for i in range(k)]
         summary, refusals = self._summary, 0
         while texts:
@@ -824,11 +823,11 @@ class Agent:
                 piece += texts.pop(0) + "\n\n"
             if not piece:
                 piece, texts[0] = texts[0][:free], texts[0][free:]
-            ask = [{"role": "system", "content": SUMMARIZE}, {"role": "user", "content": head + piece}]
+            ask = Request(SUMMARIZE, (Message.user(head + piece),))
             if self._filter_access(messages):
                 return False  # serialized pieces may describe the pre-revocation context
             try:
-                reply = self.llm.chat(ask, None, thinking=False, stop=self._stop_with_access(stop))
+                reply = self.llm.chat(ask, thinking=False, stop=self._stop_with_access(stop))
             except Interrupted:
                 raise
             except Exception as e:
@@ -839,7 +838,7 @@ class Agent:
                 told, counted = numbers
                 context = self._told = told or context
                 if counted:
-                    self._ratio = _size(ask, None) / max(1, counted - FRAMING * len(ask))
+                    self._ratio = _size(ask.system, ask.messages, None) / max(1, counted - FRAMING * 2)
                 else:
                     self._ratio /= 2                                  # unsaid: half the characters a token
                 texts.insert(0, piece.removesuffix("\n\n"))         # asked again, in smaller parts
@@ -852,16 +851,16 @@ class Agent:
         self._summary, self._done, self._past = summary, self._done + k, self._past - k
         _append_private(self.history_path, json.dumps({"time": time.time(), "conversation": self.conversation,
                                                        "summary": summary, "turns": self._done}, ensure_ascii=False))
-        messages[0] = {**messages[0], "content": self._base + EARLIER.format(summary=summary)}
-        del messages[1:1 + 2 * k]
+        self._prompt = self._base + EARLIER.format(summary=summary)
+        del messages[:2 * k]
         self.on_event("think", "earlier turns summarized to fit the model's context")
         return True
 
-    def _spill(self, ref: str | None, name: str, text: str, messages: list[dict], start: int = 0) -> str:
+    def _spill(self, ref: str | None, name: str, text: str, messages: list[Message], start: int = 0) -> str:
         """What the model is shown of one result: a round of one (_round)."""
         return self._round([(ref, name, text, start)], messages)[0]
 
-    def _round(self, items: list[tuple], messages: list[dict]) -> list[str]:
+    def _round(self, items: list[tuple], messages: list[Message]) -> list[str]:
         """What the model is shown of each result of one round — items (ref, tool, text, start), in call order —:
         every one whole when they fit the room the context leaves (the oldest turns summarized first when that makes
         them fit); else the room shared max-min fair: a result shorter than its share whole, the others splitting
@@ -872,11 +871,11 @@ class Agent:
         if not context:
             return [text for _, _, text, _ in items]
         # the room as the next call will have it: _fit turns earlier rounds' results into their notes first
-        empties = [{"role": "tool", "tool_call_id": "", "content": _wrap(name, "")} for _, name, _, _ in items]
+        empties = [Message.tool("", name, _wrap(name, "")) for _, name, _, _ in items]
 
         def room():                                         # as _fit counts, each message's overheads included
-            return (self._room(context, len(messages) + len(items))
-                    - _size(self._floor(messages) + empties, self._tools()))
+            return (self._room(context, 1 + len(messages) + len(items))
+                    - _size(self._prompt, self._floor(messages) + empties, self._tools()))
         free, total = room(), sum(len(text) for _, _, text, _ in items)
         if total > free and self._fold(messages, total - free, enough=True):   # all whole, if summarizing the
             free = room()                                                      # oldest turns makes room
@@ -918,7 +917,7 @@ class Agent:
                 self.on_event("draft", "".join(text))
         return piece
 
-    def _chat(self, messages: list[dict], tools: list | None, **kw):
+    def _chat(self, messages: list[Message], tools: list | None, **kw):
         """llm.chat with the conversation kept within the model's context (_fit); a request the server still refuses
         for its length is trimmed to what the server counted (or halved when it does not say) and sent again, at most
         REFUSALS times."""
@@ -926,24 +925,24 @@ class Agent:
         context = self._context()
         reserve = self._reserve()
 
+        def framed():                           # the messages sent: the system prompt, then the conversation
+            return 1 + len(messages)
+
         def room(tokens):                       # the characters that fit in `tokens`, after each message's framing
-            return self._room(tokens, len(messages))
+            return self._room(tokens, framed())
 
         def fit(limit):                         # the oldest turns summarized when the rest cannot make it fit; then
-            self._fold(messages, _size(self._floor(messages), tools) - limit(), stop=kw.get("stop"))
-            _fit(messages, tools, limit(), self._kept)
+            self._fold(messages, _size(self._prompt, self._floor(messages), tools) - limit(), stop=kw.get("stop"))
+            _fit(self._prompt, messages, tools, limit(), self._kept)
         if context:
             fit(lambda: room(context))
-        size = _size(messages, tools)
         for refusals in range(REFUSALS + 1):
             self._filter_access(messages)
-            size = _size(messages, tools)
+            size = _size(self._prompt, messages, tools)
             sending = {**kw, "stop": self._stop_with_access(kw.get("stop"))}
-            drafting = hasattr(self.llm, "on_text")     # a gateway that streams: the answer shown as it comes
-            if drafting:
-                self.llm.on_text = self._drafter()
+            self.llm.on_text = self._drafter()  # the answer shown as it comes
             try:
-                reply = self.llm.chat(messages, tools, **sending)
+                reply = self.llm.chat(Request(self._prompt, tuple(messages), tuple(tools or ())), **sending)
             except Exception as e:
                 numbers = too_long(e)
                 if numbers is None or refusals == REFUSALS:
@@ -951,32 +950,29 @@ class Agent:
                 told, counted = numbers
                 context = self._told = told or context        # a context the server told is kept for later calls
                 if counted:                             # what the server counted: the request trimmed to fit
-                    self._ratio = size / max(1, counted - FRAMING * len(messages))
+                    self._ratio = size / max(1, counted - FRAMING * framed())
                 fit((lambda: room(context)) if context and counted else (lambda: size / 2))       # unsaid: halved
-                if _size(messages, tools) >= size:
+                if _size(self._prompt, messages, tools) >= size:
                     raise                               # nothing left to trim: the error is the answer
                 self.on_event("think", "the conversation was too long for the model; earlier results trimmed")
-                size = _size(messages, tools)
                 continue
             finally:
-                if drafting:                    # never left set: summaries (_fold) are not drafts
-                    self.llm.on_text = None
+                self.llm.on_text = None         # never left set: summaries (_fold) are not drafts
             # a server that cut the conversation without saying so (Ollama: 36,015 tokens sent, 4,098 kept, HTTP 200,
             # 2026-10-06) answered from its end alone: its count is far below what was sent. Never the answer, never
             # the measure of a token: what it kept is taken as its context, and the request trimmed and sent again
-            expected = size / self._ratio + FRAMING * len(messages)
+            expected = size / self._ratio + FRAMING * framed()
             if SILENT_KEPT <= reply.prompt_tokens < expected * SILENT_SHARE and expected > SILENT_FLOOR \
                     and refusals < REFUSALS:
                 context = self._told = reply.prompt_tokens + reserve
                 fit(lambda: room(context))
-                if _size(messages, tools) < size:
+                if _size(self._prompt, messages, tools) < size:
                     self.on_event("think", "the model's server cut the conversation without saying so; earlier "
                                            "results trimmed and the question sent again")
-                    size = _size(messages, tools)
                     continue
             break
-        if reply.prompt_tokens > FRAMING * len(messages):
-            self._ratio = size / (reply.prompt_tokens - FRAMING * len(messages))    # this model, this language
+        if reply.prompt_tokens > FRAMING * framed():
+            self._ratio = size / (reply.prompt_tokens - FRAMING * framed())    # this model, this language
         return reply
 
     def ask(self, question: str) -> Answer:
@@ -990,11 +986,11 @@ class Agent:
         tb.web_calls, tb.recorded_gaps, fetches, read_pages = 0, None, 0, set()
         self._base = self._system()
         (self._summary, self._done), past, self._side = self.earlier(), self.history(), [0, 0]
-        self._past = len(past) // 2                    # earlier turns in the messages, after the system prompt
-        system = self._base + (EARLIER.format(summary=self._summary) if self._summary else "")
+        self._past = len(past) // 2                    # earlier turns at the start of the messages
+        self._prompt = self._base + (EARLIER.format(summary=self._summary) if self._summary else "")
         asked = (f"Current question (answer this one; the turns above are earlier context):\n{question}"
                  if (past or self._summary) and MARK_CURRENT else question)
-        messages = [{"role": "system", "content": system}, *past, {"role": "user", "content": asked}]
+        messages = [*past, Message.user(asked)]
         prompt = completion = steps = refused_rounds = 0
         self._kept = {}
         self._scopes = {}
@@ -1008,8 +1004,8 @@ class Agent:
                     "refused" if refused_rounds >= REFUSED_ROUNDS else "")
             if over:
                 stopped = over
-                messages.append({"role": "user", "content": REFUSED_NOW if over == "refused" else
-                                 "Limit reached: answer now with the sources you have."})
+                messages.append(Message.user(REFUSED_NOW if over == "refused" else
+                                             "Limit reached: answer now with the sources you have."))
             self.on_event("think", f"model call {steps + 1}")
             try:
                 reply = self._chat(messages, None if over else self._tools(), stop=lambda: self.cancelled)
@@ -1024,7 +1020,7 @@ class Agent:
                 text = reply.text
                 if not text.strip():        # e.g. the whole answer left inside unclosed reasoning: ask once more
                     self.on_event("think", "empty answer; asking again without reasoning")
-                    messages.append({"role": "user", "content": "Write the final answer now, following the answer rules."})
+                    messages.append(Message.user("Write the final answer now, following the answer rules."))
                     try:
                         again = self._chat(messages, None, thinking=False, stop=lambda: self.cancelled)
                     except Interrupted:
@@ -1038,9 +1034,7 @@ class Agent:
                 if reply.finish == "length":    # cut at max_tokens: say so rather than pass it off as complete
                     stopped = stopped or "length"
                 break
-            messages.append({"role": "assistant", "content": reply.text, "tool_calls": [
-                {"id": c.id, "type": "function", "function": {"name": c.name, "arguments": json.dumps(c.args, ensure_ascii=False)}}
-                for c in reply.calls]})
+            messages.append(reply.message)
             outcomes, shown = [], []        # what each call of this round got back; (id, ref, tool, result, start)
             for c in reply.calls:
                 if self.cancelled:
@@ -1079,7 +1073,7 @@ class Agent:
                 outcomes.append(result)
             parts = self._round([(ref, name, result, start) for _, ref, name, result, start in shown], messages)
             for (cid, _, name, _, _), part in zip(shown, parts):     # the round's room shared, then sent in order
-                messages.append({"role": "tool", "tool_call_id": cid, "content": _wrap(name, part)})
+                messages.append(Message.tool(cid, name, _wrap(name, part)))
             # a small model can repeat refused calls to the step limit (the 0.8B: 11 refused web searches, every e2e
             # since 2026-10-05): rounds whose every call was refused are counted, and the third in a row ends it
             refused = len(outcomes) == len(reply.calls) and all(o.startswith(REFUSED_STARTS) for o in outcomes)

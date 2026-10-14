@@ -57,10 +57,10 @@ def scripted(acceptance, ids):
 class Interrupted(ScriptedLLM):
     """Ctrl+C on the model call after the script runs out (a BaseException, as the real one)."""
 
-    def chat(self, *a, **kw):
+    def answer(self, *a, **kw):
         if not self.replies:
             raise KeyboardInterrupt
-        return super().chat(*a, **kw)
+        return super().answer(*a, **kw)
 
 
 def factory(home, notes, llm, made):
@@ -257,11 +257,11 @@ def test_the_owners_rules_count_the_calls_made_refused_or_not(acceptance, rec, m
 class FailsOnce(ScriptedLLM):
     """The first model call fails as a server can (a broken connection): the other prompts still run."""
 
-    def chat(self, *a, **kw):
+    def answer(self, *a, **kw):
         if not getattr(self, "failed", False):
             self.failed = True
             raise RuntimeError("connection reset")
-        return super().chat(*a, **kw)
+        return super().answer(*a, **kw)
 
 
 def test_a_question_that_fails_is_recorded_and_the_run_goes_on(acceptance, home, notes):

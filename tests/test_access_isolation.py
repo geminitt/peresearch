@@ -13,12 +13,13 @@ from peresearch.tools import Toolbox
 from peresearch.workspace import Workspace
 from tests.helpers import streamed
 from tests.test_llm import client_of
+from tests.helpers import request, DictModel
 
 
-class Scripted:
+class Scripted(DictModel):
     def __init__(self, *replies):
         self.replies, self.seen = iter(replies), []
-    def chat(self, messages, tools=None, **kwargs):
+    def answer(self, messages, tools=None, **kwargs):
         self.seen.append(json.loads(json.dumps(messages)))
         return next(self.replies)
     def context_length(self):
@@ -92,7 +93,7 @@ def test_legacy_local_result_without_scope_requires_a_new_read(home):
 ])
 def test_explanatory_bare_json_is_not_an_executable_call(home, text):
     model = LLM(client=client_of(lambda **kwargs: streamed(content=text)), model="audit-model")
-    reply = model.chat([{"role": "user", "content": "Explain the JSON without reading a file."}], Toolbox().schemas())
+    reply = model.chat(request([{"role": "user", "content": "Explain the JSON without reading a file."}], Toolbox().schemas()))
     assert not reply.calls and reply.text == text
 
 
@@ -174,7 +175,7 @@ def test_unused_removed_root_does_not_revoke_a_result_from_a_permitted_file(home
 def test_a_fenced_tagged_example_is_not_executed(home):
     text = 'Example:\n```xml\n<tool_call>{"name":"read","arguments":{"path":"notes.md"}}</tool_call>\n```'
     model = LLM(client=client_of(lambda **kwargs: streamed(content=text)), model="audit-model")
-    reply = model.chat([{"role": "user", "content": "Show an example."}], Toolbox().schemas())
+    reply = model.chat(request([{"role": "user", "content": "Show an example."}], Toolbox().schemas()))
     assert not reply.calls and reply.text == text
 
 
@@ -189,12 +190,12 @@ def test_access_revoked_during_folding_removes_the_new_summary_before_next_reque
     class Folding(Scripted):
         def context_length(self):
             return 16384
-        def chat(self, messages, tools=None, **kwargs):
+        def answer(self, messages, tools=None, **kwargs):
             if messages[0]["content"] == SUMMARIZE:
                 self.seen.append(json.loads(json.dumps(messages)))
                 guard.set_roots([])
                 return Reply("FOLD-PRIVATE-SENTINEL")
-            return super().chat(messages, tools, **kwargs)
+            return super().answer(messages, tools, **kwargs)
     model = Folding(Reply("", [ToolCall("read", "read", {"path": str(path)})]),
                     Reply("Long answer " * answer_repeats + " [N1]."), Reply("No evidence."))
     agent = Agent(model, Toolbox(), record=True)
@@ -313,7 +314,7 @@ def test_intended_text_protocol_calls_are_still_recovered(home, form):
                "reasoning": "Plain answer."}[form]
     thought = payload if form == "reasoning" else ""
     model = LLM(client=client_of(lambda **kwargs: streamed(content=content, reasoning=thought)), model="audit-model")
-    reply = model.chat([{"role": "user", "content": "Read notes.md."}], Toolbox().schemas())
+    reply = model.chat(request([{"role": "user", "content": "Read notes.md."}], Toolbox().schemas()))
     assert [(c.name, c.args) for c in reply.calls] == [("read", {"path": "notes.md"})]
     assert reply.text == ("Looking." if form in ("xml", "tagged-json") else "Plain answer." if form == "reasoning" else "")
 

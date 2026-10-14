@@ -21,6 +21,7 @@ import pytest
 from hypothesis import HealthCheck, assume, example, given, settings
 from hypothesis import strategies as st
 
+from peresearch.llm import chat_tools
 from peresearch import files as files_module, guard, tools
 from peresearch.zetokrag import parse
 from peresearch.tools import Sources, Toolbox
@@ -906,42 +907,43 @@ def test_arguments_are_read_by_their_schema_type(tmp_path, name, arg, given, rea
 
 def test_schemas_describe_every_tool_and_hide_the_web_without_a_search_server():
     full = Toolbox(None, FakeWeb(), roots=[], papers=FakePapers([]), wiki=FakeWiki([])).schemas()
-    assert [s["function"]["name"] for s in full] == list(Toolbox.SPECS)
-    only_papers = [s["function"]["name"] for s in Toolbox(None, None, roots=[], papers=FakePapers([])).schemas()]
+    assert [s.name for s in full] == list(Toolbox.SPECS)
+    only_papers = [s.name for s in Toolbox(None, None, roots=[], papers=FakePapers([])).schemas()]
     assert only_papers == [n for n in Toolbox.SPECS if n not in ("web_search", "search_wikipedia")]   # gaps, fetch: both
-    only_web = [s["function"]["name"] for s in Toolbox(None, FakeWeb(), roots=[]).schemas()]
+    only_web = [s.name for s in Toolbox(None, FakeWeb(), roots=[]).schemas()]
     assert only_web == [n for n in Toolbox.SPECS if n not in ("search_papers", "search_wikipedia")]
-    only_wiki = [s["function"]["name"] for s in Toolbox(None, None, roots=[], wiki=FakeWiki([])).schemas()]
+    only_wiki = [s.name for s in Toolbox(None, None, roots=[], wiki=FakeWiki([])).schemas()]
     assert only_wiki == [n for n in Toolbox.SPECS if n not in ("web_search", "search_papers")]
-    read = next(s for s in full if s["function"]["name"] == "read")      # the shape the model's API reads
+    wire = chat_tools(full)                                               # as the gateway sends them
+    read = next(s for s in wire if s["function"]["name"] == "read")      # the shape the model's API reads
     desc, props, required = Toolbox.SPECS["read"]
     assert read == {"type": "function", "function": {"name": "read", "description": desc, "parameters": {
         "type": "object", "required": required, "properties": {k: {"type": t, "description": d} for k, (t, d) in props.items()}}}}
-    gaps = next(s for s in full if s["function"]["name"] == "gaps")["function"]["parameters"]["properties"]
+    gaps = next(s for s in wire if s["function"]["name"] == "gaps")["function"]["parameters"]["properties"]
     assert gaps["have"] == {"type": "array", "description": Toolbox.SPECS["gaps"][1]["have"][1], "items": {"type": "string"}}
     for s in full:
-        params = s["function"]["parameters"]
+        params = s.parameters
         assert set(params["required"]) <= set(params["properties"])
         assert all(v.get("items") == {"type": "string"} for v in params["properties"].values() if v["type"] == "array")
-    offline = [s["function"]["name"] for s in Toolbox(None, FakeWeb(), roots=[], papers=FakePapers([]),
+    offline = [s.name for s in Toolbox(None, FakeWeb(), roots=[], papers=FakePapers([]),
                                                        wiki=FakeWiki([])).schemas(web=False)]
     assert offline == [n for n in Toolbox.SPECS if n not in ("gaps", "web_search", "search_papers", "search_wikipedia",
                                                              "fetch")]
-    assert [s["function"]["name"] for s in Toolbox(None, None, roots=[]).schemas()] == offline
+    assert [s.name for s in Toolbox(None, None, roots=[]).schemas()] == offline
     no_providers = FakeWeb()
     no_providers.searcher = None                                 # no search server set
-    assert [s["function"]["name"] for s in Toolbox(None, no_providers, roots=[]).schemas()] == offline
+    assert [s.name for s in Toolbox(None, no_providers, roots=[]).schemas()] == offline
     web, papers, wiki = FakeWeb(), FakePapers([paper()]), FakeWiki([])
     local = Toolbox(None, web, roots=[], papers=papers, wiki=wiki)
     local.local_only = True                                      # /local: the user turned the web off
-    assert [s["function"]["name"] for s in local.schemas()] == offline
+    assert [s.name for s in local.schemas()] == offline
     for name, args in (("gaps", {"have": [], "missing": ["x"]}), ("web_search", {"query": "x"}),
                        ("search_papers", {"query": "x"}), ("search_wikipedia", {"query": "x"}),
                        ("fetch", {"url": "https://u/1"})):
         assert local.call(name, args) == "refused: the user turned the web off for this session (local only)"
     assert web.searched == [] and papers.asked == [] and wiki.asked == [] and local.web_calls == 0
     local.local_only = False                                     # on again: the web as before
-    assert [s["function"]["name"] for s in local.schemas()] == list(Toolbox.SPECS)
+    assert [s.name for s in local.schemas()] == list(Toolbox.SPECS)
     local.gaps([], ["x"])
     assert "[W1] T1" in local.web_search("x") and web.searched == ["x"]
 

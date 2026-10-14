@@ -7,6 +7,8 @@ import json
 from types import SimpleNamespace as NS
 
 from peresearch.llm import LLM
+from peresearch.messages import Message, Request
+from tests.helpers import request
 
 SIGNATURE = {"google": {"thought_signature": "c2lnbmF0dXJlLW9m"}}
 TOOLS = [{"type": "function", "function": {"name": "tree", "description": "folders",
@@ -34,14 +36,14 @@ def gemini(sent, first):
 
 
 def ask_twice(llm):
-    question = [{"role": "user", "content": "how many projects?"}]
-    reply = llm.chat(question, tools=TOOLS)
+    """A question, then the conversation continued as the agent continues it: the model's turn as its message (its
+    calls' thought signatures travel with them), then the tool's result."""
+    question = request([{"role": "user", "content": "how many projects?"}], TOOLS)
+    reply = llm.chat(question)
     call = reply.calls[0]
-    followed = question + [{"role": "assistant", "content": reply.text, "tool_calls": [
-                               {"id": call.id, "type": "function",
-                                "function": {"name": call.name, "arguments": json.dumps(call.args)}}]},
-                           {"role": "tool", "tool_call_id": call.id, "content": "no folders are declared"}]
-    return llm.chat(followed, tools=TOOLS)
+    followed = Request(question.system, question.messages + (
+        reply.message, Message.tool(call.id, call.name, "no folders are declared")), question.tools)
+    return llm.chat(followed)
 
 
 def test_a_thought_signature_goes_back_with_its_call(home, monkeypatch):

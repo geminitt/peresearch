@@ -9,6 +9,7 @@ from types import SimpleNamespace as NS
 import pytest
 
 from peresearch.llm import LLM
+from tests.helpers import request
 
 USER = [{"role": "system", "content": "rules"}, {"role": "user", "content": "what is bpe?"}]
 TOOLS = [{"type": "function", "function": {"name": "search_notes", "description": "search the notes",
@@ -72,19 +73,19 @@ def test_tools_refused_by_chat_completions_go_through_the_responses_api_from_the
             return iter(events(calls=[("call_1", "search_notes", '{"query": "bpe"}')]))
         return iter(events(text="BPE merges pairs [N1].", reasoning="look first"))
     llm = LLM(client=client(refuse_tools, responses), model="gpt-6.1-sol", retries=1)
-    first = llm.chat(USER, tools=TOOLS)
+    first = llm.chat(request(USER, TOOLS))
     assert [(c.id, c.name, c.args) for c in first.calls] == [("call_1", "search_notes", {"query": "bpe"})]
     assert (first.prompt_tokens, first.completion_tokens, first.finish) == (12, 5, "tool_calls")
-    request = sent[0]
-    assert request["model"] == "gpt-6.1-sol" and request["stream"] is True and request["store"] is False
-    assert request["instructions"] == "rules" and request["input"] == [{"role": "user", "content": "what is bpe?"}]
-    assert request["tools"] == [{"type": "function", "name": "search_notes", "description": "search the notes",
+    body = sent[0]
+    assert body["model"] == "gpt-6.1-sol" and body["stream"] is True and body["store"] is False
+    assert body["instructions"] == "rules" and body["input"] == [{"role": "user", "content": "what is bpe?"}]
+    assert body["tools"] == [{"type": "function", "name": "search_notes", "description": "search the notes",
                                  "parameters": TOOLS[0]["function"]["parameters"]}]
     followed = USER + [{"role": "assistant", "content": "", "tool_calls": [
                            {"id": "call_1", "type": "function",
                             "function": {"name": "search_notes", "arguments": '{"query": "bpe"}'}}]},
                        {"role": "tool", "tool_call_id": "call_1", "content": "[N1] bpe.md: BPE merges pairs"}]
-    second = llm.chat(followed, tools=TOOLS)                          # remembered: straight to Responses
+    second = llm.chat(request(followed, TOOLS))                          # remembered: straight to Responses
     assert second.text == "BPE merges pairs [N1]." and second.reasoning == "look first" and second.finish == "stop"
     assert sent[1]["input"][1:] == [{"type": "function_call", "call_id": "call_1", "name": "search_notes",
                                      "arguments": '{"query": "bpe"}'},
@@ -105,10 +106,10 @@ def test_an_endpoint_without_the_responses_api_falls_back_to_tools_in_the_prompt
     def responses(**kw):
         raise NotFoundError("Error code: 404 - not found")
     llm = LLM(client=client(chat, responses), model="local-model", retries=1)
-    reply = llm.chat(USER, tools=TOOLS)
+    reply = llm.chat(request(USER, TOOLS))
     assert [(c.name, c.args) for c in reply.calls] == [("search_notes", {"query": "bpe"})]
     assert llm.tool_mode == "prompt" and [bool(k.get("tools")) for k in chat_sent] == [True, False]
-    llm.chat(USER, tools=TOOLS)                                       # remembered: no second Responses try
+    llm.chat(request(USER, TOOLS))                                       # remembered: no second Responses try
     assert len(chat_sent) == 3
 
 
@@ -122,7 +123,7 @@ def test_a_client_without_responses_keeps_the_prompt_fallback(home):
             raise TOOLS_UNSUPPORTED
         return streamed(content="no tools here")
     llm = LLM(client=client(chat), model="m", retries=1)
-    assert llm.chat(USER, tools=TOOLS).text == "no tools here" and calls == [True, False]
+    assert llm.chat(request(USER, TOOLS)).text == "no tools here" and calls == [True, False]
 
 
 def test_a_reply_cut_at_its_token_limit_and_a_failure_are_reported(home, monkeypatch):
@@ -131,10 +132,10 @@ def test_a_reply_cut_at_its_token_limit_and_a_failure_are_reported(home, monkeyp
                     [NS(type="response.output_text.delta", delta="half"), NS(type="error", message="server overloaded")]])
     llm = LLM(client=client(lambda **kw: pytest.fail("chat completions asked"),
                             lambda **kw: iter(next(replies))), model="m", retries=1)
-    cut = llm.chat(USER, tools=TOOLS)
+    cut = llm.chat(request(USER, TOOLS))
     assert cut.text == "partial answer" and cut.finish == "length"
     with pytest.raises(Exception, match="server overloaded"):
-        llm.chat(USER, tools=TOOLS)
+        llm.chat(request(USER, TOOLS))
 
 
 def test_the_route_setting_is_checked(home, monkeypatch):
@@ -148,7 +149,7 @@ def test_what_leaves_through_responses_passes_the_guard_first(home):
     sent = []
     secret = CANARIES["openai-key"]
     llm = LLM(client=client(refuse_tools, lambda **kw: sent.append(kw) or iter(events(text="ok"))), model="m", retries=1)
-    llm.chat([{"role": "user", "content": f"my key is {secret}"}], tools=TOOLS)
+    llm.chat(request([{"role": "user", "content": f"my key is {secret}"}], TOOLS))
     assert secret not in json.dumps(sent[0])
 
 
@@ -157,7 +158,7 @@ def test_a_stream_without_its_end_is_a_cut_connection(home, monkeypatch):
     llm = LLM(client=client(lambda **kw: None, lambda **kw: iter([NS(type="response.output_text.delta", delta="x")])),
               model="m", retries=1)
     with pytest.raises(Exception, match="cut mid-answer"):
-        llm.chat(USER, tools=TOOLS)
+        llm.chat(request(USER, TOOLS))
 
 
 def test_another_server_refusing_tools_goes_straight_to_the_prompt(home):
@@ -172,7 +173,7 @@ def test_another_server_refusing_tools_goes_straight_to_the_prompt(home):
         return streamed(content="no tools here")
     llm = LLM(client=client(chat, lambda **kw: asked.append(kw), base_url="http://localhost:11434/v1"), model="m",
               retries=1)
-    assert llm.chat(USER, tools=TOOLS).text == "no tools here" and asked == [] and llm.tool_mode == "prompt"
+    assert llm.chat(request(USER, TOOLS)).text == "no tools here" and asked == [] and llm.tool_mode == "prompt"
 
 
 # Paths a mutation run of the route found untested (2026-10-14): request shapes, events, failures and settings.
@@ -272,7 +273,7 @@ def test_the_reply_budget_and_sampling_reach_the_responses_api(home, monkeypatch
     llm = LLM(client=client(lambda **kw: None, lambda **kw: sent.append(kw) or iter(events(text="ok"))),
               model="m", retries=1, max_tokens=64, temperature=0.25, top_p=0.5)
     llm._token_field = field
-    llm.chat(USER)
+    llm.chat(request(USER))
     assert {k: sent[0][k] for k in ("max_output_tokens", "temperature", "top_p", "stream")} == {
         "max_output_tokens": 64, "temperature": 0.25, "top_p": 0.5, "stream": True}
 
@@ -290,7 +291,7 @@ def test_chosen_routes_are_accepted_and_chat_never_tries_responses(home, monkeyp
             raise TOOLS_UNSUPPORTED
         return streamed(content="prompt route")
     llm = LLM(client=client(chat, lambda **kw: asked.append(kw)), model="m", retries=1)
-    assert llm.chat(USER, tools=TOOLS).text == "prompt route" and asked == [] and llm.tool_mode == "prompt"
+    assert llm.chat(request(USER, TOOLS)).text == "prompt route" and asked == [] and llm.tool_mode == "prompt"
 
 
 def test_a_parser_refusal_at_openai_and_a_refused_responses_request_keep_the_prompt(home):
@@ -309,7 +310,7 @@ def test_a_parser_refusal_at_openai_and_a_refused_responses_request_keep_the_pro
             asked.append(kw)
             raise responses_error
         llm = LLM(client=client(chat, responses), model="m", retries=1)
-        assert llm.chat(USER, tools=TOOLS).text == "prompt route" and llm.route == "chat"
+        assert llm.chat(request(USER, TOOLS)).text == "prompt route" and llm.route == "chat"
         assert len(asked) == (0 if responses_error is None else 1)
 
 
@@ -321,7 +322,7 @@ def test_esc_while_the_responses_route_is_tried_stops_the_question(home):
         return iter(events(text="never read"))
     llm = LLM(client=client(refuse_tools, responses), model="m", retries=1)
     with pytest.raises(Interrupted):
-        llm.chat(USER, tools=TOOLS, stop=lambda: bool(stopping))
+        llm.chat(request(USER, TOOLS), stop=lambda: bool(stopping))
 
 
 def test_tools_the_user_put_in_the_prompt_stay_there_on_the_responses_route(home, monkeypatch):
@@ -330,7 +331,7 @@ def test_tools_the_user_put_in_the_prompt_stay_there_on_the_responses_route(home
     sent = []
     llm = LLM(client=client(lambda **kw: None, lambda **kw: sent.append(kw) or iter(events(text="ok"))),
               model="m", retries=1)
-    llm.chat(USER, tools=TOOLS)
+    llm.chat(request(USER, TOOLS))
     assert "tools" not in sent[0] and "search_notes" in sent[0]["instructions"]   # described in the prompt
 
 
@@ -342,7 +343,7 @@ def test_no_reply_budget_sends_no_token_field(home, monkeypatch):
     llm = LLM(client=client(lambda **kw: None, lambda **kw: sent.append(kw) or iter(events(text="ok"))), model="m",
               retries=1)
     llm.reply_tokens = lambda: None                                   # nothing known: the server's own limit
-    llm.chat(USER)
+    llm.chat(request(USER))
     assert "max_output_tokens" not in sent[0]
 
 
@@ -354,7 +355,7 @@ def test_a_client_that_names_no_endpoint_keeps_the_prompt(home):
             raise TOOLS_UNSUPPORTED
         return streamed(content="prompt route")
     unnamed = NS(chat=NS(completions=NS(create=chat)), responses=NS(create=lambda **kw: pytest.fail("tried")))
-    assert LLM(client=unnamed, model="m", retries=1).chat(USER, tools=TOOLS).text == "prompt route"
+    assert LLM(client=unnamed, model="m", retries=1).chat(request(USER, TOOLS)).text == "prompt route"
 
 
 @pytest.mark.parametrize("name", ["NotFoundError", "BadRequestError", "UnprocessableEntityError",
@@ -370,8 +371,8 @@ def test_each_refusal_of_the_responses_route_falls_back_to_the_prompt(home, name
     def responses(**kw):
         raise type(name, (Exception,), {})("no such route")
     llm = LLM(client=client(chat, responses), model="m", retries=1)
-    assert llm.chat(USER, tools=TOOLS).text == "prompt route" and llm.route == "chat" and llm.tool_mode == "prompt"
+    assert llm.chat(request(USER, TOOLS)).text == "prompt route" and llm.route == "chat" and llm.tool_mode == "prompt"
     other = LLM(client=client(chat, lambda **kw: (_ for _ in ()).throw(type("APIConnectionError", (Exception,), {})(
         "unreachable"))), model="m", retries=1)
     with pytest.raises(Exception, match="unreachable"):               # not a refusal of the route: raised
-        other.chat(USER, tools=TOOLS)
+        other.chat(request(USER, TOOLS))

@@ -28,10 +28,12 @@ from hypothesis import example, given, settings as hsettings
 from hypothesis import strategies as st
 
 from peresearch import llm as llm_module
+from peresearch.messages import Tool
 from peresearch.llm import (LLM, Interrupted, StreamCut, ToolCall, _outbound, _read_stream,
                             parse_text_calls, strip_text_calls)
 from tests.helpers import streamed
 from tests.test_guard import CANARIES
+from tests.helpers import request
 
 USER = [{"role": "user", "content": "x"}]
 
@@ -240,8 +242,7 @@ def test_everything_sent_is_redacted_and_nothing_else_changes(home):
     assert m["content"] == f"key {key}"                                  # the caller's message is untouched
     assert _outbound({"role": "tool", "content": None}) == {"role": "tool", "content": None}
     sent = []
-    LLM(client=client_of(lambda **kw: sent.append(kw) or streamed(content="ok")), model="m").chat(
-        [{"role": "system", "content": "be brief"}, {"role": "user", "content": key}])
+    LLM(client=client_of(lambda **kw: sent.append(kw) or streamed(content="ok")), model="m").chat(request([{"role": "system", "content": "be brief"}, {"role": "user", "content": key}]))
     assert sent[0]["messages"] == [{"role": "system", "content": "be brief"},
                                    {"role": "user", "content": "[REDACTED:openai-key]"}]
     log = [json.loads(x) for x in (home / "audit.jsonl").read_text().splitlines()]
@@ -260,11 +261,12 @@ def test_the_request_carries_the_model_settings_and_the_reasoning_switch(home, m
     sent = []
     llm = LLM(client=client_of(lambda **kw: sent.append(kw) or streamed(content="ok")), model="m", thinking=own,
               max_tokens=99, temperature=0.1, top_p=0.5)
-    llm.chat(USER, tools=[{"type": "function"}], thinking=call)
-    llm.chat(USER, tools=[])
+    llm.chat(request(USER, [Tool("tree", "", {})]), thinking=call)
+    llm.chat(request(USER, []))
     kw = sent[0]
     assert {k: kw[k] for k in ("model", "max_tokens", "temperature", "top_p", "tools", "stream", "stream_options")} == {
-        "model": "m", "max_tokens": 99, "temperature": 0.1, "top_p": 0.5, "tools": [{"type": "function"}],
+        "model": "m", "max_tokens": 99, "temperature": 0.1, "top_p": 0.5,
+        "tools": [{"type": "function", "function": {"name": "tree", "description": "", "parameters": {}}}],
         "stream": True, "stream_options": {"include_usage": True}}
     assert kw.get("extra_body") == (None if want is None else switch(want))
     assert sent[1]["tools"] is None
@@ -286,7 +288,7 @@ def test_the_reply_budget_comes_from_the_model(home, monkeypatch, model, context
     used = budget or 50
     llm = LLM(client=client_of(lambda **kw: sent.append(kw) or streamed(tool_calls=[("read", '{"path": "a')], usage=NS(
         prompt_tokens=9, completion_tokens=used))), model=model, max_tokens=cap)
-    reply = llm.chat(USER)
+    reply = llm.chat(request(USER))
     field = "max_completion_tokens" if model == "gpt-4o" else "max_tokens"
     assert llm.reply_tokens() == budget and sent[0].get(field) == budget and (field in sent[0]) == bool(budget)
     assert not ({"max_tokens", "max_completion_tokens"} - {field}) & sent[0].keys()
@@ -297,16 +299,16 @@ def test_the_reply_carries_calls_reasoning_tokens_and_why_it_ended():
     xml = qwen("web_search", {"query": "bpe"})
     r = LLM(client=client_of(lambda **kw: streamed(content="see " + xml, reasoning="hmm",
                                                    usage=NS(prompt_tokens=5, completion_tokens=2), finish="length")),
-            model="m").chat(USER)
+            model="m").chat(request(USER))
     assert (r.text, r.reasoning, r.prompt_tokens, r.completion_tokens, r.finish) == ("see", "hmm", 5, 2, "length")
     assert [(c.name, c.args) for c in r.calls] == [("web_search", {"query": "bpe"})]
     structured = LLM(client=client_of(lambda **kw: streamed(content="keep " + xml, tool_calls=[("read", '{"path": "a"}')])),
-                     model="m").chat(USER)
+                     model="m").chat(request(USER))
     assert structured.text == "keep " + xml and [c.name for c in structured.calls] == ["read"]
     assert structured.calls[0].id == "c0"
-    empty_args = LLM(client=client_of(lambda **kw: streamed(tool_calls=[("tree", "")])), model="m").chat(USER)
+    empty_args = LLM(client=client_of(lambda **kw: streamed(tool_calls=[("tree", "")])), model="m").chat(request(USER))
     assert empty_args.calls[0].args == {}
-    in_thought = LLM(client=client_of(lambda **kw: streamed(content="plain", reasoning="let me " + xml)), model="m").chat(USER)
+    in_thought = LLM(client=client_of(lambda **kw: streamed(content="plain", reasoning="let me " + xml)), model="m").chat(request(USER))
     assert [c.name for c in in_thought.calls] == ["web_search"] and in_thought.text == "plain"
     # Only the last call of a reply that may be cut can be cut. vLLM reports a call cut at max_tokens as finish
     # "tool_calls" (measured with Qwen3.5-0.8B, runs/serve/client-real-check-2026-10-04.log): a reply that used every
@@ -314,7 +316,7 @@ def test_the_reply_carries_calls_reasoning_tokens_and_why_it_ended():
 
     def errors(calls, used, allowed=32, finish="tool_calls"):
         reply = LLM(client=client_of(lambda **kw: streamed(tool_calls=calls, finish=finish, usage=NS(
-            prompt_tokens=9, completion_tokens=used))), model="m", max_tokens=allowed).chat(USER)
+            prompt_tokens=9, completion_tokens=used))), model="m", max_tokens=allowed).chat(request(USER))
         return [c.error for c in reply.calls]
     half, bad = '{"path": "notes/a', "the arguments are not valid JSON: Unterminated string starting at: line 1 column 10 (char 9)"
     before = "the reply was cut at max_tokens before the call's arguments"
@@ -343,18 +345,18 @@ def test_reasoning_comes_back_as_reasoning_however_the_server_sends_it(thought, 
     content = {"field": answer, "tags": f"{gap}<think>{thought}</think>{gap}{answer}",
                "closing": f"{thought}</think>{gap}{answer}", "unclosed": f"{gap}<think>{thought}"}[form]
     reply = LLM(client=client_of(lambda **kw: streamed(content=content, reasoning=thought if form == "field" else "")),
-                model="m").chat(USER)
+                model="m").chat(request(USER))
     assert reply.reasoning.strip() == thought.strip()
     assert reply.text == ("" if form == "unclosed" else answer.strip())      # a text without calls is stripped
-    mention = LLM(client=client_of(lambda **kw: streamed(content="Models write <think> tags.")), model="m").chat(USER)
+    mention = LLM(client=client_of(lambda **kw: streamed(content="Models write <think> tags.")), model="m").chat(request(USER))
     assert (mention.text, mention.reasoning) == ("Models write <think> tags.", "")
-    joined = LLM(client=client_of(lambda **kw: streamed(content="<think>b</think>c", reasoning="a")), model="m").chat(USER)
+    joined = LLM(client=client_of(lambda **kw: streamed(content="<think>b</think>c", reasoning="a")), model="m").chat(request(USER))
     assert (joined.reasoning, joined.text) == ("a\nb", "c")         # a field and tags both: one after the other
     both = "Models write <think> and </think> tags."               # not at the start: a mention, left alone
-    mention = LLM(client=client_of(lambda **kw: streamed(content=both)), model="m").chat(USER)
+    mention = LLM(client=client_of(lambda **kw: streamed(content=both)), model="m").chat(request(USER))
     assert (mention.text, mention.reasoning) == (both, "")
     call = LLM(client=client_of(lambda **kw: streamed(content="<think>first " + qwen("tree", {}) + "</think>")),
-               model="m").chat(USER)
+               model="m").chat(request(USER))
     assert [c.name for c in call.calls] == ["tree"] and call.text == ""     # a call inside the reasoning still runs
 
 
@@ -464,7 +466,7 @@ def test_the_request_follows_the_model_profile(home, monkeypatch):
         client = NS(chat=client_of(lambda **kw: sent.append(kw) or streamed(content="ok")).chat,
                     models=NS(list=lambda: NS(data=list(listed))))
         llm = LLM(client=client, model=model, **own)
-        llm.chat(USER, tools=[{"type": "function", "function": {"name": "tree", "parameters": {}}}], thinking=False)
+        llm.chat(request(USER, [{"type": "function", "function": {"name": "tree", "parameters": {}}}]), thinking=False)
         return llm, sent[0]
     cache = "/__modal/volumes/vo-x/hub/models--Qwen--Qwen3.6-35B-A3B-FP8/snapshots/95a723d0"
     for listed in (NS(id="llm", root="Qwen/Qwen3.6-35B-A3B-FP8"), NS(id="llm", root=cache)):
@@ -574,21 +576,21 @@ def test_a_server_that_refuses_tools_gets_them_through_the_prompt_from_then_on(h
         return streamed(content='Looking. <tool_call>{"name": "tree", "arguments": {"q": "x"}}</tool_call>')
     llm = LLM(client=client_of(create), model="m", retries=1)
     convo = [{"role": "system", "content": "rules"}, *USER]
-    first = llm.chat(convo, tools=TOOLS)
+    first = llm.chat(request(convo, TOOLS))
     assert [(c.name, c.args) for c in first.calls] == [("tree", {"q": "x"})] and first.text == "Looking."
     assert [bool(k.get("tools")) for k in sent] == [True, False] and llm.tool_mode == "prompt"   # resent, not a try
-    llm.chat(convo, tools=TOOLS)
+    llm.chat(request(convo, TOOLS))
     assert len(sent) == 3 and sent[2]["tools"] is None and CALL_FORMAT_IN(sent[2])         # remembered
     other = LLM(client=client_of(lambda **kw: (_ for _ in ()).throw(
         type("BadRequestError", (Exception,), {})(TOO_LONG))), model="m", retries=1)
     with pytest.raises(Exception, match="maximum context length"):
-        other.chat(USER, tools=TOOLS)
+        other.chat(request(USER, TOOLS))
     assert other.tool_mode is None                                    # a 400 about something else is not a refusal
     for text, kind in (("tool server busy", "APIConnectionError"), ("function missing", "BadRequestError")):
         odd = LLM(client=client_of(lambda **kw: (_ for _ in ()).throw(type(kind, (Exception,), {})(text))),
                   model="m", retries=1)                       # another error naming tools; a 400 with no tools sent
         with pytest.raises(Exception, match=text):
-            odd.chat(USER, tools=TOOLS if kind != "BadRequestError" else None)
+            odd.chat(request(USER, TOOLS if kind != "BadRequestError" else None))
         assert odd.tool_mode is None
     # the request sent again through the prompt keeps the reasoning switch and stays interruptible (Esc)
     asked, stopped = [], []
@@ -601,7 +603,7 @@ def test_a_server_that_refuses_tools_gets_them_through_the_prompt_from_then_on(h
         return iter(streamed(content="late"))
     keen = LLM(client=client_of(refuse_then_wait), model="m", retries=1, thinking=False)
     with pytest.raises(Exception) as e:
-        keen.chat(convo, tools=TOOLS, stop=lambda: bool(stopped))
+        keen.chat(request(convo, TOOLS), stop=lambda: bool(stopped))
     assert type(e.value).__name__ == "Interrupted" and len(asked) == 2
     assert asked[1]["extra_body"] == switch(False) and CALL_FORMAT_IN(asked[1])
     # a server whose own tool-call parser fails on the model's output ends the stream with an error event (llama.cpp
@@ -625,10 +627,10 @@ def test_a_server_that_refuses_tools_gets_them_through_the_prompt_from_then_on(h
             return Broken()
         return streamed(content='<tool_call>{"name": "tree", "arguments": {"q": "y"}}</tool_call>')
     llm = LLM(client=client_of(parse_fails), model="m", retries=1)
-    got = llm.chat(convo, tools=TOOLS)
+    got = llm.chat(request(convo, TOOLS))
     assert [(c.name, c.args) for c in got.calls] == [("tree", {"q": "y"})] and llm.tool_mode is None
     assert [bool(k.get("tools")) for k in sent] == [True, False] and CALL_FORMAT_IN(sent[1])
-    llm.chat(convo, tools=TOOLS)
+    llm.chat(request(convo, TOOLS))
     assert bool(sent[2].get("tools"))
     # the parser may fail only on what the model wrote AFTER a whole call (llama.cpp + Llama-3.2-1B streamed tree with
     # {"type": "object", "properties": {}}, then "$": "unparsed peg-native output: $", recorded 2026-10-07): the
@@ -649,7 +651,7 @@ def test_a_server_that_refuses_tools_gets_them_through_the_prompt_from_then_on(h
         made = LLM(client=client_of(lambda **kw: sent.append(kw) or (AfterCall(args) if kw.get("tools") else
                                                                      streamed(content="answer"))),
                    model="m", retries=1)
-        got = made.chat(convo, tools=TOOLS)
+        got = made.chat(request(convo, TOOLS))
         if whole:
             assert [(c.name, c.args, c.error) for c in got.calls] == [("tree", {"q": "z"}, "")] and len(sent) == 1
         else:
@@ -665,18 +667,18 @@ def test_a_server_that_refuses_tools_gets_them_through_the_prompt_from_then_on(h
         return iter(streamed(content="late"))
     llm = LLM(client=client_of(fails_then_streams), model="m", retries=1, thinking=False)
     with pytest.raises(Exception) as e:
-        llm.chat(convo, tools=TOOLS, stop=lambda: bool(pressed))
+        llm.chat(request(convo, TOOLS), stop=lambda: bool(pressed))
     assert type(e.value).__name__ == "Interrupted" and len(sent) == 2 and CALL_FORMAT_IN(sent[1])
     assert sent[1]["extra_body"] == switch(False)
     for other_error in ("Connection reset", "The model produced output"):     # not a parser's failure: raised
         bad = LLM(client=client_of(lambda **kw: (_ for _ in ()).throw(type("APIError", (Exception,), {})(other_error))),
                   model="m", retries=1)
         with pytest.raises(Exception, match=other_error):
-            bad.chat(USER, tools=TOOLS)
+            bad.chat(request(USER, TOOLS))
     sent.clear()
     plain = LLM(client=client_of(lambda **kw: sent.append(kw) or Broken()), model="m", retries=1)   # no tools sent
     with pytest.raises(Exception, match="peg-native") as raised:
-        plain.chat(USER)
+        plain.chat(request(USER))
     assert type(raised.value).__name__ == "APIError" and len(sent) == 1
 
 
@@ -793,7 +795,7 @@ def test_without_a_model_name_the_servers_only_model_is_used_else_the_user_is_to
                         models=NS(list=listing))
     sent, client = server("qwen3:8b")
     llm = LLM(client=client)
-    llm.chat(USER)
+    llm.chat(request(USER))
     assert llm.model == "qwen3:8b" and sent[0]["model"] == "qwen3:8b"
     for ids, fail, said in ((("a", "b", "c", "d", "e", "f", "g"), False, "the server offers 7 models (a, b, c, d, e, …)"),
                             (("a", "b", "c", "d", "e"), False, "the server offers 5 models (a, b, c, d, e)"),
@@ -802,11 +804,11 @@ def test_without_a_model_name_the_servers_only_model_is_used_else_the_user_is_to
         sent, client = server(*ids, fail=fail)
         with pytest.raises(RuntimeError, match=r"^no model name: " + re.escape(said) +
                            r"; set it with /setup \(in a terminal: `peresearch setup`\)"):
-            LLM(client=client).chat(USER)
+            LLM(client=client).chat(request(USER))
         assert sent == []
     monkeypatch.setenv("PERESEARCH_LLM_MODEL", "chosen")
     sent, client = server("a", "b")
-    LLM(client=client).chat(USER)
+    LLM(client=client).chat(request(USER))
     assert sent[0]["model"] == "chosen"
 
 
@@ -916,7 +918,7 @@ def test_retries_follow_one_policy(outcomes, retries, local, thinking, then):
         for seq in (outcomes, [then]):
             current.update(seq=seq, n=0)
             try:
-                results.append(llm.chat(USER))
+                results.append(llm.chat(request(USER)))
             except Exception as e:
                 results.append(e)
     finally:
@@ -975,7 +977,7 @@ def test_a_refused_local_server_always_raises_the_real_error(seq, retries):
               retries=retries, wait=0)
     llm.local = True
     with pytest.raises(Exception) as err:
-        llm.chat(USER)
+        llm.chat(request(USER))
     assert type(err.value).__name__ == seq[-1]
 
 
@@ -1025,7 +1027,7 @@ def test_an_interrupt_stops_a_model_call_in_flight_and_its_reader_closes_the_str
     client = BlockingClient()
     t0 = time.time()
     with pytest.raises(Interrupted) as err:
-        LLM(client=client, model="m").chat(USER, stop=lambda: time.time() - t0 > 0.3)
+        LLM(client=client, model="m").chat(request(USER), stop=lambda: time.time() - t0 > 0.3)
     assert time.time() - t0 < 1.5 and str(err.value) == "stopped by the user"
     assert client.closed.wait(1) and client.closed_by is not threading.main_thread()
     # a server that never sends a first chunk blocks the reader until the 600 s timeout: once the caller is freed,
@@ -1039,7 +1041,7 @@ def test_an_interrupt_stops_a_model_call_in_flight_and_its_reader_closes_the_str
     before = set(threading.enumerate())
     try:
         with pytest.raises(Interrupted):
-            LLM(client=client_of(silent), model="m").chat(USER, stop=lambda: started.is_set())
+            LLM(client=client_of(silent), model="m").chat(request(USER), stop=lambda: started.is_set())
         stuck = [t for t in threading.enumerate() if t not in before and t.is_alive()]
         assert stuck and all(t.daemon for t in stuck)
     finally:
@@ -1050,14 +1052,14 @@ def test_an_interrupt_also_ends_the_wait_between_retries():
     llm = LLM(client=BlockingClient(error=error("APIConnectionError")), model="m", wait=10)
     t0 = time.time()
     with pytest.raises(Interrupted) as err:
-        llm.chat(USER, stop=lambda: time.time() - t0 > 0.3)
+        llm.chat(request(USER), stop=lambda: time.time() - t0 > 0.3)
     assert str(err.value) == "stopped by the user"
     assert time.time() - t0 < 1.5
 
 
 def test_a_request_that_fails_in_its_thread_raises_in_the_caller():
     with pytest.raises(ValueError, match="bad"):
-        LLM(client=client_of(lambda **kw: (_ for _ in ()).throw(ValueError("bad"))), model="m").chat(USER, stop=lambda: False)
+        LLM(client=client_of(lambda **kw: (_ for _ in ()).throw(ValueError("bad"))), model="m").chat(request(USER), stop=lambda: False)
 
 
 @pytest.fixture
@@ -1100,11 +1102,11 @@ def flaky_server():
 def test_a_real_cut_stream_is_asked_again_and_a_stream_cut_every_time_is_an_error(flaky_server):
     """The OpenAI client raises nothing when a stream ends early; only the missing finish reason tells."""
     url, state = flaky_server
-    reply = LLM(url=url, model="m", wait=0).chat(USER)
+    reply = LLM(url=url, model="m", wait=0).chat(request(USER))
     assert reply.text == "Hello." and reply.finish == "stop" and state["requests"] == 2
     state.update(drops=99, requests=0)
     with pytest.raises(StreamCut):
-        LLM(url=url, model="m", wait=0, retries=3).chat(USER)
+        LLM(url=url, model="m", wait=0, retries=3).chat(request(USER))
     assert state["requests"] == 3
 
 
@@ -1116,7 +1118,7 @@ def test_a_local_server_that_is_not_running_fails_fast():
         port = s.getsockname()[1]                                 # closed again: nothing listens there
     waits, t0 = [], time.time()
     with pytest.raises(Exception) as err:
-        LLM(url=f"http://127.0.0.1:{port}/v1", model="m", on_wait=waits.append).chat(USER)
+        LLM(url=f"http://127.0.0.1:{port}/v1", model="m", on_wait=waits.append).chat(request(USER))
     assert type(err.value).__name__ == "APIConnectionError" and time.time() - t0 < 6
     assert waits == ["model not ready (APIConnectionError); retrying in 2 s"]
 
@@ -1134,7 +1136,7 @@ def test_a_model_slow_to_start_answering_is_announced_once_each_way(delay, rest,
             yield from parts[1:]
         return chunks()
     waits = []
-    r = LLM(client=client_of(create), model="m", slow_start=0.5, on_wait=waits.append).chat(USER, stop=lambda: False)
+    r = LLM(client=client_of(create), model="m", slow_start=0.5, on_wait=waits.append).chat(request(USER), stop=lambda: False)
     assert r.text == "Hello." and waits == want
 
 
@@ -1148,8 +1150,7 @@ def test_the_answer_starting_is_announced_while_it_streams_not_after():
             yield from parts[1:]
         return chunks()
     said, t0 = [], time.time()
-    LLM(client=client_of(create), model="m", slow_start=0.2, on_wait=lambda m: said.append((m, time.time() - t0))).chat(
-        USER, stop=lambda: False)
+    LLM(client=client_of(create), model="m", slow_start=0.2, on_wait=lambda m: said.append((m, time.time() - t0))).chat(request(USER), stop=lambda: False)
     assert [m for m, _ in said][-1] == "Thinking" and said[-1][1] < 1.0
 
 
@@ -1179,6 +1180,8 @@ def as_live(r) -> dict:
     """A Reply as the matrix wrote it down."""
     import dataclasses
     d = dataclasses.asdict(r)
+    # provider data came after these records; none of the recorded servers attaches any
+    assert not d.pop("provider") and not any(c.pop("provider") for c in d["calls"])
     d["calls"] = [{**c, "recovered": c["id"].startswith("text-")} for c in d["calls"]]
     return json.loads(json.dumps(d))
 
@@ -1211,23 +1214,23 @@ def test_a_recorded_real_server_exchange_reads_back_as_it_did_live(home, monkeyp
         assert (works, lines[:-1], llm.tool_mode) == (live["works"], live["lines"][:-1], live["tool_mode_after"])
     elif rec["case"] == "agent":
         llm = LLM(client=client, model=rec["used"], max_tokens=2048)
-        assert as_live(llm.chat(rec["messages"][:2], schemas)) == {"refusal": "", **live["first"]}
+        assert as_live(llm.chat(request(rec["messages"][:2], schemas))) == {"refusal": "", **live["first"]}
         if "second" in live:
-            assert as_live(llm.chat(rec["messages"], schemas)) == {"refusal": "", **live["second"]}
+            assert as_live(llm.chat(request(rec["messages"], schemas))) == {"refusal": "", **live["second"]}
         assert llm.tool_mode == live["tool_mode"]
     elif rec["case"] == "too-long":
         llm = LLM(client=client, model=rec["used"], max_tokens=16, retries=1)
         long = [{"role": "user", "content": "Summarize: " + "the quick brown fox jumps over the lazy dog " * 4000}]
         if live["refused"]:
             with pytest.raises(Exception) as e:
-                llm.chat(long)
+                llm.chat(request(long))
             assert list(too_long(e.value)) == live["read"]
         else:                                  # a server that cuts silently: only the count shows it
-            r = llm.chat(long)
+            r = llm.chat(request(long))
             assert (r.prompt_tokens, r.finish) == (live["prompt_tokens"], live["finish"])
     else:                                  # the server's tool-call parser failing, before a call or after a whole one
         assert rec["case"] in ("parse-failure", "parse-failure-after-call")
         llm = LLM(client=client, model=None, max_tokens=rec["max_tokens"])
-        assert as_live(llm.chat(rec["messages"], rec["tools"], thinking=rec["thinking"])) == {"refusal": "", **live["reply"]}
+        assert as_live(llm.chat(request(rec["messages"], rec["tools"]), thinking=rec["thinking"])) == {"refusal": "", **live["reply"]}
         assert any("peg-native" in x["body"] for x in rec["exchanges"]) and llm.tool_mode is None
     assert queue == [], "the real run made requests this one did not"

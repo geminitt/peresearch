@@ -24,9 +24,10 @@ from hypothesis import strategies as st
 from peresearch import agent as agent_module
 from peresearch.agent import (Agent, Limits, ResultStore, check, conversations, find_conversation, history_file,
                               read_summary, read_turns, usage, _summary, _wrap)
-from peresearch.llm import LLM, Interrupted, Reply, ToolCall
+from peresearch.llm import LLM, Interrupted, Reply, ToolCall, chat_tools, request_size
 from peresearch.tools import Source, Sources, Toolbox
-from tests.helpers import agent, notes, streamed, toolbox
+from peresearch.messages import Message, Text, Tool
+from tests.helpers import DictModel, agent, notes, request, streamed, toolbox
 from tests.test_guard import CANARIES
 
 WEB_TOOLS = ("gaps", "web_search", "fetch")
@@ -40,7 +41,7 @@ class FakeToolbox:
 
     def schemas(self):
         names = ["tree", "read", "grep"] + (list(WEB_TOOLS) if self.web else [])
-        return [{"type": "function", "function": {"name": n}} for n in names]
+        return [Tool(n, "", {}) for n in names]
 
     def call(self, name, args):
         self.ran.append((name, args))
@@ -50,13 +51,13 @@ class FakeToolbox:
         return f"[{s.id}] result {len(self.ran)} of {name}"
 
 
-class FakeModel:
+class FakeModel(DictModel):
     """Replies from a script, then a plain answer; records every request."""
 
     def __init__(self, replies, on_chat=None):
         self.replies, self.seen, self.on_chat = list(replies), [], on_chat
 
-    def chat(self, messages, tools=None, thinking=None, stop=None):
+    def answer(self, messages, tools=None, thinking=None, stop=None):
         self.seen.append({"messages": json.loads(json.dumps(messages)), "tools": tools, "thinking": thinking})
         if self.on_chat:
             self.on_chat(len(self.seen))
@@ -193,7 +194,7 @@ def check_loop(home, script, steps, webs, pages, web, record, local=False):
     for (kind, _), req in zip(requests, model.seen):
         users = [m["content"] for m in req["messages"] if m["role"] == "user"]
         if kind == "tools":                         # recall offered to an agent that keeps its results
-            assert req["tools"] == tb.schemas() + [agent_module.RECALL] and req["thinking"] is None   # results kept
+            assert req["tools"] == chat_tools(tb.schemas() + [agent_module.RECALL]) and req["thinking"] is None
         elif kind == "steps":
             assert req["tools"] is None and users[-1] == "Limit reached: answer now with the sources you have."
         elif kind == "refused":
@@ -250,7 +251,7 @@ class SmallModel(FakeModel):
     def context_length(self):
         return 2 * self.context if self.said == "over" else self.context if self.said else None
 
-    def chat(self, messages, tools=None, thinking=None, stop=None):
+    def answer(self, messages, tools=None, thinking=None, stop=None):
         size = sum(len(m.get("content") or "") + len(json.dumps(m.get("tool_calls") or "")) for m in messages)
         tokens = math.ceil((size + len(json.dumps(tools or []))) / self.ratio) + 4 * len(messages)
         if tokens + self.max_tokens > self.context:
@@ -260,7 +261,7 @@ class SmallModel(FakeModel):
                 f"{self.max_tokens} output tokens and your prompt contains {tokens} input tokens" if self.numbers
                 else "the input exceeds the model's context window")
         self.counted.append((tokens, len(messages)))
-        return dataclasses.replace(super().chat(messages, tools, thinking, stop), prompt_tokens=tokens)
+        return dataclasses.replace(super().answer(messages, tools, thinking, stop), prompt_tokens=tokens)
 
 
 CUT = re.compile(r"\n… \[cut to fit the model's context: (\d+) characters left out\]$")
@@ -304,7 +305,7 @@ def test_what_is_sent_fits_the_models_context(sizes, context, reserve, ratio, sa
     An agent keeping its conversation (`record`) keeps every result in its store: a trimmed one is then a line naming
     its ref, its call and its length, and recall is offered to read it back (restorable compression, Manus)."""
     tb = SizedToolbox(sizes)
-    tools = tb.schemas() + [agent_module.RECALL]                                   # every result kept: recall
+    tools = chat_tools(tb.schemas() + [agent_module.RECALL])                       # every result kept: recall
     floor = len(agent_module.SYSTEM) + len(json.dumps(tools)) + 400                # what is never trimmed
     assume(floor / ratio + reserve < context * 0.5)
     script = rounds(sizes, per) + ([Reply("")] if empty else [])
@@ -388,8 +389,8 @@ def test_the_limit_on_time_forces_an_answer(home, monkeypatch):
 
 def test_an_interrupt_ends_the_question_at_once(home):
     class Interrupting(FakeModel):
-        def chat(self, messages, tools=None, thinking=None, stop=None):
-            super().chat(messages, tools, thinking, stop)
+        def answer(self, messages, tools=None, thinking=None, stop=None):
+            super().answer(messages, tools, thinking, stop)
             raise Interrupted("stopped")
     ans = Agent(Interrupting([]), FakeToolbox()).ask("q")
     assert (ans.text, ans.stopped, ans.steps) == ("_(interrupted)_", "cancelled", 0)
@@ -401,8 +402,8 @@ def test_an_interrupt_ends_the_question_at_once(home):
     ans = a.ask("q")
     assert (ans.stopped, ans.text) == ("cancelled", "_(interrupted)_") and tb.ran == [("tree", {})]   # not the second
     class StopsWhenAsked(FakeModel):                                     # a model call that honours stop()
-        def chat(self, messages, tools=None, thinking=None, stop=None):
-            reply = super().chat(messages, tools, thinking, stop)
+        def answer(self, messages, tools=None, thinking=None, stop=None):
+            reply = super().answer(messages, tools, thinking, stop)
             if len(self.seen) == 2:
                 agent.cancel()                                           # Esc while the second call runs
                 assert stop is not None and stop() is True
@@ -471,7 +472,7 @@ def test_the_history_sent_is_every_turn_of_the_conversation_whole(tmp_path_facto
     try:
         a = Agent(None, FakeToolbox())
         write_turns(a, turns, others=2)
-        want = [m for q, ans in turns for m in ({"role": "user", "content": q}, {"role": "assistant", "content": ans})]
+        want = [m for q, ans in turns for m in (Message.user(q), Message.assistant(ans))]
         assert a.history() == want and a.turns() == len(turns) and isinstance(a.turns(), int)
         assert Agent(None, FakeToolbox(), record=False).history() == []
     finally:
@@ -494,9 +495,9 @@ class Summarizer(SmallModel):
         super().__init__(*args, **kw)
         self.inputs, self.thinking = [], []      # what each request to summarize held; its reasoning switch
 
-    def chat(self, messages, tools=None, thinking=None, stop=None):
+    def answer(self, messages, tools=None, thinking=None, stop=None):
         if messages[0]["content"] != agent_module.SUMMARIZE:
-            return super().chat(messages, tools, thinking, stop)
+            return super().answer(messages, tools, thinking, stop)
         size = sum(len(m["content"]) for m in messages)
         tokens = math.ceil(size / self.ratio) + 4 * len(messages)
         if tokens + self.max_tokens > self.context:
@@ -591,10 +592,10 @@ def test_a_refused_or_empty_summary_loses_nothing(home):
     silent.say = lambda n: "  "
     b = Agent(silent, FakeToolbox())
     write_turns(b, turns[:2])
-    messages = [{"role": "system", "content": "s"}] + b.history() + [{"role": "user", "content": "q"}]
-    b._past, b._base = 2, "s"
-    before = json.loads(json.dumps(messages))
-    assert b._fold(messages, 1_000) is False and messages == before and silent.inputs
+    messages = b.history() + [Message.user("q")]
+    b._past, b._base, b._prompt = 2, "s", "s"
+    before = list(messages)
+    assert b._fold(messages, 1_000) is False and messages == before and b._prompt == "s" and silent.inputs
     assert read_summary(b.history_path, b.conversation) == ("", 0)
 
 
@@ -632,11 +633,10 @@ def test_the_question_is_marked_current_when_only_a_summary_comes_before_it(home
 def test_a_latest_result_is_never_made_longer_to_fit(home):
     """Cutting a kept result of the latest round again shows a shorter head, or says there is no room; when neither
     is shorter than what it shows, it is left as it is."""
-    messages = [{"role": "system", "content": "s"}, {"role": "user", "content": "q"},
-                {"role": "assistant", "content": "", "tool_calls": [{"id": "c1"}]},
-                {"role": "tool", "tool_call_id": "c1", "content": _wrap("read", "a short result")}]
-    before = json.loads(json.dumps(messages))
-    agent_module._fit(messages, None, agent_module._size(messages, None) - 5, {"c1": ("R1", "read", {}, 14)})
+    messages = [Message.user("q"), Message("assistant", (Text(""), ToolCall("c1", "read", {}))),
+                Message.tool("c1", "read", _wrap("read", "a short result"))]
+    before = list(messages)
+    agent_module._fit("s", messages, None, agent_module._size("s", messages, None) - 5, {"c1": ("R1", "read", {}, 14)})
     assert messages == before
 
 
@@ -749,7 +749,7 @@ class SilentModel(SmallModel):
     """A server that cuts a conversation too long for it WITHOUT saying so, as Ollama does (recorded 2026-10-06:
     36,015 tokens sent, 4,098 kept, HTTP 200): it answers from what it kept, and counts only that."""
 
-    def chat(self, messages, tools=None, thinking=None, stop=None):
+    def answer(self, messages, tools=None, thinking=None, stop=None):
         size = sum(len(m.get("content") or "") + len(json.dumps(m.get("tool_calls") or "")) for m in messages)
         tokens = math.ceil((size + len(json.dumps(tools or []))) / self.ratio) + 4 * len(messages)
         self.seen.append({"messages": json.loads(json.dumps(messages)), "tools": tools, "thinking": thinking})
@@ -803,7 +803,7 @@ def test_a_small_context_keeps_room_for_the_conversation(home):
     first = rounds([25_000], [1])[0]
     model, tb = Budgeted([first]), SizedToolbox([25_000])
     a = Agent(model, tb, record=False)
-    size = agent_module._size([{"role": "system", "content": a._system()}, {"role": "user", "content": "q"}], a._tools())
+    size = agent_module._size(a._system(), [Message.user("q")], a._tools())
     first.prompt_tokens = size // 4 + 2 * agent_module.FRAMING           # the server counts 4 characters a token
     a.ask("q")
     shown = [m["content"] for m in model.seen[-1]["messages"] if m["role"] == "tool"]
@@ -814,8 +814,8 @@ class Reader(SmallModel):
     """Calls read once, then follows every note's recall(ref, from=n) to the end, then answers: what a model does
     with a result longer than the room left."""
 
-    def chat(self, messages, tools=None, thinking=None, stop=None):
-        reply = super().chat(messages, tools, thinking, stop)        # counts, refuses past the context
+    def answer(self, messages, tools=None, thinking=None, stop=None):
+        reply = super().answer(messages, tools, thinking, stop)        # counts, refuses past the context
         last = messages[-1]
         if last["role"] == "user":
             return dataclasses.replace(reply, text="", calls=[ToolCall("c0", "read", {"q": 0})])
@@ -874,10 +874,10 @@ def spilled(context, reserve, ratio, earlier, text, start=0):
     a = Agent(Sized(context, reserve), FakeToolbox(), record=False)
     a._ratio = ratio
     a._kept["c0"] = ("R1", "read", {"q": 0}, earlier)
-    messages = [{"role": "system", "content": a._system()}, {"role": "user", "content": "q"},
-                {"role": "assistant", "content": "", "tool_calls": [{"id": "c0"}]},
-                {"role": "tool", "tool_call_id": "c0", "content": _wrap("read", "e" * earlier)},
-                {"role": "assistant", "content": "", "tool_calls": [{"id": "c1"}]}]
+    a._prompt = a._system()                                       # the system prompt, sent before the messages
+    messages = [Message.user("q"), Message("assistant", (Text(""), ToolCall("c0", "read", {"q": 0}))),
+                Message.tool("c0", "read", _wrap("read", "e" * earlier)),
+                Message("assistant", (Text(""), ToolCall("c1", "read", {"q": 1})))]
     a._kept["c1"] = ("R2", "read", {"q": 1}, start + len(text))
     return a, messages, a._spill("R2", "read", text, messages, start)
 
@@ -894,13 +894,13 @@ def test_a_part_fills_the_room_the_next_request_has(context, reserve, ratio, ear
     a, messages, shown = spilled(context, reserve, ratio, earlier, "a" * length, start)
     more = agent_module._MORE.search(shown)
     assume(more)                                                  # longer than the room, and some of it fits
-    messages.append({"role": "tool", "tool_call_id": "c1", "content": _wrap("read", shown)})
-    room = a._room(context, len(messages))
-    agent_module._fit(messages, a._tools(), room, a._kept)
-    assert messages[-1]["content"] == _wrap("read", shown)        # not cut again
+    messages.append(Message.tool("c1", "read", _wrap("read", shown)))
+    room = a._room(context, 1 + len(messages))                    # the system prompt, then the messages
+    agent_module._fit(a._prompt, messages, a._tools(), room, a._kept)
+    assert messages[-1].text == _wrap("read", shown)              # not cut again
     total = start + length
     digits = len(agent_module.MORE.format(ref="R2", total=total, upto=total)) - len(more[0])
-    assert 0 <= room - agent_module._size(messages, a._tools()) < 1 + digits
+    assert 0 <= room - agent_module._size(a._prompt, messages, a._tools()) < 1 + digits
 
 
 def test_a_part_ends_at_a_line_end_and_says_when_nothing_fits(home):
@@ -924,13 +924,12 @@ def test_a_part_read_on_and_cut_again_keeps_its_place():
     whole = "".join(chr(97 + i % 26) for i in range(30_000))
     m, h = 12_000, 8_000
     inner = whole[m:m + h] + agent_module.MORE.format(ref="R1", total=len(whole), upto=m + h)
-    messages = [{"role": "system", "content": "s"}, {"role": "user", "content": "q"},
-                {"role": "assistant", "content": "", "tool_calls": [{"id": "c1"}]},
-                {"role": "tool", "tool_call_id": "c1", "content": _wrap("recall", inner)}]
-    limit = agent_module._size(messages, None) - 3_000
-    agent_module._fit(messages, None, limit, {"c1": ("R1", "read", {"q": 0}, len(whole))})
-    assert agent_module._size(messages, None) <= limit
-    body = agent_module._WRAPPED.match(messages[-1]["content"])["inner"]
+    messages = [Message.user("q"), Message("assistant", (Text(""), ToolCall("c1", "recall", {"ref": "R1"}))),
+                Message.tool("c1", "recall", _wrap("recall", inner))]
+    limit = agent_module._size("s", messages, None) - 3_000
+    agent_module._fit("s", messages, None, limit, {"c1": ("R1", "read", {"q": 0}, len(whole))})
+    assert agent_module._size("s", messages, None) <= limit
+    body = agent_module._WRAPPED.match(messages[-1].text)["inner"]
     more = agent_module._MORE.search(body)
     head = body[:more.start()]
     assert 0 < len(head) < h and head == whole[m:m + len(head)] and int(more["upto"]) == m + len(head)
@@ -978,8 +977,9 @@ def test_a_round_fills_the_room_it_has(context, line, lined, said):
     longest = len(text) + 4 * context                                # the last served: what is left is its
     items = [("R2", "read", text, 0), ("R3", "read", "z" * longest, 0)] + \
         ([(None, "read", "n" * said, 0)] if said else [])
-    empties = [{"role": "tool", "tool_call_id": "", "content": _wrap(n, "")} for _, n, _, _ in items]
-    free = a._room(context, len(messages) + len(items)) - agent_module._size(a._floor(messages) + empties, a._tools())
+    empties = [Message.tool("", n, _wrap(n, "")) for _, n, _, _ in items]
+    free = a._room(context, 1 + len(messages) + len(items)) - \
+        agent_module._size(a._prompt, a._floor(messages) + empties, a._tools())
     out = a._round(items, messages)
     more = agent_module._MORE.search(out[1])
     assume(more)                                                        # the longest shown in part
@@ -991,7 +991,7 @@ def test_a_round_fills_the_room_it_has(context, line, lined, said):
 class AlwaysTooLong(FakeModel):
     """A server that calls a tool once, then refuses every request as too long (no numbers), however trimmed."""
 
-    def chat(self, messages, tools=None, thinking=None, stop=None):
+    def answer(self, messages, tools=None, thinking=None, stop=None):
         self.seen.append({"messages": messages})
         if len(self.seen) == 1:
             return Reply("", [ToolCall("c0", "read", {"q": 0})])
@@ -1060,7 +1060,7 @@ def test_a_result_kept_outside_the_context_is_read_back_with_recall(home):
     assert results["c4"] == _wrap("recall", "recall needs a ref such as R1: each trimmed result's note gives it")
     assert [n for n, _ in tb.ran] == ["read"]                                      # recall never reaches the tools
     assert ResultStore(a.project, a.conversation).get("R2") is None                # nor the store
-    assert a.llm.seen[0]["tools"][-1] == agent_module.RECALL
+    assert a.llm.seen[0]["tools"][-1] == chat_tools([agent_module.RECALL])[0]
     a.results().put("read", {"path": "b.md"}, "another result")                     # a second one held: R2
     assert a._recall("R9", "x") == (None, "no result R9 in this conversation (it holds R1, R2)", 0)
     assert a._recall("R2", "x", 8) == ("R2", "result", 8)                           # from character 8 on
@@ -1074,7 +1074,7 @@ def test_a_result_kept_outside_the_context_is_read_back_with_recall(home):
                              Reply("", [ToolCall("q2", "recall", {"ref": "R1"})]), Reply("done")]), FakeToolbox(),
                   record=False)
     quiet.ask("q")
-    assert quiet.llm.seen[0]["tools"][-1] == agent_module.RECALL                   # offered: kept in memory
+    assert quiet.llm.seen[0]["tools"][-1] == chat_tools([agent_module.RECALL])[0]                 # offered: kept in memory
     got = {m["tool_call_id"]: m["content"] for m in quiet.llm.seen[-1]["messages"] if m["role"] == "tool"}
     assert got["q2"] == _wrap("recall", quiet.results().get("R1")["text"]) and quiet.results().get("R1")
     assert not ResultStore(quiet.project, quiet.conversation).path.exists()       # nothing written
@@ -1105,8 +1105,8 @@ def test_the_context_report_measures_the_next_request(home):
     r = a.context_report()
     assert r["parts"][0] == ("system prompt", len(system))
     assert r["parts"][1] == (f"tools ({len(tools)})", len(json.dumps(tools, ensure_ascii=False))) and tools[-1]["function"]["name"] == "recall"
-    assert r["parts"][2] == ("earlier turns (1)", sum(len(m["content"]) for m in a.history()))
-    assert r["ratio"] == agent_module._size(sent["messages"], tools) / (1_500 - agent_module.FRAMING * 2)
+    assert r["parts"][2] == ("earlier turns (1)", sum(len(m.text) for m in a.history()))
+    assert r["ratio"] == request_size(request(sent["messages"], tools)) / (1_500 - agent_module.FRAMING * 2)
     assert r["tokens"] == round(sum(n for _, n in r["parts"]) / r["ratio"])
     a._told = 8_192                                     # the server showed it runs less: that is the context
     assert a.context_report()["context"] == 8_192
@@ -1279,3 +1279,27 @@ def test_the_context_report_counts_the_summary_of_earlier_turns(home):
     parts = dict(a.context_report()["parts"])
     assert parts["summary of earlier turns (1)"] == len(agent_module.EARLIER.format(summary="S" * 300))
     assert parts["earlier turns (1)"] == len("question 1") + len("answer 1")
+
+
+def test_a_refusal_teaches_the_characters_per_token_over_every_message_framed(home):
+    """A refusal that says how many tokens the server counted sets the characters a token from the request as sent:
+    its size over the count less the framing of every message, the system prompt included."""
+    class Refusing(FakeModel):
+        def context_length(self):
+            return 2_048
+
+        def reply_tokens(self):
+            return 100
+
+        def answer(self, messages, tools=None, thinking=None, stop=None):
+            super().answer(messages, tools, thinking, stop)
+            raise type("BadRequestError", (Exception,), {})(
+                "This model's maximum context length is 2048 tokens. However, you requested 100 output tokens and "
+                "your prompt contains 1500 input tokens")
+    model = Refusing([])
+    a = Agent(model, FakeToolbox(), record=False)
+    with pytest.raises(Exception, match="maximum context length"):
+        a.ask("q")                                          # nothing to trim: the refusal is the answer
+    sent = model.seen[0]
+    assert len(sent["messages"]) == 2                       # the system prompt and the question
+    assert a._ratio == request_size(request(sent["messages"], sent["tools"])) / (1_500 - agent_module.FRAMING * 2)

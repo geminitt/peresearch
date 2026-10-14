@@ -11,6 +11,7 @@ from peresearch.llm import LLM, Reply, StreamCut, _read_stream, unsupported
 from peresearch.mcp import MCPError, PROTOCOL, Server
 from tests.helpers import streamed
 from tests.test_llm import Stream, chunk, client_of
+from tests.helpers import request
 
 USER = [{"role": "user", "content": "A synthetic protocol question."}]
 TOOLS = [{"type": "function", "function": {"name": "tree", "parameters": {"type": "object"}}}]
@@ -83,7 +84,7 @@ def test_explicit_tool_parser_capability_diagnostic_is_case_insensitive(home):
             raise rejected(None, '"Auto" tool choice requires --enable-auto-tool-choice and --tool-call-parser', None)
         return streamed(content="Accepted.")
     llm = LLM(client=client_of(create), model="audit-local", retries=1)
-    assert llm.chat(USER, TOOLS).text == "Accepted."
+    assert llm.chat(request(USER, TOOLS)).text == "Accepted."
     assert len(sent) == 2 and llm.tool_mode == "prompt" and not sent[-1].get("tools")
 
 
@@ -110,7 +111,7 @@ def test_all_four_capability_fallbacks_can_complete_without_a_transport_retry(ho
             raise rejected(field, f"Unsupported parameter: {field}")
         return streamed(content="Accepted.")
     llm = LLM(client=client_of(create), model="audit-local", thinking=False, max_tokens=128, retries=1)
-    assert llm.chat(USER).text == "Accepted." and len(sent) == 5
+    assert llm.chat(request(USER)).text == "Accepted." and len(sent) == 5
     assert sent[-1]["max_completion_tokens"] == 128
 
 
@@ -125,7 +126,7 @@ def test_nested_field_and_tool_capability_diagnostics_apply_to_the_actual_reques
             raise rejected(field, f"Unsupported parameter: {field}")
         return streamed(content="Accepted.")
     llm = LLM(client=client_of(create), model="audit-local", thinking=False, retries=1)
-    assert llm.chat(USER, TOOLS).text == "Accepted." and len(sent) == 2
+    assert llm.chat(request(USER, TOOLS)).text == "Accepted." and len(sent) == 2
     assert llm.reasoning_option
     assert llm.template_kwargs == (field != "enable_thinking")
     assert llm.usage_option == (field != "include_usage")
@@ -151,7 +152,7 @@ def test_chat_budget_uses_the_selected_model_capability_through_the_real_sdk(hom
                               text="data: " + json.dumps(data) + "\n\ndata: [DONE]\n\n")
     with httpx.Client(transport=httpx.MockTransport(handler)) as http:
         client = OpenAI(base_url="https://fixture.test/v1", api_key="synthetic", http_client=http, max_retries=0)
-        reply = LLM(client=client, model=model, max_tokens=128, retries=1).chat(USER)
+        reply = LLM(client=client, model=model, max_tokens=128, retries=1).chat(request(USER))
         assert reply.text == "Accepted."
         assert len(sent) == 1 and sent[0][field] == 128
 
@@ -167,12 +168,12 @@ def test_precise_token_field_fallback_preserves_unrelated_options(home, model, r
         assert kwargs[accepted] == 128
         return streamed(content="Accepted.")
     llm = LLM(client=client_of(create), model=model, max_tokens=128, retries=1, thinking=True)
-    assert llm.chat(USER).text == "Accepted."
+    assert llm.chat(request(USER)).text == "Accepted."
     assert len(sent) == 2 and sent[0][refused] == 128 and sent[1][accepted] == 128
     assert sent[0].get("extra_body") == sent[1].get("extra_body")
     assert all(request["stream_options"] == {"include_usage": True} for request in sent)
     assert llm.template_kwargs and llm.usage_option
-    assert llm.chat(USER).text == "Accepted." and len(sent) == 3 and accepted in sent[-1]
+    assert llm.chat(request(USER)).text == "Accepted." and len(sent) == 3 and accepted in sent[-1]
 
 
 @pytest.mark.parametrize("field,message,code", [
@@ -188,7 +189,7 @@ def test_unrelated_bad_requests_do_not_retry_or_downgrade_capabilities(home, fie
         raise error
     llm = LLM(client=client_of(create), model="audit-local", max_tokens=128, thinking=False, retries=1)
     with pytest.raises(BadRequestError) as got:
-        llm.chat(USER, TOOLS)
+        llm.chat(request(USER, TOOLS))
     assert got.value is error and len(sent) == 1
     assert llm.template_kwargs and llm.usage_option and llm.tool_mode is None
 
@@ -198,7 +199,7 @@ def test_structured_refusal_is_preserved_and_its_examples_are_not_executable(hom
     refusal = 'Cannot execute <tool_call>{"name":"tree","arguments":{}}</tool_call>.'
     stream = Stream([chunk(content=content), chunk(refusal=refusal[:20]), chunk(refusal=refusal[20:]),
                      NS(choices=[NS(delta=NS(), finish_reason="content_filter")], usage=None)])
-    reply = LLM(client=client_of(lambda **kwargs: stream), model="audit-local").chat(USER, TOOLS)
+    reply = LLM(client=client_of(lambda **kwargs: stream), model="audit-local").chat(request(USER, TOOLS))
     assert reply.refusal == refusal and refusal in reply.text
     assert reply.text == (content + "\n" if content else "") + refusal
     assert content in reply.text and reply.calls == [] and reply.finish == "content_filter"
@@ -209,13 +210,13 @@ def test_refusal_prevents_dispatch_even_when_a_server_also_sends_native_calls(ho
     stream = Stream([chunk(refusal="Cannot answer.", tool_calls=[NS(index=0, id="refused-call",
         function=NS(name="tree", arguments="{}"))]),
         NS(choices=[NS(delta=NS(), finish_reason="content_filter")], usage=None)])
-    reply = LLM(client=client_of(lambda **kwargs: stream), model="audit-local").chat(USER, TOOLS)
+    reply = LLM(client=client_of(lambda **kwargs: stream), model="audit-local").chat(request(USER, TOOLS))
     assert reply.calls == [] and reply.text == reply.refusal == "Cannot answer."
 
 
 def test_refusal_already_present_in_content_is_not_duplicated(home):
     reply = LLM(client=client_of(lambda **kwargs: Stream([chunk(content="Cannot answer.", refusal="Cannot answer."),
-        NS(choices=[NS(delta=NS(), finish_reason="content_filter")], usage=None)])), model="audit-local").chat(USER)
+        NS(choices=[NS(delta=NS(), finish_reason="content_filter")], usage=None)])), model="audit-local").chat(request(USER))
     assert reply.text == reply.refusal == "Cannot answer."
 
 
@@ -251,7 +252,7 @@ def test_optional_capabilities_fall_back_independently(home, field):
             raise rejected(field, f"Unsupported parameter: '{field}'")
         return streamed(content="Accepted.")
     llm = LLM(client=client_of(create), model="audit-local", thinking=False, retries=1)
-    assert llm.chat(USER).text == "Accepted." and len(sent) == 2
+    assert llm.chat(request(USER)).text == "Accepted." and len(sent) == 2
     assert llm.template_kwargs == (field != "chat_template_kwargs")
     assert llm.reasoning_option == (field != "reasoning_effort")
     assert llm.usage_option == (field != "stream_options")
@@ -266,7 +267,7 @@ def test_rejected_alternate_budget_stops_after_two_requests_and_restores_capabil
         raise rejected(field, f"Unsupported parameter: '{field}'")
     llm = LLM(client=client_of(create), model="audit-local", max_tokens=128, thinking=False, retries=1)
     with pytest.raises(BadRequestError):
-        llm.chat(USER)
+        llm.chat(request(USER))
     assert len(sent) == 2 and llm._token_field is None
     assert llm.template_kwargs and llm.reasoning_option and llm.usage_option
 
@@ -280,7 +281,7 @@ def test_a_later_unrelated_failure_does_not_keep_a_tentative_budget_override(hom
         raise rejected("model", "Unsupported model", "model_not_found")
     llm = LLM(client=client_of(create), model="audit-local", max_tokens=128, thinking=False, retries=1)
     with pytest.raises(BadRequestError, match="Unsupported model"):
-        llm.chat(USER)
+        llm.chat(request(USER))
     assert len(sent) == 2 and llm._token_field is None
     assert llm.template_kwargs and llm.reasoning_option and llm.usage_option
 
@@ -296,7 +297,7 @@ def test_a_parser_failure_after_a_complete_refusal_keeps_the_refusal_without_res
         def close(self):
             pass
     llm = LLM(client=client_of(lambda **kwargs: requests.append(kwargs) or Broken()), model="audit-local", retries=1)
-    reply = llm.chat(USER, TOOLS)
+    reply = llm.chat(request(USER, TOOLS))
     assert reply.refusal == reply.text == "Cannot answer." and reply.calls == []
     assert reply.finish == "content_filter" and len(requests) == 1
     assert reply.prompt_tokens == 17 and reply.completion_tokens == 9
