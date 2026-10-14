@@ -104,6 +104,7 @@ def test_folders_are_added_listed_indexed_and_removed(home, notes, tmp_path):
         app.declared = ws.folders()
         await say(app, pilot, "/folders")
         await say(app, pilot, f"/remove {tmp_path}")
+        await settle(app, pilot, lambda: not app.indexing)                  # else /index can find it still busy
         await say(app, pilot, "/index")
         await settle(app, pilot, lambda: not app.indexing)
         failures.extend([OSError("disk full"), AssertionError("chunks and vectors differ")])   # said, then usable

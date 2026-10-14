@@ -3,6 +3,7 @@ a notes folder, a toolbox and agent built on them, and a runner for the interfac
 
 import asyncio
 import json
+import time
 
 import httpx
 import pytest
@@ -133,11 +134,15 @@ def tui_run(make, steps, size=(100, 40), **kw):
     return asyncio.run(run())
 
 
-async def settle(app, pilot, until, tries=200):
-    for _ in range(tries):
+async def settle(app, pilot, until, seconds=60.0):
+    """Wait until the condition holds; a wait that runs out fails here, not as a missing step later (a loaded CI
+    runner once took over the earlier fixed 4 s, and the next command was refused as busy)."""
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
         await pilot.pause(0.02)
         if until():
             return
+    raise AssertionError(f"still waiting after {seconds:g} s")
 
 
 def texts(app):

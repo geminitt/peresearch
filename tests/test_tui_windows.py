@@ -67,6 +67,7 @@ def test_folder_group_has_local_add_and_remove_controls(home, tmp_path):
         await pilot.pause()
         assert ws.folders() == [folder.resolve()]
         assert app.screen.id == "folders-window"
+        await settle(app, pilot, lambda: not app.indexing)                  # removing waits for the new folder's update
         await pilot.press("r")
         await pilot.pause()
         assert ws.folders() == []

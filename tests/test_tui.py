@@ -747,7 +747,7 @@ def test_quitting_returns_at_once_whatever_runs_in_the_background(home, notes, b
         if busy == "a question waiting on the model":
             app.query_one("#ask", tui.Prompt).value = "How does BPE work?"
             await pilot.press("enter")
-        await settle(app, pilot, started.is_set, tries=300)
+        await settle(app, pilot, started.is_set)
         seen["t0"] = time.perf_counter()
         await pilot.press("ctrl+q")
     on_start = busy != "a question waiting on the model"
@@ -802,7 +802,7 @@ def test_a_question_asked_while_the_folders_are_checked_is_answered(home, notes,
         app.checking = str(app.status.render())[2:]
         app.query_one("#ask", Prompt).value = "How does BPE work?"
         await pilot.press("enter")
-        await settle(app, pilot, lambda: app.last is not None and not app.indexing, tries=300)
+        await settle(app, pilot, lambda: app.last is not None and not app.indexing)
     app = tui_run(lambda e: agent(home, notes, Reply("BPE merges pairs [N1]."))[0], steps,
                   workspace=SlowWorkspace(), index_on_start=True)
     assert app.checking == "Checking your folders for changes… 1/3 files (you can ask meanwhile)"
