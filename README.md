@@ -105,8 +105,9 @@ only inside their window. Esc closes the current window and returns to the previ
 | `/sources` | Source locations and excerpts, up to 600 characters each. Citation links open a source window. |
 | `/help` | Command and keyboard reference. |
 
-Connecting a model (A) takes three steps, as in OpenCode: choose where it runs (a saved connection, OpenAI, OpenRouter,
-Groq, Ollama, LM Studio, another local server or any OpenAI-compatible endpoint); give only what that place needs (a
+Connecting a model (A) takes three steps, as in OpenCode: choose where it runs (a saved connection, OpenAI, Anthropic,
+Google AI Studio, OpenRouter, Groq, Ollama, LM Studio, another local server or any OpenAI-compatible endpoint; each role
+lists only the providers that serve it); give only what that place needs (a
 cloud's API key, a local server's address); choose the model from the IDs the endpoint lists, typing to filter them.
 For a chat model the list notes what the pinned models.dev snapshot says of it (tool calls, context) or that it does
 not know it; no listed model is hidden.

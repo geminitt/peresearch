@@ -123,7 +123,7 @@ def test_look_of_connecting_a_model(home, step):
         if step in ("key", "pick"):
             listing = app.screen.query_one("#connect-list")
             ids = [listing.get_option_at_index(i).id for i in range(listing.option_count)]
-            listing.highlighted = ids.index("preset:OpenAI")
+            listing.highlighted = ids.index("preset:openai")
             await pilot.press("enter")
             await pilot.pause(0.3)
         if step == "pick":

@@ -18,7 +18,7 @@ from textual.screen import ModalScreen
 from textual.widgets import Input, Markdown, Static, TabbedContent, TabPane
 from textual.widgets.option_list import Option
 
-from peresearch import connections, guard, settings
+from peresearch import connections, guard, providers, settings
 from peresearch.widgets import Field, SelectList, hints, home_path, row
 
 SHORT = {"PERESEARCH_SEARCH_MCP": "Web search server", "PERESEARCH_SEARCH_MCP_KEY": "Web search key",
@@ -269,19 +269,6 @@ class FolderWindow(Window):
         event.stop()
 
 
-# Where a model can run, for `/model` → a. Endpoints checked on 2026-10-14 against each provider's documentation:
-# platform.openai.com API reference, openrouter.ai/docs/quickstart, console.groq.com/docs/openai,
-# ollama.com/blog/openai-compatibility, lmstudio.ai/docs (OpenAI-compatible endpoints). A local server's address
-# stays editable: llama-server's default port changed between versions (8080 installed here, 9931 in its current
-# README) and vLLM takes --port.
-PRESETS = [("OpenAI", "https://api.openai.com/v1", "cloud"),
-           ("OpenRouter", "https://openrouter.ai/api/v1", "cloud"),
-           ("Groq", "https://api.groq.com/openai/v1", "cloud"),
-           ("Ollama", "http://localhost:11434/v1", "local"),
-           ("LM Studio", "http://localhost:1234/v1", "local"),
-           ("vLLM, llama.cpp or another server", "http://localhost:8000/v1", "local")]
-
-
 class ConnectWindow(Window):
     """Step 1 of connecting a model: where it runs — a connection already saved for this role, a cloud, a server on
     this machine, or any other OpenAI-compatible endpoint."""
@@ -314,14 +301,15 @@ class ConnectWindow(Window):
                 rows.append(Option(row(Text.assemble(name, ("" if name == host else "  " + host, "dim"),
                                                      (f"  {len(entry.models)} model IDs" if entry.models else "",
                                                       "dim"))), id="entry:" + entry.id))
-        width = max(len(name) for name, _, kind in PRESETS if kind == "local")
+        offered = [p for p in providers.PROVIDERS if self.role in p.roles]      # where this role can run
+        width = max((len(p.name) for p in offered if p.kind == "local"), default=0)
         for heading, kind in (("Cloud", "cloud"), ("On this machine", "local")):
             rows.append(Option(Text(heading, style="bold"), disabled=True))
-            for name, url, preset_kind in PRESETS:
-                if preset_kind == kind:                # a local server's address in a column of its own
-                    where = "" if kind == "cloud" else "  " + url.split("//")[1].removesuffix("/v1")
-                    rows.append(Option(row(Text.assemble(name.ljust(width) if where else name, (where, "dim"))),
-                                       id="preset:" + name))
+            for p in offered:
+                if p.kind == kind:                     # a local server's address in a column of its own
+                    where = "" if kind == "cloud" else "  " + p.url.split("//")[1].removesuffix("/v1")
+                    rows.append(Option(row(Text.assemble(p.name.ljust(width) if where else p.name, (where, "dim"))),
+                                       id="preset:" + p.id))
         rows.append(Option(row("Another OpenAI-compatible endpoint…"), id="other"))
         listing.add_options(rows)
         listing.highlighted = next(i for i, option in enumerate(rows) if not option.disabled)
@@ -336,8 +324,9 @@ class ConnectWindow(Window):
                 self.app.push_screen(CredentialWindow(self.role, entry.name, entry.url, "saved", self.discover_models,
                                                       self.chosen, saved=entry))
         elif choice.startswith("preset:"):
-            name, url, kind = next(p for p in PRESETS if p[0] == choice[7:])
-            self.app.push_screen(CredentialWindow(self.role, name, url, kind, self.discover_models, self.chosen))
+            p = providers.get(choice[7:])
+            self.app.push_screen(CredentialWindow(self.role, p.name, p.url, p.kind, self.discover_models, self.chosen,
+                                                  provider=p.id))
         else:
             self.app.push_screen(CredentialWindow(self.role, "", "", "other", self.discover_models, self.chosen))
 
@@ -349,8 +338,9 @@ class CredentialWindow(Window):
 
     BINDINGS = Window.BINDINGS + [Binding("ctrl+s", "connect", show=False), Binding("ctrl+t", "enter_id", show=False, priority=True)]
 
-    def __init__(self, role: str, name: str, url: str, kind: str, discover, chosen, saved=None):
+    def __init__(self, role: str, name: str, url: str, kind: str, discover, chosen, saved=None, provider: str = ""):
         super().__init__(id="api-window")
+        self.provider = provider
         self.add_class("-medium")                    # a short step: OpenCode's medium width
         self.role, self.place, self.url, self.kind = role, name, url, kind
         self.discover_models, self.chosen = discover, chosen
@@ -395,7 +385,7 @@ class CredentialWindow(Window):
             raise ValueError("Enter the API key of " + self.place + ".")
         if self.kind == "saved":
             return next(e for e in connections.load() if e.id == self.entry.id)
-        return connections.connect(self.role, self.place, url, key)
+        return connections.connect(self.role, self.place, url, key, provider=self.provider)
 
     def action_connect(self) -> None:
         try:

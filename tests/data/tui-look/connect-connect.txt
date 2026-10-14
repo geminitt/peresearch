@@ -4,12 +4,13 @@
 
 
 
-
               ╭──────────────────────────────────────────────────────────────────────╮
               │ Connect a model · Chat model                                         │
               │                                                                      │
               │ Cloud                                                                │
               │ ❯ OpenAI                                                             │
+              │   Anthropic (Claude)                                                 │
+              │   Google AI Studio (Gemini)                                          │
               │   OpenRouter                                                         │
               │   Groq                                                               │
               │ On this machine                                                      │
@@ -20,7 +21,6 @@
               │                                                                      │
               │ ↑↓ choose · enter next · esc back                                    │
               ╰──────────────────────────────────────────────────────────────────────╯
-
 
 
 

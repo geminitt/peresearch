@@ -5,7 +5,7 @@ The owner, 2026-10-14: "nhiều trường cần nhập quá … bình thường 
 sends nothing; the model list is requested only by the explicit Enter of the second step and sends no prompt."""
 
 from peresearch import connections, settings, tui
-from peresearch.windows import PRESETS
+from peresearch import providers
 from tests.helpers import settle, texts, tui_run
 
 
@@ -23,13 +23,15 @@ def choose(app, name):
 
 
 def test_presets_name_verified_endpoints():
-    urls = {name: url for name, url, _ in PRESETS}
+    urls = {p.name: p.url for p in providers.PROVIDERS}
     assert urls["OpenAI"] == "https://api.openai.com/v1"
     assert urls["OpenRouter"] == "https://openrouter.ai/api/v1"
     assert urls["Groq"] == "https://api.groq.com/openai/v1"
     assert urls["Ollama"] == "http://localhost:11434/v1"
     assert urls["LM Studio"] == "http://localhost:1234/v1"
-    assert all(kind in ("cloud", "local") for _, _, kind in PRESETS)
+    assert urls["Anthropic (Claude)"] == "https://api.anthropic.com"
+    assert urls["Google AI Studio (Gemini)"] == "https://generativelanguage.googleapis.com/v1beta/openai/"
+    assert all(p.kind in ("cloud", "local") for p in providers.PROVIDERS)
 
 
 def test_connect_reuses_an_existing_connection_instead_of_a_duplicate(home):
@@ -54,7 +56,7 @@ def test_a_cloud_takes_only_its_key_then_the_listed_model_is_chosen(home):
         await pilot.press("a")
         await pilot.pause()
         assert app.screen.id == "connect-window"
-        choose(app, "preset:OpenAI")
+        choose(app, "preset:openai")
         await pilot.press("enter")
         await pilot.pause()
         assert app.screen.id == "api-window"
@@ -95,7 +97,7 @@ def test_a_local_server_takes_only_its_address_and_a_failed_list_allows_an_id(ho
         app.screen.discover_models = refused
         await pilot.press("a")
         await pilot.pause()
-        choose(app, "preset:Ollama")
+        choose(app, "preset:ollama")
         await pilot.press("enter")
         await pilot.pause()
         inputs = {w.id: w.value for w in app.screen.query("Input")}
@@ -150,7 +152,7 @@ def test_a_late_list_after_leaving_the_step_is_not_applied(home):
         app.screen.discover_models = slow
         await pilot.press("a")
         await pilot.pause()
-        choose(app, "preset:OpenAI")
+        choose(app, "preset:openai")
         await pilot.press("enter")
         await pilot.pause()
         app.screen.query_one("#api-key").value = "synthetic-key"
@@ -326,3 +328,41 @@ def test_keys_stay_hidden_saving_is_private_and_local_and_an_override_is_named(h
     assert "SEMANTIC_SCHOLAR_API_KEY" in app.override and "environment" in app.override
     assert "http://" in app.refused and connections.load() == []
     assert "old-exa-secret" not in app.shown and "s2-file-key" not in app.shown
+
+
+def test_each_role_offers_only_the_providers_that_serve_it(home):
+    async def steps(app, pilot):
+        await submit(app, pilot, "/model")
+        await pilot.press("right")                                    # the embeddings role
+        await pilot.press("a")
+        await pilot.pause()
+        listing = app.screen.query_one("#connect-list")
+        app.ids = [listing.get_option_at_index(i).id for i in range(listing.option_count)]
+    app = tui_run(lambda event: None, steps)
+    assert "preset:openai" in app.ids and "preset:ollama" in app.ids
+    assert not {"preset:anthropic", "preset:groq", "preset:openrouter"} & set(app.ids)
+
+
+def test_a_claude_model_chosen_in_the_window_takes_the_anthropic_route(home):
+    from peresearch.llm import LLM
+
+    async def steps(app, pilot):
+        await submit(app, pilot, "/model")
+        app.screen.discover_models = lambda entry: ["claude-opus-5-5", "claude-haiku-5-5"]
+        await pilot.press("a")
+        await pilot.pause()
+        choose(app, "preset:anthropic")
+        await pilot.press("enter")
+        await pilot.pause()
+        assert [w.id for w in app.screen.query("Input")] == ["api-key"]
+        app.screen.query_one("#api-key").value = "synthetic-anthropic-key"
+        await pilot.press("enter")
+        await settle(app, pilot, lambda: app.screen.id == "pick-window")
+        await pilot.press("enter")
+        await pilot.pause()
+    tui_run(lambda event: None, steps)
+    assert settings.get("PERESEARCH_LLM_PROVIDER") == "anthropic"
+    assert settings.get("PERESEARCH_LLM_MODEL") == "claude-opus-5-5"
+    llm = LLM()                                                       # from the settings, as the agent builds it
+    assert llm.route == "anthropic" and type(llm.client).__module__.startswith("anthropic")
+    assert [e.provider for e in connections.load()] == ["anthropic"]

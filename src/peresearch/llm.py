@@ -21,7 +21,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from types import SimpleNamespace
 
-from peresearch import guard, profiles, settings
+from peresearch import guard, profiles, providers, settings
 
 
 @dataclass
@@ -209,6 +209,7 @@ def unsupported(error, field: str) -> bool:
 
 # a server's tool-call parser that could not read the model's output ends the stream with an error event (llama.cpp:
 # "The model produced output that does not match the expected peg-native format", recorded 2026-10-06)
+_THINKING_SIGNATURE = re.compile(r"signature.{0,40}thinking|thinking.{0,40}signature", re.I)
 _CALL_UNREADABLE = re.compile(r"\bpars(e|er|ing)\b|\bformat\b", re.I)
 
 
@@ -443,6 +444,94 @@ def _read_responses(stream, stop, on_first=None) -> dict:
     return _assembled(text, reasoning, calls, usage, finish, refusal)
 
 
+ANTHROPIC_REPLY_TOKENS = 32_000    # max_tokens is required by the Messages API; used only when the model says nothing
+
+
+def anthropic_request(messages: list[dict], tools: list[dict] | None, blocks: dict) -> dict:
+    """A chat request as the Anthropic Messages API takes it: system messages as the top-level `system`; an
+    assistant turn with calls as its content blocks — the ones the API returned for it (`blocks`, by the id of its
+    first call: thinking blocks with their signatures go back unchanged), else rebuilt as text and tool_use blocks;
+    the tool results of a round together in one user message; function tools as name, description, input_schema."""
+    system, out = [], []
+    for m in messages:
+        role, content = m.get("role"), m.get("content") or ""
+        if role == "system":
+            system.append(content)
+        elif role == "tool":
+            result = {"type": "tool_result", "tool_use_id": m.get("tool_call_id") or "", "content": content}
+            if out and out[-1]["role"] == "user" and isinstance(out[-1]["content"], list):
+                out[-1]["content"].append(result)
+            else:
+                out.append({"role": "user", "content": [result]})
+        elif role == "assistant":
+            calls = m.get("tool_calls") or []
+            kept = blocks.get(calls[0].get("id")) if calls else None
+            if kept is not None:
+                out.append({"role": "assistant", "content": [dict(b) for b in kept]})
+                continue
+            parts = [{"type": "text", "text": content}] if content else []
+            for call in calls:
+                fn = call.get("function") or {}
+                try:
+                    args = json.loads(fn.get("arguments") or "{}")
+                except ValueError:
+                    args = {}
+                parts.append({"type": "tool_use", "id": call.get("id") or "", "name": fn.get("name") or "",
+                              "input": args if isinstance(args, dict) else {}})
+            if parts:                          # an empty assistant text is refused by the API
+                out.append({"role": "assistant", "content": parts if calls else content})
+        else:
+            out.append({"role": "user", "content": content})
+    request = {"messages": out}
+    if system:
+        request["system"] = "\n\n".join(system)
+    if tools:
+        request["tools"] = [{"name": t["function"]["name"], "description": t["function"].get("description", ""),
+                             "input_schema": t["function"].get("parameters") or {"type": "object", "properties": {}}}
+                            for t in tools if t.get("type") == "function"]
+    return request
+
+
+def _read_anthropic(manager, stop, on_first=None) -> dict:
+    """A streamed Messages API reply put back together as `_read_stream` returns a chat completion's, plus `blocks`:
+    the reply's content blocks as sent back with its calls. Reasoning comes from thinking deltas; a refusal's
+    explanation is the refusal; the input tokens count the cached ones too."""
+    text, reasoning, calls, usage, finish, refusal, blocks = [], [], {}, None, "", [], []
+    try:
+        with manager as stream:
+            for event in stream:
+                if on_first is not None:
+                    on_first()
+                    on_first = None
+                if stop is not None and stop():
+                    raise Interrupted("stopped by the user")
+                if event.type == "text":
+                    text.append(event.text)
+                elif event.type == "thinking":
+                    reasoning.append(event.thinking)
+            final = stream.get_final_message()
+        blocks = [b.model_dump(exclude_none=True) for b in final.content]
+        for i, b in enumerate(b for b in final.content if b.type == "tool_use"):
+            calls[i] = {"id": b.id, "name": b.name, "args": json.dumps(b.input, ensure_ascii=False)}
+        got = final.usage
+        usage = SimpleNamespace(
+            prompt_tokens=(got.input_tokens or 0) + (getattr(got, "cache_read_input_tokens", 0) or 0)
+                          + (getattr(got, "cache_creation_input_tokens", 0) or 0),
+            completion_tokens=got.output_tokens or 0)
+        finish = {"end_turn": "stop", "tool_use": "tool_calls", "max_tokens": "length", "stop_sequence": "stop",
+                  "refusal": "refusal", "pause_turn": "stop"}.get(final.stop_reason, final.stop_reason or "stop")
+        if final.stop_reason == "refusal":
+            details = getattr(final, "stop_details", None)
+            refusal.append(getattr(details, "explanation", None) or "the model declined to answer")
+            calls = {}
+    except Exception as e:
+        e.partial = _assembled(text, reasoning, calls, usage, finish, refusal)
+        raise
+    result = _assembled(text, reasoning, calls, usage, finish, refusal)
+    result["blocks"] = blocks
+    return result
+
+
 def _outbound(message: dict) -> dict:
     m = dict(message)
     if isinstance(m.get("content"), str):
@@ -462,7 +551,7 @@ class LLM:
     def __init__(self, url: str | None = None, model: str | None = None, key: str | None = None, client=None,
                  max_tokens: int | None = None, temperature: float | None = None, top_p: float | None = None, retries: int = 5,
                  wait: float = 10.0, on_wait=None, thinking: bool | None = None,
-                 slow_start: float = 5.0):
+                 slow_start: float = 5.0, provider: str | None = None):
         """`thinking` switches a Qwen model's reasoning on or off (vLLM's chat_template_kwargs); None keeps the
         server's default. PERESEARCH_LLM_THINKING=on/off sets it from the settings. `temperature` and `top_p` given
         here win over the model's profile (peresearch.profiles), which sends them only when it has them."""
@@ -487,7 +576,11 @@ class LLM:
         self.api = settings.get("PERESEARCH_LLM_API") or "auto"
         if self.api not in ("auto", "chat", "responses"):
             raise ValueError(f"PERESEARCH_LLM_API must be auto, chat or responses (got {self.api!r})")
-        self.route = "responses" if self.api == "responses" else "chat"
+        self.provider = provider or settings.get("PERESEARCH_LLM_PROVIDER") or \
+            providers.guess(url or settings.get("PERESEARCH_LLM_URL"))
+        native = providers.protocol(self.provider) == "anthropic"
+        self.route = "anthropic" if native else "responses" if self.api == "responses" else "chat"
+        self._blocks = {}       # first call id -> the Messages API content blocks of that turn (thinking signed)
         self.local = False                             # a server on this machine: refused means not running
         if client is None:
             from openai import OpenAI
@@ -495,8 +588,14 @@ class LLM:
             url = url or settings.get("PERESEARCH_LLM_URL")
             if not url:
                 raise RuntimeError("no model endpoint: set PERESEARCH_LLM_URL (see peresearch/settings.py)")
-            client = OpenAI(base_url=url, api_key=key or settings.get("PERESEARCH_LLM_KEY") or "none",
-                            timeout=600.0, max_retries=0)
+            if native:                         # the official SDK; peresearch's own retries, as for the OpenAI client
+                import anthropic
+                client = anthropic.Anthropic(base_url=url.rstrip("/").removesuffix("/v1"),
+                                             api_key=key or settings.get("PERESEARCH_LLM_KEY") or None,
+                                             timeout=600.0, max_retries=0)
+            else:
+                client = OpenAI(base_url=url, api_key=key or settings.get("PERESEARCH_LLM_KEY") or "none",
+                                timeout=600.0, max_retries=0)
             from urllib.parse import urlparse
             self.local = urlparse(url).hostname in ("localhost", "127.0.0.1", "::1")
         self.client, self.model = client, model or settings.get("PERESEARCH_LLM_MODEL") or None
@@ -553,7 +652,8 @@ class LLM:
         maximum, often far above what a server on a small GPU runs (131,072 against 8,192, 2026-10-06)."""
         if self._ran_with is ...:
             meta = self._field("meta")
-            found = self._field("max_model_len") or (meta.get("n_ctx") if isinstance(meta, dict) else None)
+            found = self._field("max_model_len") or (meta.get("n_ctx") if isinstance(meta, dict) else None) \
+                or self._field("max_input_tokens")       # Anthropic's Models API
             self._ran_with = int(found) if found else self._loaded_context()
         return self._ran_with
 
@@ -613,15 +713,21 @@ class LLM:
         thread, so the caller is free the moment stop() is true; the reader closes the stream itself at its next
         chunk (closing it from another thread does not wake a blocked read, and vLLM went on generating)."""
         kw["stream"] = True
-        responses = self.route == "responses"
-        if self.usage_option and not responses:
+        responses, native = self.route == "responses", self.route == "anthropic"
+        if self.usage_option and not (responses or native):
             kw["stream_options"] = {"include_usage": True}
-        read = _read_responses if responses else _read_stream
+        read = _read_anthropic if native else _read_responses if responses else _read_stream
 
         def create():
             if self.on_request is not None:
                 from copy import deepcopy
                 self.on_request(deepcopy(kw["messages"]))
+            if native:                         # sampling and template fields are not sent: current Claude refuses them
+                request = anthropic_request(kw["messages"], kw.get("tools"), self._blocks)
+                request.update(model=kw["model"], cache_control={"type": "ephemeral"},
+                               max_tokens=kw.get("max_tokens") or kw.get("max_completion_tokens")
+                               or ANTHROPIC_REPLY_TOKENS)
+                return self.client.messages.stream(**request)
             if not responses:
                 return self.client.chat.completions.create(**kw)
             request = responses_request(kw["messages"], kw.get("tools"))
@@ -694,6 +800,8 @@ class LLM:
         calls = [] if refusal else [ToolCall(c["id"], c["name"], *_arguments(c["args"], cut and i == len(r["calls"]) - 1))
                  for i, c in enumerate(r["calls"])]
         self._signatures.update({c["id"]: c["extra"] for c in r["calls"] if c.get("extra")})
+        if r.get("blocks") and r["calls"]:
+            self._blocks[r["calls"][0]["id"]] = r["blocks"]
         thought, text = split_reasoning(r["text"])
         reasoning = "\n".join(part for part in (r["reasoning"], thought) if part)
         if not calls and not refusal:       # recovered from the text or the reasoning (vllm#39056)
@@ -747,7 +855,7 @@ class LLM:
         """Retry transport failures and precisely refused capabilities. Only an explicitly unsupported field
         falls back without using a transport try. Unrelated 400s propagate unchanged; chat restores unsuccessful
         capability changes. A token field gets one alternate, never an unbounded toggle."""
-        attempt, refusals, sends, budget_retried = 0, 0, 0, False
+        attempt, refusals, sends, budget_retried, stripped = 0, 0, 0, False, False
         while True:
             if stop is not None and (attempt or getattr(stop, "access_paths", None)) and stop():
                 raise Interrupted("stopped before the model request")
@@ -779,6 +887,14 @@ class LLM:
             except Exception as e:
                 if too_long(e):                     # the conversation's length, not a field: the caller trims it
                     raise
+                if self.route == "anthropic" and not stripped and type(e).__name__ == "BadRequestError" \
+                        and _THINKING_SIGNATURE.search(str(e)):
+                    # a thinking block bound to a history that changed (a trimmed result, a summary in the system
+                    # prompt): sent again once without thinking blocks, the recovery Anthropic documents
+                    self._blocks = {k: [b for b in v if b.get("type") not in ("thinking", "redacted_thinking")]
+                                    for k, v in self._blocks.items()}
+                    stripped = True
+                    continue
                 if tools and (unsupported(e, "tools") or type(e).__name__ == "BadRequestError" and _TOOLS_REFUSED.search(str(e))):
                     raise ToolsRefused(str(e), unsupported(e, "tools")) from e
                 if type(e).__name__ == "APIError" and tools and _CALL_UNREADABLE.search(str(e)):
