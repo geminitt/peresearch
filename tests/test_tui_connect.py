@@ -366,3 +366,103 @@ def test_a_claude_model_chosen_in_the_window_takes_the_anthropic_route(home):
     llm = LLM()                                                       # from the settings, as the agent builds it
     assert llm.route == "anthropic" and type(llm.client).__module__.startswith("anthropic")
     assert [e.provider for e in connections.load()] == ["anthropic"]
+
+
+def test_an_added_provider_names_its_protocol_and_the_gateway_follows_it(home):
+    """Model gateway step 2 (owner, 2026-10-15): a provider the registry does not know is added by its name, protocol,
+    URL and key; the chosen model then takes that protocol's route. A protocol peresearch does not speak is refused."""
+    from peresearch.llm import LLM
+
+    async def steps(app, pilot):
+        await submit(app, pilot, "/model")
+        app.screen.discover_models = lambda entry: ["claude-opus-5-5"]
+        await pilot.press("a")
+        await pilot.pause()
+        listing = app.screen.query_one("#connect-list")
+        app.label = str(listing.get_option_at_index([listing.get_option_at_index(i).id
+                                                     for i in range(listing.option_count)].index("other")).prompt)
+        choose(app, "other")
+        await pilot.press("enter")
+        await pilot.pause()
+        app.inputs = [w.id for w in app.screen.query("Input")]
+        for field, value in (("name", "Team proxy"), ("protocol", "smoke-signals"), ("url", "https://proxy.example/v1"),
+                             ("key", "synthetic-proxy-key")):
+            app.screen.query_one("#api-" + field).value = value
+        await pilot.press("enter")
+        await pilot.pause()
+        app.refused = str(app.screen.query_one("#window-message").render())
+        app.screen.query_one("#api-protocol").value = "anthropic"
+        await pilot.press("enter")
+        await settle(app, pilot, lambda: app.screen.id == "pick-window")
+        await pilot.press("enter")
+        await pilot.pause()
+    app = tui_run(lambda event: None, steps)
+    assert app.label.strip() == "Add a provider…"
+    assert app.inputs == ["api-name", "api-protocol", "api-url", "api-key"]
+    assert "chat, responses, anthropic or gemini" in app.refused
+    [entry] = connections.load()
+    assert (entry.name, entry.protocol, entry.provider, entry.url) == ("Team proxy", "anthropic", "", "https://proxy.example/v1")
+    assert settings.get("PERESEARCH_LLM_PROTOCOL") == "anthropic" and settings.get("PERESEARCH_LLM_PROVIDER") == ""
+    llm = LLM()                                                       # from the settings, as the agent builds it
+    assert llm.route == "anthropic" and type(llm.client).__module__.startswith("anthropic")
+
+
+def test_an_added_provider_for_embeddings_needs_no_protocol(home):
+    async def steps(app, pilot):
+        await submit(app, pilot, "/model")
+        await pilot.press("right")                                    # the embeddings role
+        await pilot.press("a")
+        await pilot.pause()
+        choose(app, "other")
+        await pilot.press("enter")
+        await pilot.pause()
+        app.inputs = [w.id for w in app.screen.query("Input")]
+    app = tui_run(lambda event: None, steps)
+    assert app.inputs == ["api-name", "api-url", "api-key"]           # embeddings speak one protocol
+
+
+def test_models_are_listed_through_the_protocol_the_connection_names(home):
+    from types import SimpleNamespace as NS
+    entry = connections.add("chat", "Gemini proxy", "https://gemini.example/v1", "k", protocol="gemini")
+    listed = NS(models=NS(list=lambda: [NS(name="models/gemini-3.6-flash")]))
+    assert connections.discover(entry, client=listed) == ["gemini-3.6-flash"]
+    assert connections.load()[0].protocol == "gemini"
+    (home / "models.json").write_text((home / "models.json").read_text().replace('"gemini"', '"carrier-pigeon"'))
+    import pytest
+    with pytest.raises(ValueError, match="invalid"):
+        connections.load()
+
+
+def test_an_added_provider_with_no_protocol_typed_speaks_chat_and_an_embedding_one_names_none(home):
+    async def steps(app, pilot):
+        await submit(app, pilot, "/model")
+        app.screen.discover_models = lambda entry: ["m1"]
+        await pilot.press("a")
+        await pilot.pause()
+        choose(app, "other")
+        await pilot.press("enter")
+        await pilot.pause()
+        app.screen.query_one("#api-name").value = "Chat proxy"
+        app.screen.query_one("#api-url").value = "https://chat.example/v1"
+        await pilot.press("enter")
+        await settle(app, pilot, lambda: app.screen.id == "pick-window")
+        await pilot.press("escape")
+        await pilot.press("escape")
+        await pilot.press("escape")
+        await pilot.pause()
+        await submit(app, pilot, "/model")
+        await pilot.press("right")                                    # the embeddings role
+        app.screen.discover_models = lambda entry: ["e1"]
+        await pilot.press("a")
+        await pilot.pause()
+        choose(app, "other")
+        await pilot.press("enter")
+        await pilot.pause()
+        app.title = str(app.screen.query_one("#window-title").render()) if app.screen.query("#window-title") else ""
+        app.screen.query_one("#api-name").value = "Embedding proxy"
+        app.screen.query_one("#api-url").value = "https://embed.example/v1"
+        await pilot.press("enter")
+        await settle(app, pilot, lambda: app.screen.id == "pick-window")
+    tui_run(lambda event: None, steps)
+    found = {e.name: (e.role, e.protocol, e.provider) for e in connections.load()}
+    assert found == {"Chat proxy": ("chat", "chat", ""), "Embedding proxy": ("embedding", "", "")}

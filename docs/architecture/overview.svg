@@ -100,7 +100,7 @@
 <text x="1207.0" y="681.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">a secret: refused</text>
 <rect x="1390" y="205" width="250" height="168" rx="10" fill="#FFFFFF" stroke="#9A9A94" stroke-width="1.4" stroke-dasharray="7 5"/>
 <text x="1402.0" y="228.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#3D3B35" text-anchor="start">Model endpoint</text>
-<text x="1402.0" y="246.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#9A9A94" text-anchor="start">any OpenAI-compatible API</text>
+<text x="1402.0" y="246.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#9A9A94" text-anchor="start">its provider&#x27;s protocol</text>
 <text x="1402.0" y="269.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">a provider&#x27;s, or the user&#x27;s</text>
 <text x="1402.0" y="286.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">own server: Ollama, llama.cpp,</text>
 <text x="1402.0" y="303.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">LM Studio, vLLM…</text>
@@ -173,8 +173,9 @@
 <text x="806.0" y="1281.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">on macOS or Windows not measured</text>
 <circle cx="789" cy="1297" r="9" fill="#C94343"/>
 <text x="789.0" y="1301.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="700" fill="#FFFFFF" text-anchor="middle">9</text>
-<text x="806.0" y="1301.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">the endpoint is the user&#x27;s (any OpenAI-compatible API); checked with small models on Ollama 0.32.15, llama.cpp and vLLM 0.29</text>
-<text x="806.0" y="1318.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">(2026-10-06, recorded in tests/data/servers); LM Studio and a provider&#x27;s API not yet run</text>
+<text x="806.0" y="1301.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">the endpoint is the user&#x27;s, through its provider&#x27;s protocol (Chat Completions, Responses, Anthropic Messages, Gemini Interactions);</text>
+<text x="806.0" y="1318.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">checked with small models on Ollama 0.32.15, llama.cpp and vLLM 0.29 (2026-10-06, recorded in tests/data/servers); LM Studio and the</text>
+<text x="806.0" y="1335.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3D3B35" text-anchor="start">cloud APIs only against recorded or SDK-shaped fixtures</text>
 <circle cx="766" cy="454" r="10" fill="#C94343"/>
 <text x="766.0" y="458.5" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="700" fill="#FFFFFF" text-anchor="middle">8</text>
 <circle cx="1146" cy="974" r="10" fill="#C94343"/>

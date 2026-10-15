@@ -113,19 +113,26 @@ def test_look_of_each_window(home, notes_at_home, command):
     compare("window-" + command.strip("/"), run(steps, workspace=ws).look)
 
 
-@pytest.mark.parametrize("step", ["connect", "key", "pick"])
+@pytest.mark.parametrize("step", ["connect", "key", "pick", "provider", "provider-protocol", "provider-endpoint", "provider-embedding", "local"])
 def test_look_of_connecting_a_model(home, step):
     async def steps(app, pilot):
         await open_window(app, pilot, "/model")
         app.screen.discover_models = lambda entry: ["gpt-6.1-mini", "gpt-6.1-sol", "text-embedding-4"]
+        if step == "provider-embedding":                  # embeddings speak one protocol: no protocol field
+            await pilot.press("right")
         await pilot.press("a")
         await pilot.pause(0.3)
-        if step in ("key", "pick"):
+        if step in ("key", "pick", "provider", "provider-protocol", "provider-endpoint", "provider-embedding", "local"):
             listing = app.screen.query_one("#connect-list")
             ids = [listing.get_option_at_index(i).id for i in range(listing.option_count)]
-            listing.highlighted = ids.index("preset:openai")
+            listing.highlighted = ids.index({"provider": "other", "provider-protocol": "other", "provider-endpoint": "other",
+                                             "provider-embedding": "other",
+                                             "local": "preset:ollama"}.get(step, "preset:openai"))
             await pilot.press("enter")
             await pilot.pause(0.3)
+        if step in ("provider-protocol", "provider-endpoint"):   # a field's note shows on the detail line while focused
+            await pilot.press(*(["shift+tab"] * (2 if step == "provider-protocol" else 1)))
+            await pilot.pause(0.2)
         if step == "pick":
             app.screen.query_one("#api-key").value = "synthetic-key"
             await pilot.press("enter")

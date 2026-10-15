@@ -1,0 +1,30 @@
+
+
+
+
+
+
+
+
+              ╭──────────────────────────────────────────────────────────────────────╮
+              │ Add a provider · Chat model                                          │
+              │                                                                      │
+              │ Name                  how the list shows it                          │
+              │ Protocol              chat                                           │
+              │ Endpoint              http://…/v1                                    │
+              │ API key               empty: no authentication                       │
+              │                                                                      │
+              │ Kept in a private file and never shown again. API billing is         │
+              │ separate from chat subscriptions.                                    │
+              │                                                                      │
+              │ enter connect and list models · ctrl+t type a model ID · esc back    │
+              ╰──────────────────────────────────────────────────────────────────────╯
+
+
+
+
+
+
+
+
+

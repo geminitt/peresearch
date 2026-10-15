@@ -1,0 +1,30 @@
+
+
+
+
+
+
+
+
+
+
+              ╭──────────────────────────────────────────────────────────────────────╮
+              │ Ollama · Chat model                                                  │
+              │                                                                      │
+              │ Endpoint              http://localhost:11434/v1                      │
+              │                                                                      │
+              │ Where the server answers: an OpenAI-compatible endpoint ending in    │
+              │ /v1.                                                                 │
+              │                                                                      │
+              │ enter connect and list models · ctrl+t type a model ID · esc back    │
+              ╰──────────────────────────────────────────────────────────────────────╯
+
+
+
+
+
+
+
+
+
+

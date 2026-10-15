@@ -20,11 +20,14 @@ import re
 import threading
 import time
 from dataclasses import dataclass, field
-from pathlib import Path
-from types import SimpleNamespace
 
 from peresearch import guard, profiles, providers, settings
 from peresearch.messages import Message, Reasoning, Request, Text, Tool, ToolCall
+from peresearch.protocols import Interrupted, StreamCut, anthropic, chat, gemini, responses
+from peresearch.protocols.chat import _read_stream, chat_messages, chat_tools
+from peresearch.protocols.responses import ResponsesFailed
+
+PROTOCOLS = {"chat": chat, "responses": responses, "anthropic": anthropic, "gemini": gemini}   # route -> adapter
 
 
 @dataclass
@@ -221,10 +224,6 @@ class CallUnreadable(Exception):
     client reads the call itself. Raised inside the client only."""
 
 
-class ResponsesFailed(Exception):
-    """The Responses API ended a reply with a failure or an error event."""
-
-
 class ToolsRefused(Exception):
     """The server refused the request's `tools` (no tool-call parser, or a model without tool calls): the calls go
     through the prompt from now on. Raised inside the client only. `field`: the `tools` field itself was refused, as
@@ -280,15 +279,6 @@ def prompt_tools(messages: list[dict], tools: list[dict] | None) -> list[dict]:
     return out
 
 
-class Interrupted(Exception):
-    """The caller's stop() asked to stop; the request in flight was dropped."""
-
-
-class StreamCut(Exception):
-    """A streamed reply ended without a finish reason: the connection was cut mid-answer (the OpenAI client raises
-    nothing then, and the partial text would pass for a complete answer). Retried like a dropped connection."""
-
-
 def _asked_wait(error: BaseException) -> float | None:
     """The wait a server asks for with a 429 or 5xx, in seconds, when it is a sensible one (0 < s ≤ 60, the OpenAI
     SDK's rule): retry-after-ms, else Retry-After in seconds or as an HTTP date. None: the backoff decides."""
@@ -308,281 +298,6 @@ def _asked_wait(error: BaseException) -> float | None:
     except (TypeError, ValueError, OverflowError):
         return None
     return wait if math.isfinite(wait) and 0 < wait <= 60 else None
-
-
-def _assembled(text, reasoning, calls, usage, finish, refusal=()) -> dict:
-    result = {"text": "".join(text), "reasoning": "".join(reasoning),
-            "calls": [dict(c, id=c["id"] or f"call-{i}") for i, c in sorted(calls.items())],
-            "prompt_tokens": getattr(usage, "prompt_tokens", 0) or 0,
-            "completion_tokens": getattr(usage, "completion_tokens", 0) or 0, "finish": finish}
-    if refusal:
-        result["refusal"] = "".join(refusal)
-    return result
-
-
-def _read_stream(stream, stop, on_first=None, on_text=None) -> dict:
-    """A streamed chat completion put back together: text, reasoning, tool calls (their pieces joined by index) and
-    token counts. `stop()` is checked between chunks; the stream is always closed by this, the reading thread. A
-    stream ended by an error carries what came before it as the error's `partial`."""
-    text, reasoning, refusal, calls, usage, finish = [], [], [], {}, None, ""
-    try:
-        for chunk in stream:
-            if on_first is not None:
-                on_first()
-                on_first = None
-            if stop is not None and stop():
-                raise Interrupted("stopped by the user")
-            usage = getattr(chunk, "usage", None) or usage
-            for choice in getattr(chunk, "choices", None) or []:
-                finish = getattr(choice, "finish_reason", None) or finish
-                delta = choice.delta
-                if getattr(delta, "content", None):
-                    text.append(delta.content)
-                    if on_text is not None:        # the answer as it is written (the interface's draft)
-                        on_text(delta.content)
-                if getattr(delta, "refusal", None):
-                    refusal.append(delta.refusal)
-                thought = getattr(delta, "reasoning_content", None) or getattr(delta, "reasoning", None)
-                if thought:
-                    reasoning.append(thought)
-                for piece in getattr(delta, "tool_calls", None) or []:
-                    key = piece.index if getattr(piece, "index", None) is not None else len(calls)
-                    call = calls.setdefault(key, {"id": None, "name": "", "args": ""})
-                    call["id"] = getattr(piece, "id", None) or call["id"]
-                    fn = getattr(piece, "function", None)
-                    call["name"] += (getattr(fn, "name", None) or "") if fn else ""
-                    call["args"] += (getattr(fn, "arguments", None) or "") if fn else ""
-                    extra = getattr(piece, "extra_content", None)
-                    if extra:                       # Gemini's thought signature: sent back with this call
-                        call["extra"] = extra
-        if not finish:
-            raise StreamCut("the reply stream ended without a finish reason: the connection was cut mid-answer")
-    except Exception as e:
-        e.partial = _assembled(text, reasoning, calls, usage, finish, refusal)
-        raise
-    finally:
-        close = getattr(stream, "close", None)
-        if close:
-            close()
-    return _assembled(text, reasoning, calls, usage, finish, refusal)
-
-
-def responses_request(messages: list[dict], tools: list[dict] | None) -> dict:
-    """A chat request (messages, function tools) as the Responses API takes it: the system prompt as `instructions`,
-    the assistant's calls as `function_call` items and tool results as `function_call_output` items matched by call
-    id, function tools flat (no "function" wrapper). `store` is off: the provider keeps nothing of it."""
-    instructions, items = [], []
-    for m in messages:
-        role, content = m.get("role"), m.get("content") or ""
-        if role == "system":
-            instructions.append(content)
-        elif role == "tool":
-            items.append({"type": "function_call_output", "call_id": m.get("tool_call_id") or "", "output": content})
-        elif role == "assistant":
-            if content:
-                items.append({"role": "assistant", "content": content})
-            for call in m.get("tool_calls") or []:
-                fn = call.get("function") or {}
-                items.append({"type": "function_call", "call_id": call.get("id") or "", "name": fn.get("name") or "",
-                              "arguments": fn.get("arguments") or "{}"})
-        else:
-            items.append({"role": "user", "content": content})
-    request = {"input": items, "store": False}
-    if instructions:
-        request["instructions"] = "\n\n".join(instructions)
-    if tools:
-        request["tools"] = [{"type": "function", "name": t["function"]["name"],
-                             "description": t["function"].get("description", ""),
-                             "parameters": t["function"].get("parameters") or {"type": "object", "properties": {}}}
-                            for t in tools if t.get("type") == "function"]
-    return request
-
-
-def _read_responses(stream, stop, on_first=None, on_text=None) -> dict:
-    """A streamed Responses API reply put back together as `_read_stream` returns a chat completion's: text,
-    reasoning (its text or its summary), calls by output index with their call ids, token counts, and why it ended
-    ("length" for a reply cut at its token limit). An error or failure event raises with what came before it."""
-    text, reasoning, refusal, calls, usage, finish = [], [], [], {}, None, ""
-    try:
-        for event in stream:
-            if on_first is not None:
-                on_first()
-                on_first = None
-            if stop is not None and stop():
-                raise Interrupted("stopped by the user")
-            kind = getattr(event, "type", "")
-            if kind == "response.output_text.delta":
-                text.append(event.delta)
-                if on_text is not None:
-                    on_text(event.delta)
-            elif kind == "response.refusal.delta":
-                refusal.append(event.delta)
-            elif kind in ("response.reasoning_text.delta", "response.reasoning_summary_text.delta"):
-                reasoning.append(event.delta)
-            elif kind == "response.output_item.added" and getattr(event.item, "type", "") == "function_call":
-                calls[event.output_index] = {"id": event.item.call_id, "name": event.item.name or "",
-                                             "args": event.item.arguments or ""}
-            elif kind == "response.function_call_arguments.delta":
-                calls.setdefault(event.output_index, {"id": None, "name": "", "args": ""})["args"] += event.delta
-            elif kind == "response.function_call_arguments.done":     # the whole arguments: they win
-                calls.setdefault(event.output_index, {"id": None, "name": "", "args": ""})["args"] = event.arguments
-            elif kind in ("response.completed", "response.incomplete"):
-                done = event.response
-                got = getattr(done, "usage", None)
-                if got is not None:
-                    usage = SimpleNamespace(prompt_tokens=got.input_tokens, completion_tokens=got.output_tokens)
-                if kind == "response.incomplete":
-                    why = getattr(getattr(done, "incomplete_details", None), "reason", None)
-                    finish = "content_filter" if why == "content_filter" else "length"
-                else:
-                    finish = "tool_calls" if calls else "stop"
-            elif kind in ("response.failed", "error"):
-                said = getattr(event, "message", None) or getattr(getattr(event, "response", None), "error", None)
-                raise ResponsesFailed(str(said or "the Responses API reported a failure"))
-        if not finish:
-            raise StreamCut("the reply stream ended without a finish reason: the connection was cut mid-answer")
-    except Exception as e:
-        e.partial = _assembled(text, reasoning, calls, usage, finish, refusal)
-        raise
-    finally:
-        close = getattr(stream, "close", None)
-        if close:
-            close()
-    return _assembled(text, reasoning, calls, usage, finish, refusal)
-
-
-ANTHROPIC_REPLY_TOKENS = 32_000    # max_tokens is required by the Messages API; used only when the model says nothing
-
-
-def anthropic_request(messages: list[dict], tools: list[dict] | None, blocks: dict) -> dict:
-    """A chat request as the Anthropic Messages API takes it: system messages as the top-level `system`; an
-    assistant turn with calls as its content blocks — the ones the API returned for it (`blocks`, by the id of its
-    first call: thinking blocks with their signatures go back unchanged), else rebuilt as text and tool_use blocks;
-    the tool results of a round together in one user message; function tools as name, description, input_schema."""
-    system, out = [], []
-    for m in messages:
-        role, content = m.get("role"), m.get("content") or ""
-        if role == "system":
-            system.append(content)
-        elif role == "tool":
-            result = {"type": "tool_result", "tool_use_id": m.get("tool_call_id") or "", "content": content}
-            if out and out[-1]["role"] == "user" and isinstance(out[-1]["content"], list):
-                out[-1]["content"].append(result)
-            else:
-                out.append({"role": "user", "content": [result]})
-        elif role == "assistant":
-            calls = m.get("tool_calls") or []
-            kept = blocks.get(calls[0].get("id")) if calls else None
-            if kept is not None:
-                out.append({"role": "assistant", "content": [dict(b) for b in kept]})
-                continue
-            parts = [{"type": "text", "text": content}] if content else []
-            for call in calls:
-                fn = call.get("function") or {}
-                try:
-                    args = json.loads(fn.get("arguments") or "{}")
-                except ValueError:
-                    args = {}
-                parts.append({"type": "tool_use", "id": call.get("id") or "", "name": fn.get("name") or "",
-                              "input": args if isinstance(args, dict) else {}})
-            if parts:                          # an empty assistant text is refused by the API
-                out.append({"role": "assistant", "content": parts if calls else content})
-        else:
-            out.append({"role": "user", "content": content})
-    request = {"messages": out}
-    if system:
-        request["system"] = "\n\n".join(system)
-    if tools:
-        request["tools"] = [{"name": t["function"]["name"], "description": t["function"].get("description", ""),
-                             "input_schema": t["function"].get("parameters") or {"type": "object", "properties": {}}}
-                            for t in tools if t.get("type") == "function"]
-    return request
-
-
-def _read_anthropic(manager, stop, on_first=None, on_text=None) -> dict:
-    """A streamed Messages API reply put back together as `_read_stream` returns a chat completion's, plus `blocks`:
-    the reply's content blocks as sent back with its calls. Reasoning comes from thinking deltas; a refusal's
-    explanation is the refusal; the input tokens count the cached ones too."""
-    text, reasoning, calls, usage, finish, refusal, blocks = [], [], {}, None, "", [], []
-    try:
-        with manager as stream:
-            for event in stream:
-                if on_first is not None:
-                    on_first()
-                    on_first = None
-                if stop is not None and stop():
-                    raise Interrupted("stopped by the user")
-                if event.type == "text":
-                    text.append(event.text)
-                    if on_text is not None:
-                        on_text(event.text)
-                elif event.type == "thinking":
-                    reasoning.append(event.thinking)
-            final = stream.get_final_message()
-        blocks = [b.model_dump(exclude_none=True) for b in final.content]
-        for i, b in enumerate(b for b in final.content if b.type == "tool_use"):
-            calls[i] = {"id": b.id, "name": b.name, "args": json.dumps(b.input, ensure_ascii=False)}
-        got = final.usage
-        usage = SimpleNamespace(
-            prompt_tokens=(got.input_tokens or 0) + (getattr(got, "cache_read_input_tokens", 0) or 0)
-                          + (getattr(got, "cache_creation_input_tokens", 0) or 0),
-            completion_tokens=got.output_tokens or 0)
-        finish = {"end_turn": "stop", "tool_use": "tool_calls", "max_tokens": "length", "stop_sequence": "stop",
-                  "refusal": "refusal", "pause_turn": "stop"}.get(final.stop_reason, final.stop_reason or "stop")
-        if final.stop_reason == "refusal":
-            details = getattr(final, "stop_details", None)
-            refusal.append(getattr(details, "explanation", None) or "the model declined to answer")
-            calls = {}
-    except Exception as e:
-        e.partial = _assembled(text, reasoning, calls, usage, finish, refusal)
-        raise
-    result = _assembled(text, reasoning, calls, usage, finish, refusal)
-    result["blocks"] = blocks
-    return result
-
-
-def chat_messages(request: Request, provider: bool = True) -> list[dict]:
-    """A request's messages as Chat Completions takes them: the system prompt first, an assistant turn's calls as
-    `tool_calls` (with what the endpoint attached to each, when `provider`: Gemini's thought signature), each tool
-    result as a `tool` message. Reasoning is not sent back on this protocol."""
-    out = [{"role": "system", "content": request.system}] if request.system else []
-    for m in request.messages:
-        if m.role == "tool":
-            out.append({"role": "tool", "tool_call_id": m.call_id, "content": m.text})
-        elif m.role == "assistant" and m.calls:
-            calls = []
-            for c in m.calls:
-                call = {"id": c.id, "type": "function",
-                        "function": {"name": c.name, "arguments": json.dumps(c.args, ensure_ascii=False)}}
-                extra = (c.provider.get("chat") or {}).get("extra_content") if provider else None
-                if extra is not None:
-                    call["extra_content"] = extra
-                calls.append(call)
-            out.append({"role": "assistant", "content": m.text, "tool_calls": calls})
-        else:
-            out.append({"role": m.role, "content": m.text})
-    return out
-
-
-def request_size(request: Request) -> int:
-    """The characters a request sends, counted on its Chat Completions body (the measure the agent's characters per
-    token and framing were fitted on): every message's text and calls, and the tool schemas."""
-    return sum(len(m.get("content") or "") + len(json.dumps(m.get("tool_calls") or "", ensure_ascii=False))
-               for m in chat_messages(request, provider=False)) + \
-        len(json.dumps(chat_tools(request.tools), ensure_ascii=False))
-
-
-def chat_tools(tools) -> list[dict]:
-    """Tools as Chat Completions declares them: function tools."""
-    return [{"type": "function", "function": {"name": t.name, "description": t.description,
-                                              "parameters": t.parameters}} for t in tools]
-
-
-def anthropic_blocks(request: Request) -> dict:
-    """The content blocks the Messages API returned for each assistant turn with calls, by its first call's id: they
-    go back unchanged (thinking blocks keep their signatures)."""
-    return {m.calls[0].id: m.provider["anthropic"]["content"] for m in request.messages
-            if m.role == "assistant" and m.calls and "anthropic" in m.provider}
 
 
 def _outbound(message: dict) -> dict:
@@ -631,23 +346,19 @@ class LLM:
             raise ValueError(f"PERESEARCH_LLM_API must be auto, chat or responses (got {self.api!r})")
         self.provider = provider or settings.get("PERESEARCH_LLM_PROVIDER") or \
             providers.guess(url or settings.get("PERESEARCH_LLM_URL"))
-        native = providers.protocol(self.provider) == "anthropic"
-        self.route = "anthropic" if native else "responses" if self.api == "responses" else "chat"
+        # the route the registry declares (a provider the user added names its own protocol); OpenAI models that take
+        # tools only through the Responses API are routed there by their profile on the first request (chat)
+        protocol = providers.protocol(self.provider, settings.get("PERESEARCH_LLM_PROTOCOL"))
+        self.compatibility = providers.compatibility(self.provider)
+        self.route = protocol if protocol in ("anthropic", "gemini") else \
+            "responses" if self.api == "responses" or protocol == "responses" else "chat"
         self.local = False                             # a server on this machine: refused means not running
         if client is None:
-            from openai import OpenAI
-
             url = url or settings.get("PERESEARCH_LLM_URL")
             if not url:
                 raise RuntimeError("no model endpoint: set PERESEARCH_LLM_URL (see peresearch/settings.py)")
-            if native:                         # the official SDK; peresearch's own retries, as for the OpenAI client
-                import anthropic
-                client = anthropic.Anthropic(base_url=url.rstrip("/").removesuffix("/v1"),
-                                             api_key=key or settings.get("PERESEARCH_LLM_KEY") or None,
-                                             timeout=600.0, max_retries=0)
-            else:
-                client = OpenAI(base_url=url, api_key=key or settings.get("PERESEARCH_LLM_KEY") or "none",
-                                timeout=600.0, max_retries=0)
+            # the provider's official SDK; peresearch's own retries (each client is made with none)
+            client = PROTOCOLS[self.route].client(url, key or settings.get("PERESEARCH_LLM_KEY") or "")
             from urllib.parse import urlparse
             self.local = urlparse(url).hostname in ("localhost", "127.0.0.1", "::1")
         self.client, self.model = client, model or settings.get("PERESEARCH_LLM_MODEL") or None
@@ -715,7 +426,7 @@ class LLM:
         a longer conversation SILENTLY, its start first (recorded 2026-10-06: 36,015 tokens sent, 4,098 kept, HTTP
         200), so the agent must know this number."""
         http, base = getattr(self.client, "_client", None), str(getattr(self.client, "base_url", "")).rstrip("/")
-        if http is None or not base.endswith("/v1"):
+        if not self.compatibility.ollama_probe or http is None or not base.endswith("/v1"):
             return None
         root, name = base[:-3], self._name()
         names = {name, name + ":latest"}    # untagged "tiny" is listed "tiny:latest" (Ollama 0.32.15, 2026-10-06)
@@ -765,29 +476,17 @@ class LLM:
         thread, so the caller is free the moment stop() is true; the reader closes the stream itself at its next
         chunk (closing it from another thread does not wake a blocked read, and vLLM went on generating)."""
         kw["stream"] = True
-        responses, native = self.route == "responses", self.route == "anthropic"
-        if self.usage_option and not (responses or native):
+        if self.usage_option and self.route == "chat":
             kw["stream_options"] = {"include_usage": True}
-        read = _read_anthropic if native else _read_responses if responses else _read_stream
+        protocol = PROTOCOLS[self.route]
 
         def create():
             if self.on_request is not None:
                 from copy import deepcopy
                 self.on_request(deepcopy(kw["messages"]))
-            if native:                         # sampling and template fields are not sent: current Claude refuses them
-                request = anthropic_request(kw["messages"], kw.get("tools"), blocks or {})
-                request.update(model=kw["model"], cache_control={"type": "ephemeral"},
-                               max_tokens=kw.get("max_tokens") or kw.get("max_completion_tokens")
-                               or ANTHROPIC_REPLY_TOKENS)
-                return self.client.messages.stream(**request)
-            if not responses:
-                return self.client.chat.completions.create(**kw)
-            request = responses_request(kw["messages"], kw.get("tools"))
-            tokens = kw.get("max_tokens") or kw.get("max_completion_tokens")
-            request.update(model=kw["model"], stream=True, **({"max_output_tokens": tokens} if tokens else {}),
-                           **{k: kw[k] for k in ("temperature", "top_p") if k in kw})
-            return self.client.responses.create(**request)
+            return protocol.send(self.client, kw, blocks or {})
 
+        read = protocol.read
         on_text = self.on_text if self._drafting else None
         if stop is None:
             return read(create(), None, None, on_text)
@@ -819,9 +518,12 @@ class LLM:
 
     def chat(self, request: Request, thinking: bool | None = None, stop=None) -> Reply:
         """`stop()`, polled every 0.1 s, interrupts the request in flight or the wait before a retry."""
+        if self.route == "chat" and self.api == "auto" and hasattr(self.client, "responses") \
+                and self.profile().tools == "responses":
+            self.route = "responses"           # declared by the model's profile: no refused request first
         sent = [_outbound(m) for m in chat_messages(request)]
         tools = chat_tools(request.tools) or None
-        blocks = anthropic_blocks(request)
+        blocks = PROTOCOLS[self.route].extras(request)        # what earlier turns carry back to this protocol
         thinking = self.thinking if thinking is None else thinking
         optional = (self.template_kwargs, self.usage_option, self.reasoning_option, self._token_field)
         prompted = tools and (self.tool_mode or self.profile().tools) == "prompt"
@@ -856,7 +558,8 @@ class LLM:
         calls = [] if refusal else [ToolCall(c["id"], c["name"], *_arguments(c["args"], cut and i == len(r["calls"]) - 1),
                                              provider={"chat": {"extra_content": c["extra"]}} if c.get("extra") else {})
                  for i, c in enumerate(r["calls"])]
-        attached = {"anthropic": {"content": r["blocks"]}} if r.get("blocks") and r["calls"] else {}
+        attached = {"anthropic": {"content": r["blocks"]}} if r.get("blocks") and r["calls"] else \
+            {"gemini": {"steps": r["steps"]}} if r.get("steps") and r["calls"] else {}
         thought, text = split_reasoning(r["text"])
         reasoning = "\n".join(part for part in (r["reasoning"], thought) if part)
         if not calls and not refusal:       # recovered from the text or the reasoning (vllm#39056)
@@ -912,7 +615,7 @@ class LLM:
             # own field (checked on Ollama 0.32.15 with qwen3:0.6b, 2026-10-07); each field falls back separately
             payload = {}
             if thinking is not None and switchable:
-                if self.template_kwargs:
+                if self.template_kwargs and self.compatibility.thinking_switch != "reasoning_effort":
                     payload["chat_template_kwargs"] = {"enable_thinking": thinking}
                 if thinking is False and self.reasoning_option:
                     payload["reasoning_effort"] = "none"
@@ -962,7 +665,9 @@ class LLM:
                 # try always raises.
                 refused_here = self.local and type(e).__name__ == "APIConnectionError"
                 refusals += refused_here
-                if type(e).__name__ not in self.RETRYABLE or attempt == self.retries - 1 or refusals == 2:
+                retryable = type(e).__name__ in self.RETRYABLE or getattr(PROTOCOLS[self.route], "retryable",
+                                                                           lambda error: False)(e)
+                if not retryable or attempt == self.retries - 1 or refusals == 2:
                     raise
                 asked = None if refused_here else _asked_wait(e)
                 pause = 2.0 if refused_here else asked if asked is not None else self.wait * 2 ** attempt

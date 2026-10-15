@@ -7,7 +7,8 @@ import httpx
 from openai import BadRequestError, OpenAI
 import pytest
 
-from peresearch.llm import LLM, Reply, StreamCut, _read_stream, unsupported
+from peresearch.llm import LLM, Reply, StreamCut, unsupported
+from peresearch.protocols.chat import _read_stream
 from peresearch.mcp import MCPError, PROTOCOL, Server
 from tests.helpers import streamed
 from tests.test_llm import Stream, chunk, client_of

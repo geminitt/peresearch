@@ -1,7 +1,9 @@
 """What goes on the wire, pinned: a fixed two-question conversation (a tool round, then a question with the first
 turn as history) through the production Agent and LLM, over clients shaped like the SDKs, for each protocol and tool
 mode: Chat Completions with native tools (the call carrying a Gemini-style thought signature) and with tools in the
-prompt, the Responses API, and the Anthropic Messages API (a signed thinking block before the call).
+prompt, the Responses API, the Anthropic Messages API (a signed thinking block before the call), and Gemini's
+Interactions API (a signed thought before the call; added 2026-10-15 with its adapter, model gateway step 2: its
+expected bodies are checked against Google's documented shape in tests/test_llm_gemini_native.py).
 
 Written on 2026-10-14 before the gateway's internal message format replaced OpenAI's dicts (PLAN.md, model gateway
 step 1), so that the change is proven to leave every request body byte-identical. The baseline is
@@ -88,11 +90,30 @@ def anthropic_client(sent):
     return NS(messages=NS(stream=stream), models=NS(list=lambda: NS(data=[])), base_url="https://api.anthropic.com")
 
 
+def gemini_client(sent):
+    from tests.test_llm_gemini_native import answer, event, completed
+    first = [event(e) for e in (
+        {"event_type": "step.start", "index": 0, "step": {"type": "thought"}},
+        {"event_type": "step.delta", "index": 0, "delta": {"type": "thought_signature", "signature": "c2lnLTE="}},
+        {"event_type": "step.stop", "index": 0},
+        {"event_type": "step.start", "index": 1, "step": {"type": "function_call", "id": "fc1", "name": "search_notes",
+                                                           "arguments": {}}},
+        {"event_type": "step.delta", "index": 1, "delta": {"type": "arguments_delta", "arguments": CALL_ARGS}},
+        {"event_type": "step.stop", "index": 1})] + [completed("requires_action")]
+    replies = [first, answer(ANSWERS[0]), answer(ANSWERS[1])]
+
+    def create(**kw):
+        sent.append(kw)
+        return iter(replies.pop(0))
+    return NS(interactions=NS(create=create), models=NS(list=lambda: []))
+
+
 CASES = {
     "chat-native-tools": lambda sent: (chat_client(sent, chat_native_call), "m", "", {}),
     "chat-prompt-tools": lambda sent: (chat_client(sent, chat_prompt_call), "m", "", {"PERESEARCH_LLM_TOOLS": "prompt"}),
     "responses": lambda sent: (responses_client(sent), "m", "", {"PERESEARCH_LLM_API": "responses"}),
     "anthropic-messages": lambda sent: (anthropic_client(sent), "claude-opus-5-5", "anthropic", {}),
+    "gemini-interactions": lambda sent: (gemini_client(sent), "gemini-3.5-flash-lite", "google", {}),
 }
 
 

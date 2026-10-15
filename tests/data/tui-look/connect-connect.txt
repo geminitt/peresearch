@@ -17,7 +17,7 @@
               │   Ollama                             localhost:11434                 │
               │   LM Studio                          localhost:1234                  │
               │   vLLM, llama.cpp or another server  localhost:8000                  │
-              │   Another OpenAI-compatible endpoint…                                │
+              │   Add a provider…                                                    │
               │                                                                      │
               │ ↑↓ choose · enter next · esc back                                    │
               ╰──────────────────────────────────────────────────────────────────────╯

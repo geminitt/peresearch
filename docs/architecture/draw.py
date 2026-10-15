@@ -48,8 +48,9 @@ OPEN = {
        "vectors 4 KiB per chunk (1,024 dimensions); a corpus far larger than the owner's not measured",
     8: "grep walks the folders on every call (files.walk: 1.1–1.4 s of 2.2 s for 13,402 files on the owner's "
        "machine); speed on a large corpus and on macOS or Windows not measured",
-    9: "the endpoint is the user's (any OpenAI-compatible API); checked with small models on Ollama 0.32.15, "
-       "llama.cpp and vLLM 0.29 (2026-10-06, recorded in tests/data/servers); LM Studio and a provider's API not yet run",
+    9: "the endpoint is the user's, through its provider's protocol (Chat Completions, Responses, Anthropic Messages, "
+       "Gemini Interactions); checked with small models on Ollama 0.32.15, llama.cpp and vLLM 0.29 (2026-10-06, recorded "
+       "in tests/data/servers); LM Studio and the cloud APIs only against recorded or SDK-shaped fixtures",
     12: "encoding guess: a text under 64 bytes whose language is not recognized is read with replacement "
         "characters (said in the note); cp1252 and cp1250 are confused (measured)",
     13: "PDF reading order measured on 10 LaTeX arXiv papers only (prose of 69 two-column pages right); Word, "
@@ -268,7 +269,7 @@ def overview():
         "the user's /embeddings, /rerank", "texts redacted, audited", "none set: words alone (BM25)"], mark=5)
     gm = d.box("gm", 1195, 240, 160, 96, "guard", "Exit: model", "guard.outbound", ["secrets redacted,", "crossing audited"])
     gw = d.box("gw", 1195, 600, 160, 96, "guard", "Exit: web", "outbound_query", ["a query or URL with", "a secret: refused"])
-    em = d.box("em", 1390, 205, 250, 168, "external", "Model endpoint", "any OpenAI-compatible API", [
+    em = d.box("em", 1390, 205, 250, 168, "external", "Model endpoint", "its provider's protocol", [
         "a provider's, or the user's", "own server: Ollama, llama.cpp,", "LM Studio, vLLM…"], mark=9)
     ew = d.box("ew", 1390, 585, 250, 125, "external", "Web", None, [
         "the user's search MCP server", "web pages over HTTPS", "r.jina.ai (the user's key)"])
@@ -393,7 +394,7 @@ def llm_client():
         "refusal examples are never executed"])
     reply = d.box("reply", 470, 916, 460, 56, "end", "Reply: text, calls, reasoning, tokens, refusal")
     ep = d.box("ep", 990, 236, 480, 96, "external", "Model endpoint", None, [
-        "any OpenAI-compatible API: a provider's, or", "the user's server (Ollama, llama.cpp, vLLM…)"], mark=9)
+        "a provider's API, in its own protocol, or", "the user's server (Ollama, llama.cpp, vLLM…)"], mark=9)
     ctx = d.box("ctx", 990, 100, 480, 112, "llm", "Context the server runs with", "LLM.context_length (once)", [
         "setting > server: vLLM max_model_len, llama.cpp", "meta.n_ctx, Ollama /api/ps > the model table"])
     reader = d.box("reader", 990, 450, 480, 182, "llm", "_read_stream (reader thread)", "llm._read_stream", [
@@ -437,8 +438,8 @@ def llm_client():
 
 
 def model_frame():
-    d = Diagram("model-frame", "Model frame: one way in, any model",
-                f"What peresearch does for whatever model the user puts behind an OpenAI-compatible API; the author's "
+    d = Diagram("model-frame", "Model frame: one gateway, any provider",
+                f"What peresearch does for whatever model the user chooses, through its provider's protocol; the author's "
                 f"test tools are kept apart (bottom). {AS_OF}.", 1500, 1120)
     st = d.box("st", 30, 100, 400, 130, "store", "Settings", "connections.py · TUI /model", [
         "chat / embedding / reranker tabs; hidden API keys", "saved IDs or explicit GET /models; no inference",
@@ -463,7 +464,7 @@ def model_frame():
     ctx = d.box("ctx", 1050, 100, 420, 166, "llm", "The context it runs with", "LLM.context_length", [
         "PERESEARCH_LLM_CONTEXT, else the server's own", "(vLLM max_model_len, llama.cpp meta.n_ctx,",
         "Ollama /api/ps for the loaded model), else the", "model table's maximum (often far larger)"])
-    ep = d.box("ep", 1050, 340, 420, 148, "external", "Any OpenAI-compatible API", None, [
+    ep = d.box("ep", 1050, 340, 420, 148, "external", "The provider's API", None, [
         "a provider's API (models ready to use)", "or the user's own server, anywhere: Ollama,",
         "llama.cpp, LM Studio, vLLM, a rented GPU…", "(how it is hosted is the user's)"], mark=9)
     d.group(20, 880, 1460, 200, "Test tools (the author's, not part of peresearch)")
@@ -555,7 +556,7 @@ def harness_frame():
         "below what was sent; taken as its context,", "trimmed, resent; a context a server showed",
         "wins over a larger one known"])
     mdl = d.box("mdl", 1050, 760, 420, 130, "external", "The model", "llm.py (Model frame)", [
-        "any OpenAI-compatible API"])
+        "through its provider's protocol"])
     d.group(20, 1010, 1460, 150, "Test tools (the author's, not part of peresearch)")
     acc = d.box("acc", 40, 1045, 700, 96, "external", "Acceptance prompts", "eval/acceptance.py", [
         "the 10 approved prompts through the real agent: the harness's guarantees checked, the rules recorded"])
@@ -1003,7 +1004,7 @@ def threads():
 
 def serving():
     d = Diagram("serving", "Test tools: serving a model for the author's measurements (gate 3)",
-                f"deploy/, not part of peresearch (any OpenAI-compatible API is). The laptop runs a small model of the "
+                f"deploy/, not part of peresearch (any provider the gateway speaks to is). The laptop runs a small model of the "
                 f"same family with the Modal flags; Docker rebuilds the Modal image before any GPU time is paid for. "
                 f"{AS_OF}.", 1500, 1010)
     d.group(20, 92, 440, 760, "Laptop: pixi run chat-local")

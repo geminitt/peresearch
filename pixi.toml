@@ -28,6 +28,7 @@ textual = "*"
 regex = "*"            # zetokrag.core: Unicode scripts and grapheme clusters (came only through trafilatura)
 charset-normalizer = ">=3.4"   # zetokrag.parse: legacy encodings (came only through requests and trafilatura)
 anthropic = ">=1.13.0, <2"
+google-genai = ">=2.30, <3"
 
 # models: TEST TOOLS — the local embedders and reranker (zetokrag/models.py) for the gold ruler and the benchmarks;
 # no model runs inside peresearch (step 2, 2026-10-08: the user's endpoints, zetokrag/embed.py)

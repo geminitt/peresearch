@@ -9,7 +9,8 @@ import httpx
 import pytest
 
 from peresearch.agent import Agent
-from peresearch.llm import Reply, chat_messages, chat_tools
+from peresearch.llm import Reply
+from peresearch.protocols.chat import chat_messages, chat_tools
 from peresearch.messages import Message, Request, Text, Tool, ToolCall
 from peresearch.tools import Toolbox
 from peresearch.mcp import MCPError

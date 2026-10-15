@@ -23,7 +23,8 @@ class Connection:
     url: str
     key: str = field(default="", repr=False)
     models: list[str] = field(default_factory=list)
-    provider: str = ""                 # providers.PROVIDERS id; "" for any OpenAI-compatible endpoint
+    provider: str = ""                 # providers.PROVIDERS id; "" for a provider the user added
+    protocol: str = ""                 # what a provider the user added speaks (providers.PROTOCOLS); "" otherwise
 
 
 def validate_url(url: str) -> str:
@@ -54,8 +55,10 @@ def load() -> list[Connection]:
             for item in raw["connections"]:
                 entry = Connection(**item)
                 if entry.role not in ROLES or not all(isinstance(getattr(entry, key), str)
-                                                     for key in ("id", "name", "url", "key", "provider")):
+                                                     for key in ("id", "name", "url", "key", "provider", "protocol")):
                     raise ValueError("invalid connection")
+                if entry.protocol not in ("", *providers.PROTOCOLS):
+                    raise ValueError("invalid protocol")
                 if not isinstance(entry.models, list) or not all(isinstance(model, str) for model in entry.models):
                     raise ValueError("invalid model list")
                 validate_url(entry.url)
@@ -103,30 +106,43 @@ def save(entries: list[Connection]) -> None:
         temp.unlink(missing_ok=True)
 
 
-def add(role: str, name: str, url: str, key: str, model: str = "", provider: str = "") -> Connection:
+def check_protocol(protocol: str) -> str:
+    protocol = protocol.strip().lower()
+    if protocol not in providers.PROTOCOLS:
+        raise ValueError("The protocol must be one of " + ", ".join(providers.PROTOCOLS[:-1]) + " or "
+                         + providers.PROTOCOLS[-1] + ".")
+    return protocol
+
+
+def add(role: str, name: str, url: str, key: str, model: str = "", provider: str = "", protocol: str = "") -> Connection:
     if role not in ROLES:
         raise ValueError("Unknown model role.")
     url = validate_url(url)
+    protocol = check_protocol(protocol) if protocol else ""
     entry = Connection(uuid.uuid4().hex, role, name.strip() or host(url), url, key, [model.strip()] if model.strip() else [],
-                       provider or providers.guess(url))
+                       "" if protocol else provider or providers.guess(url), protocol)
     entries = load()
     entries.append(entry)
     save(entries)
     return entry
 
 
-def connect(role: str, name: str, url: str, key: str, provider: str = "") -> Connection:
-    """The saved connection for this role, endpoint and key, or a new one: connecting again does not add a copy."""
+def connect(role: str, name: str, url: str, key: str, provider: str = "", protocol: str = "") -> Connection:
+    """The saved connection for this role, endpoint and key (and protocol, for a provider the user added), or a new
+    one: connecting again does not add a copy."""
     url = validate_url(url)
-    found = next((entry for entry in load() if entry.role == role and entry.url == url and entry.key == key), None)
-    return found or add(role, name, url, key, provider=provider)
+    protocol = check_protocol(protocol) if protocol else ""
+    found = next((entry for entry in load() if entry.role == role and entry.url == url and entry.key == key
+                  and entry.protocol == protocol), None)
+    return found or add(role, name, url, key, provider=provider, protocol=protocol)
 
 
 def selection(entry: Connection, model: str) -> dict[str, str]:
     prefix = ROLES[entry.role][1]
     chosen = {prefix + "_URL": entry.url, prefix + "_MODEL": model, prefix + "_KEY": entry.key}
-    if entry.role == "chat":                   # the gateway's route follows the provider (llm.LLM)
-        chosen["PERESEARCH_LLM_PROVIDER"] = entry.provider or providers.guess(entry.url)
+    if entry.role == "chat":                   # the gateway's route follows the provider, or the protocol the user named
+        chosen["PERESEARCH_LLM_PROVIDER"] = "" if entry.protocol else entry.provider or providers.guess(entry.url)
+        chosen["PERESEARCH_LLM_PROTOCOL"] = entry.protocol
     return chosen
 
 
@@ -134,17 +150,25 @@ def discover(entry: Connection, client=None) -> list[str]:
     """List model IDs only, without submitting prompts, embeddings or reranking requests; through the provider's
     own SDK (Anthropic's Models API for Claude, the OpenAI-compatible /models for every other)."""
     owned = client is None
-    if owned and providers.protocol(entry.provider or providers.guess(entry.url)) == "anthropic":
+    protocol = providers.protocol(entry.provider or ("" if entry.protocol else providers.guess(entry.url)),
+                                  entry.protocol) if entry.role == "chat" else "chat"
+    if owned and protocol == "anthropic":
         import anthropic
         client = anthropic.Anthropic(base_url=entry.url.rstrip("/").removesuffix("/v1"), api_key=entry.key or None,
                                      timeout=15, max_retries=0)
+    elif owned and protocol == "gemini":
+        from peresearch.protocols import gemini
+        client = gemini.client(entry.url, entry.key)
     elif owned:
         from openai import OpenAI
         client = OpenAI(base_url=entry.url, api_key=entry.key or "none", timeout=15, max_retries=0)
     try:
+        if protocol == "gemini":
+            from peresearch.protocols import gemini
+            return gemini.list_models(client)
         return sorted({item.id for item in client.models.list().data if isinstance(item.id, str) and item.id})
     finally:
-        if owned:
+        if owned and callable(getattr(client, "close", None)):
             client.close()
 
 

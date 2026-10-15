@@ -21,7 +21,7 @@ import pytest
 from hypothesis import HealthCheck, assume, example, given, settings
 from hypothesis import strategies as st
 
-from peresearch.llm import chat_tools
+from peresearch.protocols.chat import chat_tools
 from peresearch import files as files_module, guard, tools
 from peresearch.zetokrag import parse
 from peresearch.tools import Sources, Toolbox

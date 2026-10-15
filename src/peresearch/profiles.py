@@ -32,7 +32,10 @@ SOURCE = "https://models.dev/api.json"
 
 # Authors' published recommendations and switches, by family (models.dev family names). Qwen3 (and 3.5/3.6):
 # temperature 0.6 and top_p 0.95 for thinking mode, reasoning switched by the chat template's enable_thinking.
-FAMILIES = {"qwen": {"thinking": "template", "temperature": 0.6, "top_p": 0.95}}
+FAMILIES = {"qwen": {"thinking": "template", "temperature": 0.6, "top_p": 0.95},
+            # tool calling only through the Responses API: OpenAI's page for GPT 6.1 Sol (read 2026-10-12,
+            # developers.openai.com/api/docs/models/gpt-6.1-sol); the gateway routes it there from its first request
+            "gpt-sol": {"tools": "responses"}}
 COMPLETION_TOKEN_FAMILIES = frozenset({"o", "o-mini", "o-pro", "gpt", "gpt-mini", "gpt-nano", "gpt-pro",
                                      "gpt-codex", "gpt-codex-spark", "gpt-astra", "gpt-luna", "gpt-sol", "gpt-terra"})
 
@@ -50,7 +53,8 @@ def norm(name: str) -> str:
 class Profile:
     model: str = ""
     family: str = ""
-    tools: str = "native"                 # native: the API's tool calls; prompt: described in the system prompt
+    tools: str = "native"                 # native: the API's tool calls; prompt: described in the system prompt;
+                                          # responses: native, but only through OpenAI's Responses API
     reasoning: bool = False               # models.dev's word, kept but not relied on: it says no of Qwen3.5-0.8B,
                                           # which reasons (2026-10-06)
     thinking: str = ""                    # how its reasoning is switched: "template" (enable_thinking) or "" (not)

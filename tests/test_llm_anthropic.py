@@ -11,7 +11,7 @@ from types import SimpleNamespace as NS
 
 import pytest
 
-from peresearch import providers
+from peresearch import profiles, providers
 from peresearch.llm import LLM
 from peresearch.messages import Message, Request
 from tests.helpers import request
@@ -90,8 +90,8 @@ def test_the_registry_names_each_provider_and_its_protocol():
     anthropic = providers.get("anthropic")
     assert (anthropic.url, anthropic.protocol, anthropic.roles) == ("https://api.anthropic.com", "anthropic", ("chat",))
     google = providers.get("google")
-    assert google.url == "https://generativelanguage.googleapis.com/v1beta/openai/" and "thought-signatures" in google.quirks
-    assert providers.get("openai").protocol == "chat" and "responses-for-tools" in providers.get("openai").quirks
+    assert google.url == "https://generativelanguage.googleapis.com/v1beta/openai/" and google.protocol == "gemini"
+    assert providers.get("openai").protocol == "chat" and profiles.profile("gpt-6.1-sol").tools == "responses"
     assert providers.guess("https://api.anthropic.com/v1") == "anthropic" and providers.guess("http://localhost:8000/v1") == ""
 
 
@@ -149,7 +149,7 @@ def test_a_refusal_a_cut_and_the_context_are_reported(home):
 
 
 def test_consecutive_tool_results_go_back_in_one_user_message(home):
-    from peresearch.llm import anthropic_request
+    from peresearch.protocols.anthropic import anthropic_request
     messages = QUESTION + [{"role": "assistant", "content": "", "tool_calls": [
                                {"id": "a", "type": "function", "function": {"name": "x", "arguments": "{}"}},
                                {"id": "b", "type": "function", "function": {"name": "y", "arguments": '{"q": 1}'}}]},
@@ -169,24 +169,28 @@ def test_consecutive_tool_results_go_back_in_one_user_message(home):
 # Paths the mutation run of the registry and the Anthropic route found untested (2026-10-14).
 
 from peresearch import connections, settings
-from peresearch.llm import Interrupted, _read_anthropic, anthropic_request
+from peresearch.llm import Interrupted
+from peresearch.protocols.anthropic import _read_anthropic, anthropic_request
 
 
 def test_the_registry_table_is_exact():
-    assert [(p.id, p.name, p.url, p.protocol, p.kind, p.roles, sorted(p.quirks)) for p in providers.PROVIDERS] == [
-        ("openai", "OpenAI", "https://api.openai.com/v1", "chat", "cloud", ("chat", "embedding"), ["responses-for-tools"]),
-        ("anthropic", "Anthropic (Claude)", "https://api.anthropic.com", "anthropic", "cloud", ("chat",), []),
-        ("google", "Google AI Studio (Gemini)", "https://generativelanguage.googleapis.com/v1beta/openai/", "chat",
-         "cloud", ("chat", "embedding"), ["thought-signatures"]),
-        ("openrouter", "OpenRouter", "https://openrouter.ai/api/v1", "chat", "cloud", ("chat",), []),
-        ("groq", "Groq", "https://api.groq.com/openai/v1", "chat", "cloud", ("chat",), []),
-        ("ollama", "Ollama", "http://localhost:11434/v1", "chat", "local", ("chat", "embedding"), []),
-        ("lmstudio", "LM Studio", "http://localhost:1234/v1", "chat", "local", ("chat", "embedding"), []),
+    plain, local = providers.Compatibility(), providers.Compatibility(ollama_probe=True)
+    assert [(p.id, p.name, p.url, p.protocol, p.kind, p.roles, p.compatibility) for p in providers.PROVIDERS] == [
+        ("openai", "OpenAI", "https://api.openai.com/v1", "chat", "cloud", ("chat", "embedding"), plain),
+        ("anthropic", "Anthropic (Claude)", "https://api.anthropic.com", "anthropic", "cloud", ("chat",), plain),
+        ("google", "Google AI Studio (Gemini)", "https://generativelanguage.googleapis.com/v1beta/openai/", "gemini",
+         "cloud", ("chat", "embedding"), plain),
+        ("openrouter", "OpenRouter", "https://openrouter.ai/api/v1", "chat", "cloud", ("chat",), plain),
+        ("groq", "Groq", "https://api.groq.com/openai/v1", "chat", "cloud", ("chat",), plain),
+        ("ollama", "Ollama", "http://localhost:11434/v1", "chat", "local", ("chat", "embedding"),
+         providers.Compatibility(thinking_switch="reasoning_effort", ollama_probe=True)),
+        ("lmstudio", "LM Studio", "http://localhost:1234/v1", "chat", "local", ("chat", "embedding"), local),
         ("local", "vLLM, llama.cpp or another server", "http://localhost:8000/v1", "chat", "local",
-         ("chat", "embedding", "rerank"), [])]
+         ("chat", "embedding", "rerank"), local)]
     assert providers.get("") is None and providers.get(None) is None and providers.get("nope") is None
     assert providers.guess("") == providers.guess(None) == "" and providers.guess("not a url") == ""
     assert providers.protocol("nope") == "chat" and providers.protocol("anthropic") == "anthropic"
+    assert providers.protocol("", "gemini") == "gemini" and providers.protocol("", "bogus") == "chat"
     assert providers.guess("https://openrouter.ai/api/v1") == "openrouter"
 
 

@@ -22,7 +22,7 @@ searches the web, and cites the sources it uses.**
 | Part | What it does |
 |---|---|
 | **ZetokRAG** (zero-token RAG) | Finds evidence in your own files without calling an LLM: BM25 (on words as typed), plus — when you set them — the embeddings and the reranker of your own endpoints (min-max score fusion, the top 30 reranked). No model runs inside peresearch; with no endpoint the search goes by words alone. Excerpts are quoted verbatim with their source, ranked, never cut by a score. |
-| **Agent** | One loop, written out rather than taken from a framework, running on your machine; the model is the one you choose, reached through an OpenAI-compatible API (see
+| **Agent** | One loop, written out rather than taken from a framework, running on your machine; the model is the one you choose, reached through the protocol its provider speaks (see
 [The model](#the-model)). The model reads the message first and decides what it needs: a greeting gets an answer, no tools; a question about your work sends it through your folders (tree, search, an overview of the documents on a topic, grep, glob, read); before the web it records what your files cover and what is missing, and the web (through the search server you add, below) is searched for what is missing — the web search is refused until then. Limits on steps, searches and pages; the time budget is checked between rounds. When both your files and the web are used, the answer says which point comes from which; a rule-based check verifies cited source IDs and nearby quoted passages. It does not establish factual support for every claim. |
 | **Interface** | `peresearch` opens the Textual TUI. Floating windows group folders, models and APIs, settings, status and conversations. Controls use local shortcuts and keep the transcript for research. Enter sends; Ctrl+Enter adds a line; @path and Tab complete file mentions; Esc interrupts; Ctrl+Q quits. Citations open source previews with safe file/page links. The terminal palette, UniKey input, multiline paste, reasoning display and text selection have dedicated tests. `peresearch ask` remains available for one scripted question. |
 | **Guard** | Declared folders are indexed and read freely; anything else in your home folder is read only after you allow it in a dialog (once, or that folder for the session); hidden folders and credentials are never read or indexed, and everything that leaves the machine passes one filter. |
@@ -107,9 +107,10 @@ only inside their window. Esc closes the current window and returns to the previ
 | `/help` | Command and keyboard reference. |
 
 Connecting a model (A) takes three steps, as in OpenCode: choose where it runs (a saved connection, OpenAI, Anthropic,
-Google AI Studio, OpenRouter, Groq, Ollama, LM Studio, another local server or any OpenAI-compatible endpoint; each role
-lists only the providers that serve it); give only what that place needs (a
-cloud's API key, a local server's address); choose the model from the IDs the endpoint lists, typing to filter them.
+Google AI Studio, OpenRouter, Groq, Ollama, LM Studio, another local server, or "Add a provider…" for one the list does
+not have; each role lists only the providers that serve it); give only what that place needs (a cloud's API key, a
+local server's address; for a provider you add, its name, the protocol it speaks, its endpoint and key); choose the
+model from the IDs the endpoint lists, typing to filter them.
 For a chat model the list notes what the pinned models.dev snapshot says of it (tool calls, context) or that it does
 not know it; no listed model is hidden.
 Keys are hidden. Typing sends nothing; Enter on the second step saves the connection and requests its model IDs
@@ -193,20 +194,31 @@ without reporting it to the client; the count cannot detect that. In particular,
 
 ### The model
 
-peresearch reaches a model one way: an **OpenAI-compatible chat API** (a base URL ending in `/v1`). Behind it can be
-a provider's API, or a model you serve yourself on this machine or another — Ollama, llama.cpp's `llama-server`, LM
-Studio, vLLM. `/model` groups model roles and APIs. Add a connection with A, then select a listed or manually
-entered model ID with Enter. A model that takes tools only through OpenAI's Responses API (OpenAI documents GPT 6.1 Sol
-so) is reached through that API automatically: when OpenAI's endpoint refuses the tools of a chat request, the same
-request goes through Responses, with nothing stored at the provider, and that route is kept. `PERESEARCH_LLM_API` can
-set it (`auto`, `chat`, `responses`). A server that exposes only one model can also retain the CLI's empty-model setting. `/check` explicitly tests the model after confirmation: whether and how it calls tools, where its reasoning comes back, the context it runs with, its speed.
+peresearch reaches a model through the protocol its provider speaks, one adapter each: **OpenAI Chat Completions**
+(also every compatible server: Ollama, llama.cpp's `llama-server`, LM Studio, vLLM, OpenRouter, Groq), **OpenAI's
+Responses API**, **Anthropic Messages** and **Google's Interactions API** (Gemini). The providers peresearch knows
+declare their protocol and how their servers differ (`src/peresearch/providers.py`); a provider you add names its own.
+`/model` groups model roles and APIs. Add a connection with A, then select a listed or manually entered model ID with
+Enter. A model that takes tools only through OpenAI's Responses API (OpenAI documents GPT 6.1 Sol so) goes through that
+API from its first request, with nothing stored at the provider; an unknown OpenAI model whose chat request has its
+tools refused is sent through Responses too. `PERESEARCH_LLM_API` can set it (`auto`, `chat`, `responses`). A server
+that exposes only one model can also retain the CLI's empty-model setting. `/check` explicitly tests the model after
+confirmation: whether and how it calls tools, where its reasoning comes back, the context it runs with, its speed.
 
 | Where the model is | Endpoint, for example | Model name |
 |---|---|---|
 | Ollama | `http://localhost:11434/v1` | as `ollama list` shows it, e.g. `qwen3:8b` |
 | llama.cpp `llama-server` | `http://localhost:8080/v1` (the port it was started on) | empty: it serves one model |
 | vLLM | `http://localhost:8000/v1` | empty, or its `--served-model-name` |
-| A provider | the provider's OpenAI-compatible URL, with its API key | the provider's name for the model |
+| A provider in the list | its preset endpoint, with its API key | the provider's name for the model |
+| A provider you add | its endpoint, its key, and its protocol (`chat`, `responses`, `anthropic` or `gemini`) | its name for the model |
+
+> **Warning — Gemini through the Interactions API.** Google recommends this API "for all new projects" and calls
+> generateContent legacy (read 2026-10-15), but it changed in May 2026 and OpenCode still offers it as an initial
+> protocol. peresearch always sends `store=false`: Google would otherwise keep each interaction 55 days on paid tiers
+> (1 day on the free tier). The whole conversation is therefore sent again each turn; whether Google's implicit
+> caching applies then is not known, so each turn may bill the whole history. This adapter is checked against
+> fixtures built from the SDK's types, not yet against Google. On the free tier Google may use what you send.
 
 Models differ in what they send back; peresearch handles the differences, not the user:
 
@@ -222,7 +234,8 @@ Models differ in what they send back; peresearch handles the differences, not th
 Checked on real servers with small models (the exchanges are recorded in `tests/data/servers/` and replayed by the
 tests): Ollama 0.32.15 (qwen3:0.6b, llama3.2:1b, gemma3:1b), llama.cpp (Qwen3-0.6B, Llama-3.2-1B-Instruct, with and
 without `--jinja`), vLLM 0.29.0 (Qwen3.5-0.8B, as served and without its tool-call or reasoning parser). Not tried
-yet: LM Studio, a provider's API.
+yet: LM Studio, any cloud provider's API (OpenAI, Anthropic and Google are checked against recorded or SDK-shaped
+fixtures only).
 
 > **Note:** Ollama cuts a conversation longer than the model's context without an error, from its start (where the
 > agent's instructions are). peresearch reads the context Ollama runs the model with and fits the conversation

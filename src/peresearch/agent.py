@@ -26,7 +26,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from peresearch import guard, settings
-from peresearch.llm import Interrupted, request_size, too_long
+from peresearch.llm import Interrupted, too_long
+from peresearch.protocols.chat import request_size
 from peresearch.messages import Message, Request, Tool
 from peresearch.tools import _whole, Source, Toolbox
 

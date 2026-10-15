@@ -24,7 +24,8 @@ from hypothesis import strategies as st
 from peresearch import agent as agent_module
 from peresearch.agent import (Agent, Limits, ResultStore, check, conversations, find_conversation, history_file,
                               read_summary, read_turns, usage, _summary, _wrap)
-from peresearch.llm import LLM, Interrupted, Reply, ToolCall, chat_tools, request_size
+from peresearch.llm import LLM, Interrupted, Reply, ToolCall
+from peresearch.protocols.chat import chat_tools, request_size
 from peresearch.tools import Source, Sources, Toolbox
 from peresearch.messages import Message, Text, Tool
 from tests.helpers import DictModel, agent, notes, request, streamed, toolbox

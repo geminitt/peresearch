@@ -271,7 +271,7 @@ class FolderWindow(Window):
 
 class ConnectWindow(Window):
     """Step 1 of connecting a model: where it runs — a connection already saved for this role, a cloud, a server on
-    this machine, or any other OpenAI-compatible endpoint."""
+    this machine, or a provider the user adds (its name, protocol, endpoint and key)."""
 
     def __init__(self, role: str, discover, chosen):
         super().__init__(id="connect-window")
@@ -310,7 +310,7 @@ class ConnectWindow(Window):
                     where = "" if kind == "cloud" else "  " + p.url.split("//")[1].removesuffix("/v1")
                     rows.append(Option(row(Text.assemble(p.name.ljust(width) if where else p.name, (where, "dim"))),
                                        id="preset:" + p.id))
-        rows.append(Option(row("Another OpenAI-compatible endpoint…"), id="other"))
+        rows.append(Option(row("Add a provider…"), id="other"))
         listing.add_options(rows)
         listing.highlighted = next(i for i, option in enumerate(rows) if not option.disabled)
         listing.focus()
@@ -332,9 +332,9 @@ class ConnectWindow(Window):
 
 
 class CredentialWindow(Window):
-    """Step 2: only what the place needs — a cloud's API key, a local server's address, or both for another
-    endpoint. Enter saves the connection and requests its model IDs (no prompt is sent); a list that cannot be had
-    leaves a known ID to enter."""
+    """Step 2: only what the place needs — a cloud's API key, a local server's address, or for a provider the user
+    adds its name, protocol (chat models only: embeddings and rerankers speak one), endpoint and key. Enter saves the
+    connection and requests its model IDs (no prompt is sent); a list that cannot be had leaves a known ID to enter."""
 
     BINDINGS = Window.BINDINGS + [Binding("ctrl+s", "connect", show=False), Binding("ctrl+t", "enter_id", show=False, priority=True)]
 
@@ -347,13 +347,20 @@ class CredentialWindow(Window):
         self.entry, self._generation = saved, 0
 
     def compose(self) -> ComposeResult:
-        title = self.place or "Another OpenAI-compatible endpoint"
+        title = self.place or "Add a provider"
         with Vertical(id="window"):
             yield self.title_bar(title + " · " + connections.ROLES[self.role][0])
             with Vertical(id="window-body"):
+                if self.kind == "other":
+                    yield Field("Name", id="api-name", placeholder="how the list shows it")
+                    if self.role == "chat":
+                        yield Field("Protocol", id="api-protocol", placeholder="chat",
+                                    note="What it speaks: chat (OpenAI Chat Completions and compatible servers), "
+                                         "responses (OpenAI), anthropic or gemini.")
                 if self.kind in ("local", "other"):
                     yield Field("Endpoint", self.url, id="api-url", placeholder="http://…/v1",
-                                note="Where the server answers: an OpenAI-compatible endpoint ending in /v1.")
+                                note="Where the server answers." if self.kind == "other" else
+                                     "Where the server answers: an OpenAI-compatible endpoint ending in /v1.")
                 if self.kind in ("cloud", "other"):
                     yield Field("API key", id="api-key", password=True,
                                 placeholder="required" if self.kind == "cloud" else "empty: no authentication",
@@ -385,6 +392,9 @@ class CredentialWindow(Window):
             raise ValueError("Enter the API key of " + self.place + ".")
         if self.kind == "saved":
             return next(e for e in connections.load() if e.id == self.entry.id)
+        if self.kind == "other":
+            protocol = (self._value("protocol") or "chat") if self.role == "chat" else ""
+            return connections.connect(self.role, self._value("name"), url, key, protocol=protocol)
         return connections.connect(self.role, self.place, url, key, provider=self.provider)
 
     def action_connect(self) -> None:

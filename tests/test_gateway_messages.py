@@ -10,7 +10,8 @@ import re
 from pathlib import Path
 
 from peresearch import agent as agent_module
-from peresearch.llm import CHECK_REQUEST, LLM, REASONING_PROBE, Reply, chat_messages, chat_tools, request_size
+from peresearch.llm import CHECK_REQUEST, LLM, REASONING_PROBE, Reply
+from peresearch.protocols.chat import chat_messages, chat_tools, request_size
 from peresearch.messages import Message, Reasoning, Request, Text, Tool, ToolCall, ToolResult
 from tests.test_llm_anthropic import Block, THINK, CALL, claude, reply
 from tests.test_llm_gemini import SIGNATURE, chunks_with_call, gemini

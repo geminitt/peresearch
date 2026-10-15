@@ -178,7 +178,8 @@ def test_another_server_refusing_tools_goes_straight_to_the_prompt(home):
 
 # Paths a mutation run of the route found untested (2026-10-14): request shapes, events, failures and settings.
 
-from peresearch.llm import Interrupted, StreamCut, _read_responses, responses_request
+from peresearch.llm import Interrupted, StreamCut
+from peresearch.protocols.responses import _read_responses, responses_request
 
 
 def test_a_request_keeps_every_part_and_fills_what_is_missing():
