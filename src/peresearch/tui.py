@@ -254,10 +254,17 @@ def render(answer, reasoning: bool = False) -> str:
     text = _CITE.sub(lambda m: ", ".join(f"[{i.strip()}](source:{i.strip()})" for i in m.group(1).split(",")),
                      guard.sanitize(answer.text or "_(no answer)_"))
     parts += [text, ""]
-    if answer.sources:
-        parts.append("**Sources read**")
+    # the sources the answer cites; how many others were read (owner, 2026-10-22: /sources lists every one)
+    cited = {i.strip() for m in _CITE.finditer(answer.text or "") for i in m.group(1).split(",")}
+    shown = [s for s in answer.sources.values() if s.id in cited]
+    if shown:
+        parts.append("**Sources cited**")
         parts += [f"- [{s.id}](source:{s.id}) {guard.sanitize(home_path(s.where))}"
-                  + (f" — {guard.sanitize(s.title)}" if s.title else "") for s in answer.sources.values()]
+                  + (f" — {guard.sanitize(s.title)}" if s.title else "") for s in shown]
+    others = len(answer.sources) - len(shown)
+    if others:
+        parts.append(f"\n_{others:,} {'other ' if shown else ''}source{'s' * (others != 1)} read"   # not in the list
+                     f"{'' if shown else ', none cited'}: /sources lists them._")
     c = answer.check
     if c.unknown_ids:
         parts.append(f"\n> **Check:** citation evidence unavailable; read again: {', '.join(c.unknown_ids)}")

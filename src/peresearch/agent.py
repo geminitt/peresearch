@@ -1094,6 +1094,7 @@ class Agent:
                 if out.kept:                # recall: a kept result, read back from the store
                     ref, offset = out.kept.ref, out.kept.start
                     self._kept[c.id] = self._recalled
+                    self.on_event("result", f"{ref} from character {offset:,} · {_summary(result)}")
                 elif out.store:
                     ref = self.results().put(c.name, c.args, result)    # kept whole: restorable (ResultStore)
                     if c.name in LOCAL_TOOLS and hasattr(tb, "last_scope"):

@@ -39,7 +39,7 @@ def test_the_terminal_interface_shows_tools_answer_and_sources(home, notes):
     shown = app.shown
     assert "❯ BPE merges pairs?" in shown and "● grep(" in shown and "⎿" in shown
     assert "search_notes" not in shown                                   # only what the model chose to call
-    assert "Your notes cover it [N1](source:N1)." in shown and "**Sources read**" in shown and "answer" in events
+    assert "Your notes cover it [N1](source:N1)." in shown and "**Sources cited**" in shown and "answer" in events
 
 
 def test_the_screen_at_start(home, notes):

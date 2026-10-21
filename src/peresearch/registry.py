@@ -157,7 +157,7 @@ class Registry:
         refused = self._budget(s, args, budget) if budget is not None else ""
         if refused:
             return Outcome(refused, refused="budget")
-        if on_run and s.store:
+        if on_run:                            # recall too: the interface shows each call that runs
             on_run(name, args)
         got = self._run(s, kwargs, budget)
         if isinstance(got, Kept):

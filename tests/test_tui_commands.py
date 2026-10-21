@@ -267,7 +267,7 @@ def test_resume_shows_a_conversation_as_it_was_and_continues_it(home, notes, mon
     assert app.old == [
         ("note", f"Resumed the conversation of {minute(1_000_000_000)} (1 question); the next question continues it."),
         ("question", "❯ What is [b]BPE[/b]?"),
-        ("page", "See [N1](source:N1) and [W1](source:W1).\n<sub>kept</sub>\n\n**Sources read**\n"
+        ("page", "See [N1](source:N1) and [W1](source:W1).\n<sub>kept</sub>\n\n**Sources cited**\n"
                  "- [N1](source:N1) /n/bpe.md:L3-5 — Evidence identity unknown; read again\n"
                  "- [W1](source:W1) https://example.org/a:L3 — Evidence identity unknown; read again\n"
                  "\n> **Check:** citation evidence unavailable; read again: N1, W1\n")]

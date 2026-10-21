@@ -16,7 +16,7 @@
    │ for _ in range(merges):
    │     vocab.add(most_frequent(pairs))
 
-   Sources read
+   Sources cited
 
    • N1 ~/notes/bpe.md:L1-5 — Tokenization
 

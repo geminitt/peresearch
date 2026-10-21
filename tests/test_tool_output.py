@@ -204,3 +204,17 @@ def test_sizes_count_a_file_name_that_is_not_utf8(tmp_path):
     assert head(name * 3, 18) == name * 2
     (tmp_path / name).write_text("hit\n")
     assert Toolbox(None, None, roots=[tmp_path]).grep("hit").endswith(":L1: hit")
+
+
+def test_recall_shows_as_a_tool_line_and_says_which_part_it_read(home):
+    """Owner, 2026-10-22: the interface showed nothing when the model read on with recall."""
+    result = "".join(f"line {i:05d} " + "x" * 40 + "\n" for i in range(3_000))
+    tb = FakeToolbox()
+    tb.call = lambda name, args: result
+    events = []
+    model = RoomyModel([Reply("", [ToolCall("c1", "tree", {})]),
+                        Reply("", [ToolCall("c2", "recall", {"ref": "R1", "from": 51_000})]), Reply("done")])
+    Agent(model, tb, record=True, on_event=lambda kind, detail: events.append((kind, detail))).ask("q")
+    shown = [(k, d) for k, d in events if k in ("tool", "result")]
+    assert shown[2] == ("tool", 'recall("R1", 51000)')
+    assert shown[3][0] == "result" and shown[3][1].startswith("R1 from character 51,000 · ")

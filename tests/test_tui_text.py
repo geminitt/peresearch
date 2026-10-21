@@ -42,20 +42,27 @@ def test_an_answer_is_rendered_with_links_sources_checks_and_why_it_stopped(text
     answer = Answer(text, sources, Check(unknown, quotes, uncited), steps, tokens // 2, tokens - tokens // 2, stopped)
     out = render(answer)
     assert not CONTROL.search(out.replace("\n", "")), "terminal control characters must never be drawn"
-    assert not re.search(r"\[[NW]\d+\](?!\()", out.split("\n**Sources read**")[0])    # every citation is a link
+    assert not re.search(r"\[[NW]\d+\](?!\()", out.split("\n**Sources cited**")[0].split("\n_")[0])   # every citation a link
     assert out == "\n".join(expected_render(text, srcs, unknown, quotes, uncited, stopped, steps, tokens))
 
 
 def expected_render(text, srcs, unknown, quotes, uncited, stopped, steps, tokens):
-    """The layout, line by line: the answer with its citations as links, a blank line, each source once in order
-    (with its title when it has one), what the check found, the no-source remark, why it stopped, the counts."""
+    """The layout, line by line: the answer with its citations as links, a blank line, each source it cites once in
+    order (with its title when it has one), how many other sources were read (owner, 2026-10-22: /sources lists them),
+    what the check found, the no-source remark, why it stopped, the counts."""
     clean = tui.guard.sanitize
     lines = [tui._CITE.sub(lambda m: ", ".join(f"[{i.strip()}](source:{i.strip()})" for i in m.group(1).split(",")),
                            clean(text or "_(no answer)_")), ""]
-    if srcs:
-        lines += ["**Sources read**"] + [f"- [{k}](source:{k}) {clean(tui.home_path(where))}"
-                                         + (f" — {clean(title)}" if title else "")
-                                    for k, (where, title) in srcs.items()]
+    cited = {i.strip() for m in tui._CITE.finditer(text) for i in m.group(1).split(",")}
+    shown = {k: v for k, v in srcs.items() if k in cited}
+    if shown:
+        lines += ["**Sources cited**"] + [f"- [{k}](source:{k}) {clean(tui.home_path(where))}"
+                                          + (f" — {clean(title)}" if title else "")
+                                          for k, (where, title) in shown.items()]
+    others = len(srcs) - len(shown)
+    if others:
+        lines.append(f"\n_{others:,} {'other ' if shown else ''}source{'s' * (others != 1)} read"
+                     f"{'' if shown else ', none cited'}: /sources lists them._")
     if unknown:
         lines.append("\n> **Check:** citation evidence unavailable; read again: " + ", ".join(unknown))
     if quotes:
