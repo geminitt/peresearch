@@ -3,8 +3,8 @@ name, description, argument schema, permission group and function — and every 
 order: its arguments checked against the schema, its permission, the question's budget, the run (errors as text,
 HTTP 429 waited out), each refusal said in words the model can act on.
 
-Bounding a result (collected, paged, cut to the context) is not decided here: the tools stop collecting, the agent
-keeps the whole and shows a page."""
+Bounding a result, layer 1: a tool stops collecting past COLLECT_BYTES and says what it left; the registry cuts what a
+tool still returns past it. Layers 2 and 3 (a page at a time, cut to the context room) are the agent's."""
 
 import time
 from dataclasses import dataclass, field
@@ -16,6 +16,10 @@ from peresearch.messages import Tool
 GROUPS = ("files", "web")           # files: the declared folders (outside them the user is asked, by guard); web
 RATE_WAITS = (1.0, 2.0)             # seconds before the 2nd and 3rd attempt when a service says no Retry-After
 LONGEST_WAIT = 60.0                 # a service asking for longer is not waited for: said to the model instead
+# What a tool may return, in UTF-8 (owner, 2026-10-21, after measuring the declared folders: research calls reached
+# 113 KB, while grep `def ` returned 87 MB and took 465 s to redact and store; runs/design-revision-2026-10-21/tool-output)
+COLLECT_BYTES = 1 << 20
+NOTES_BYTES = 4096                  # room past it for a tool's own lines saying what it left
 REPEATED = "already called with the same arguments; its result is above. Use it, or answer."
 WEB_OFF = "refused: the user turned the web off for this session (local only)"
 
@@ -32,6 +36,45 @@ def whole(value) -> int | None:
     if isinstance(value, float) and value.is_integer():
         return int(value)
     return value if isinstance(value, int) else None
+
+
+def size_label() -> str:
+    """COLLECT_BYTES as the model reads it: "1 MiB", else "2,000 bytes"."""
+    n = COLLECT_BYTES
+    return f"{n // 2**20} MiB" if n % 2**20 == 0 else f"{n:,} bytes"
+
+
+def utf8(text: str) -> bytes:
+    """`text` as UTF-8, a file name's undecodable bytes (surrogates, os.fsdecode) included."""
+    return text.encode("utf-8", "surrogatepass")
+
+
+def fitting(parts: list[str], sep: str = "\n", room: int | None = None) -> int:
+    """How many of `parts`, joined by `sep`, fit in `room` bytes of UTF-8 (COLLECT_BYTES by default)."""
+    room = COLLECT_BYTES if room is None else room
+    used = -len(utf8(sep))
+    for i, part in enumerate(parts):
+        used += len(utf8(sep)) + len(utf8(part))
+        if used > room:
+            return i
+    return len(parts)
+
+
+def head(text: str, room: int | None = None) -> str:
+    """`text` within `room` bytes of UTF-8 (COLLECT_BYTES by default): after its last line end there when one lies in
+    the second half, else cut mid-line (never mid-character)."""
+    room = COLLECT_BYTES if room is None else room
+    raw = utf8(text)
+    if len(raw) <= room:
+        return text
+    for back in range(4):                     # a character is at most 4 bytes: never cut inside one
+        try:
+            cut = raw[:room - back].decode("utf-8", "surrogatepass")
+            break
+        except UnicodeDecodeError:
+            continue
+    end = cut.rfind("\n")
+    return cut[:end + 1] if end >= len(cut) // 2 else cut
 
 
 class RateLimited(Exception):
@@ -119,6 +162,9 @@ class Registry:
         got = self._run(s, kwargs, budget)
         if isinstance(got, Kept):
             return Outcome(got.text, kept=got)
+        size = len(utf8(got))
+        if size > COLLECT_BYTES + NOTES_BYTES:    # a tool that did not stop itself (one from an MCP server): cut
+            got = head(got) + f"\n[cut at {size_label()}: {s.name} returned {size:,}; ask it for less]"
         return Outcome(got, store=s.store)
 
     @staticmethod
@@ -136,7 +182,9 @@ class Registry:
             if props[k].get("type") == "integer":
                 v = whole(v)
                 if v is None:
-                    return f"bad arguments for {s.name}: {k} must be a whole number (got {args[k]!r})"
+                    given = repr(args[k])
+                    given = given if len(given) <= 60 else given[:59] + "…"      # never a model's whole argument back
+                    return f"bad arguments for {s.name}: {k} must be a whole number (got {given})"
             kwargs[k] = v
         missing = [k for k in s.parameters.get("required", []) if k not in kwargs]
         if not missing:

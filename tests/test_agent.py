@@ -9,6 +9,7 @@ answer asked once more without reasoning, tokens and reasoning totalled, events 
 question. Then the answer check, the history and its budget, conversations, and a few runs with the real client.
 """
 
+import contextlib
 import dataclasses
 import json
 import math
@@ -856,10 +857,10 @@ class Reader(SmallModel):
 @pytest.mark.parametrize("record", [True, False])
 @pytest.mark.parametrize("context", [6_000, 12_000, 10**6])
 def test_a_result_longer_than_the_room_is_shown_in_part_and_read_on(home, record, context):
-    """No tool cuts its output; the agent shows what fits the room the model's context leaves and keeps the rest:
-    the head, then a note with the ref, the whole length and where to read on (recall(ref, from=n)) — an agent
-    keeping no history keeps it in memory. Read on to the end, the parts are the result itself; no request goes past
-    the context; when the context is not known, the result goes whole."""
+    """The agent shows a page at most (PAGE_BYTES, PAGE_LINES), or what fits the room the model's context leaves, and
+    keeps the rest: the head, then a note with the ref, the whole length and where to read on (recall(ref, from=n)) —
+    an agent keeping no history keeps it in memory. Read on to the end, the parts are the result itself; no request
+    goes past the context; when the context is not known, a page at a time (step 3, owner 2026-10-14)."""
     tb = SizedToolbox([60_000])
     model = Reader([], context, 512, 2.5, said=context < 10**6)
     ans = Agent(model, tb, record=record, limits=Limits(steps=40)).ask("q")   # room for every part
@@ -871,13 +872,11 @@ def test_a_result_longer_than_the_room_is_shown_in_part_and_read_on(home, record
             body = tool[-1]["content"].split("\n", 1)[1].rsplit("\n</tool_output>", 1)[0]   # inside the wrapper
             parts.append(re.sub(r'\n… \[R\d+: [^\]]*reads on\]$', "", body))
     whole = tb.outputs[0]
-    if context == 10**6:
-        assert parts == [whole]                                     # unknown context: whole, in one
-    else:
-        assert len(parts) > 1 and "".join(parts) == whole           # in parts, nothing lost
-        first = model.seen[1]["messages"][-1]["content"]
-        assert re.search(rf'\[R1: 60,0\d\d characters in all, up to [\d,]+ shown; recall\("R1", from=\d+\) reads on\]',
-                         first)
+    assert len(parts) > 1 and "".join(parts) == whole               # in parts, nothing lost
+    assert all(len(p.encode()) <= agent_module.PAGE_BYTES for p in parts)        # a page at most, context or not
+    first = model.seen[1]["messages"][-1]["content"]
+    assert re.search(rf'\[R1: 60,0\d\d characters in all, up to [\d,]+ shown; recall\("R1", from=\d+\) reads on\]',
+                     first)
 
 
 class Sized(FakeModel):
@@ -915,7 +914,13 @@ def spilled(context, reserve, ratio, earlier, text, start=0):
 def test_a_part_fills_the_room_the_next_request_has(context, reserve, ratio, earlier, excess, start):
     """A part is sized as the next request will be trimmed (_fit: earlier rounds' results become their notes, a result
     shorter than its note stays): sent, nothing more is cut, and the part fills the room to the character, but for
-    the digits its note's numbers have less than the whole's."""
+    the digits its note's numbers have less than the whole's. Layer 3 alone: no page bound (it is the smaller one
+    when a page is less than the room; tests/test_tool_output.py)."""
+    with unpaged():
+        part_fills_the_room(context, reserve, ratio, earlier, excess, start)
+
+
+def part_fills_the_room(context, reserve, ratio, earlier, excess, start):
     length = int(context * ratio) + excess                        # longer than any room the context leaves
     a, messages, shown = spilled(context, reserve, ratio, earlier, "a" * length, start)
     more = agent_module._MORE.search(shown)
@@ -997,7 +1002,13 @@ def test_the_results_of_one_round_share_its_room(sizes, context, broken):       
 def test_a_round_fills_the_room_it_has(context, line, lined, said):
     """What a part leaves of its share (cut after a line end) goes to the results after it, and what is said whole
     (a call not run) takes its length first: the longest result, with no line end, fills what the others leave to
-    within the digits its note has fewer than the whole's; the round never goes past the room."""
+    within the digits its note has fewer than the whole's; the round never goes past the room. Layer 3 alone: no
+    page bound."""
+    with unpaged():
+        round_fills_the_room(context, line, lined, said)
+
+
+def round_fills_the_room(context, line, lined, said):
     a, messages, _ = spilled(context, 512, 2.5, 10, "x")
     text = ("y" * (line - 1) + "\n") * (lined // line + 1)
     longest = len(text) + 4 * context                                # the last served: what is left is its
@@ -1012,6 +1023,17 @@ def test_a_round_fills_the_room_it_has(context, line, lined, said):
     total = sum(map(len, out))
     digits = len(agent_module.MORE.format(ref="R3", total=longest, upto=longest)) - len(more[0])
     assert total <= free + 1e-9 and free - total < 1 + digits, (free, [len(x) for x in out])
+
+
+@contextlib.contextmanager
+def unpaged():
+    """The page bound lifted, to check the share of the context room (layer 3) alone."""
+    saved = agent_module.PAGE_BYTES, agent_module.PAGE_LINES
+    agent_module.PAGE_BYTES = agent_module.PAGE_LINES = 10**12
+    try:
+        yield
+    finally:
+        agent_module.PAGE_BYTES, agent_module.PAGE_LINES = saved
 
 
 class AlwaysTooLong(FakeModel):

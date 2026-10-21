@@ -30,7 +30,8 @@ from peresearch import guard, settings
 from peresearch.llm import Interrupted, too_long
 from peresearch.protocols.chat import request_size
 from peresearch.messages import Message, Request, Tool
-from peresearch.registry import Budget, Kept, Registry, ToolSpec, whole
+from peresearch.registry import Budget, Kept, Registry, ToolSpec, utf8, whole
+from peresearch.registry import head as registry_head
 from peresearch.tools import WEB_SEARCHES, Source, Toolbox
 
 SYSTEM = """You are peresearch, a personal research assistant. You can look through the user's own files (their
@@ -202,6 +203,10 @@ RECALL = Tool("recall", "Read a tool result kept outside the context, by the ref
                   "ref": {"type": "string", "description": "the ref, e.g. R3"},
                   "from": {"type": "integer", "description": "the character to read on from, as the note says (default 0)"}},
                "required": ["ref"]})
+# What the model is shown of a result at once (OpenCode's bound: anomalyco/opencode 8bcda4c718,
+# packages/core/src/tool-output.ts, read 2026-10-21); the rest stays in the store, read on with recall
+PAGE_BYTES = 50 * 1024
+PAGE_LINES = 2000
 MORE = '\n… [{ref}: {total:,} characters in all, up to {upto:,} shown; recall("{ref}", from={upto}) reads on]'
 FULL = "[{ref}: {total:,} characters, and the model's context has no room left to show any: answer with what you have]"
 _MORE = re.compile(r'\n… \[R\d+: (?P<total>[\d,]+) characters in all, up to [\d,]+ shown; recall\("R\d+", from=(?P<upto>\d+)\) '
@@ -316,6 +321,20 @@ def _fit(system: str, messages: list[Message], tools, limit: float, kept: dict |
             cut = body[:keep] + CUT.format(n=whole - keep)
             over -= len(text) - len(cut)
             messages[i] = messages[i].with_text(cut)
+
+
+def _page_end(text: str) -> int:
+    """How many characters of `text` one page holds: at most PAGE_LINES lines and PAGE_BYTES of UTF-8, ending after a
+    line end (mid-line only when the first line alone is longer)."""
+    lines = text.count("\n") + (not text.endswith("\n"))
+    if lines <= PAGE_LINES and len(utf8(text)) <= PAGE_BYTES:
+        return len(text)
+    head = registry_head(text, PAGE_BYTES)
+    pieces = head.split("\n")
+    if len(pieces) > PAGE_LINES:
+        return len("\n".join(pieces[:PAGE_LINES])) + 1
+    end = head.rfind("\n")
+    return end + 1 if end >= 0 else len(head)
 
 
 def _wrap(name: str, result: str) -> str:
@@ -831,6 +850,8 @@ class Agent:
                 piece += texts.pop(0) + "\n\n"
             if not piece:
                 piece, texts[0] = texts[0][:free], texts[0][free:]
+                if not texts[0]:                    # it fitted but for its separator: no empty rest to send
+                    texts.pop(0)
             ask = Request(SUMMARIZE, (Message.user(head + piece),))
             if self._filter_access(messages):
                 return False  # serialized pieces may describe the pre-revocation context
@@ -870,31 +891,42 @@ class Agent:
 
     def _round(self, items: list[tuple], messages: list[Message]) -> list[str]:
         """What the model is shown of each result of one round — items (ref, tool, text, start), in call order —:
-        every one whole when they fit the room the context leaves (the oldest turns summarized first when that makes
-        them fit); else the room shared max-min fair: a result shorter than its share whole, the others splitting
-        what is left equally, each as its head and where to read on (_part) — the whole stays in the store
-        (restorable: nothing is lost, no size is fixed). A result with no ref (a refusal, an error) is said whole;
-        with the context unknown, all are."""
+        a page of each at most (_page_end; its note says where to read on), every page whole when they fit the room
+        the context leaves (the oldest turns summarized first when that makes them fit); else the room shared max-min
+        fair: a page shorter than its share whole, the others splitting what is left equally, each as its head and
+        where to read on (_part) — the whole stays in the store (restorable: nothing is lost). A result with no ref
+        (a refusal, an error) is said whole; with the context unknown, each stored one is shown a page."""
+        caps = [self._page(ref, text, start) for ref, _, text, start in items]
         context = self._context()
         if not context:
-            return [text for _, _, text, _ in items]
+            return [text if ref is None else self._part(ref, text, start, cap)
+                    for (ref, _, text, start), cap in zip(items, caps)]
         # the room as the next call will have it: _fit turns earlier rounds' results into their notes first
         empties = [Message.tool("", name, _wrap(name, "")) for _, name, _, _ in items]
 
         def room():                                         # as _fit counts, each message's overheads included
             return (self._room(context, 1 + len(messages) + len(items))
                     - _size(self._prompt, self._floor(messages) + empties, self._tools()))
-        free, total = room(), sum(len(text) for _, _, text, _ in items)
-        if total > free and self._fold(messages, total - free, enough=True):   # all whole, if summarizing the
-            free = room()                                                      # oldest turns makes room
+        sizes = [min(len(text), cap) for (_, _, text, _), cap in zip(items, caps)]
+        free, total = room(), sum(sizes)
+        if total > free and self._fold(messages, total - free, enough=True):   # all pages whole, if summarizing
+            free = room()                                                      # the oldest turns makes room
         out = [text for _, _, text, _ in items]
         left = free - sum(len(text) for ref, _, text, _ in items if ref is None)
-        stored = sorted((i for i, item in enumerate(items) if item[0] is not None), key=lambda i: len(items[i][2]))
+        stored = sorted((i for i, item in enumerate(items) if item[0] is not None), key=lambda i: sizes[i])
         for j, i in enumerate(stored):                      # the shortest first: what one leaves goes to the rest
             ref, _, text, start = items[i]
-            out[i] = self._part(ref, text, start, left / (len(stored) - j))
+            out[i] = self._part(ref, text, start, min(caps[i], left / (len(stored) - j)))
             left -= len(out[i])
         return out
+
+    @staticmethod
+    def _page(ref: str | None, text: str, start: int) -> float:
+        """The characters _part may use to show one page of `text` with its note: all of it when it fits a page."""
+        end = _page_end(text)
+        if ref is None or end >= len(text):
+            return len(text)
+        return end + len(MORE.format(ref=ref, total=start + len(text), upto=start + len(text)))
 
     @staticmethod
     def _part(ref: str, text: str, start: int, free: float) -> str:

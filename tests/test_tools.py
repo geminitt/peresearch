@@ -181,6 +181,7 @@ def test_leave_given_once_is_asked_again_and_for_the_session_covers_the_folder(w
 @example(5, 9, None)                                     # starting past the end
 @example(0, 1, None)                                     # an empty file
 @example(3_000, 1, None)                                 # 30,000 characters: whole
+@example(2, 0, -1)                                       # a negative end: Python's slice, labelled as shown
 def test_read_returns_the_asked_lines_and_the_whole_file_by_default(tmp_path_factory, n, start, end):
     root = tmp_path_factory.mktemp("r")
     lines = [f"line {i}" for i in range(1, n + 1)]
@@ -191,7 +192,9 @@ def test_read_returns_the_asked_lines_and_the_whole_file_by_default(tmp_path_fac
         return
     s = max(1, start)
     e = min(n, end or n)
-    assert out == f"[N1] {root / 'f.txt'}:L{s}-{e}\n" + "\n".join(lines[s - 1:e])
+    shown = lines[s - 1:e]
+    last = s + len(shown) - 1 if shown else e         # the label names the lines shown (a negative end: "L1-1", once "L1--1")
+    assert out == f"[N1] {root / 'f.txt'}:L{s}-{last}\n" + "\n".join(shown)
 
 
 def test_lines_are_numbered_as_an_editor_shows_them(tmp_path):
@@ -453,28 +456,6 @@ def test_a_long_line_cut_short_by_redaction_still_says_it_goes_on(tmp_path):
     out = Toolbox(None, None, roots=[tmp_path]).grep("needle")
     assert "[REDACTED:github-token] [a line of" not in out and "[REDACTED:github-token]… [a line of 13," in out
     assert SECRET[:8] not in out
-
-
-def test_grep_keeps_to_its_time_while_it_builds_the_result(tmp_path, monkeypatch):
-    """GREP_SECONDS bounds the whole call, the result built from the matches included (redacting and numbering
-    1,522,222 lines ran past ten minutes on the owner's folders, 2026-10-07): what was shown and what was found are
-    said; the matches shown are the first of every file in turn."""
-    for f in ("a", "b"):
-        (tmp_path / f"{f}.md").write_text("\n".join(f"hit {i}" for i in range(20)))
-    clock = NS(t=0.0)
-    real = guard.redact
-
-    def slow(text):                                         # each line redacted takes a second
-        clock.t += 1
-        return real(text)
-    monkeypatch.setattr(tools, "time", NS(monotonic=lambda: clock.t))
-    monkeypatch.setattr(guard, "redact", slow)
-    monkeypatch.setattr(tools, "GREP_SECONDS", 10)
-    out = Toolbox(None, None, roots=[tmp_path]).grep("hit").split("\n")
-    shown = [x for x in out if x.startswith("[N")]
-    assert len(shown) == 10 and [x.split(": ")[1] for x in shown[:4]] == ["hit 0", "hit 0", "hit 1", "hit 1"]
-    assert out[10:] == ["(stopped after 10 s: 10 of 40 matching lines shown; narrow the pattern or the glob for the "
-                        "rest)"]
 
 
 def test_a_pattern_only_python_reads_is_searched_by_the_converter(tmp_path):

@@ -543,9 +543,9 @@ def harness_frame():
         "product/eval share tools and settings", "new eval agent per question; repeat not run;",
         "three rounds of refused calls in a row:", "told to answer with what it has"])
     tools = d.box("tools", 1050, 300, 420, 130, "retrieval", "Tools", "tools.py (Capabilities frame)", [
-        "files, then the web (instructed); /local refuses", "the web ones by name; every output whole"])
+        "files, then the web (instructed); /local refuses", "the web ones by name; at most 1 MiB, then said"])
     ctx = d.box("ctx", 520, 520, 440, 184, "agent", "Within the model's context", "Agent._chat · _fit · _context", [
-        "a result past the room left: its head + [R4: …", "recall(\"R4\", from=n) reads on]; the oldest",
+        "a page (50 KiB, 2,000 lines) or the room left:", "head + [R4: … recall(\"R4\", from=n)]; the oldest",
         "results become [R3: read(…) returned …]; then the", "oldest turns summarized by the model (kept);",
         "latest round cut; access checked on replay", "history dependencies inherit file scope"])
     store = d.box("store", 30, 540, 420, 148, "store", "Tool-result store", "agent.ResultStore (Storage frame)", [

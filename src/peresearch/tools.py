@@ -23,7 +23,7 @@ import time
 from collections import Counter
 from pathlib import Path
 
-from peresearch import files, guard
+from peresearch import files, guard, registry
 from peresearch.evidence import Source, Sources
 from peresearch.messages import Tool
 from peresearch.registry import Registry, ToolSpec
@@ -31,8 +31,8 @@ from peresearch.web import site_kind
 from peresearch.zetokrag import extracted, parse
 from peresearch.zetokrag.index import sha256
 
-# Every tool returns its whole output: the agent shows the model what fits its context and keeps the rest to read
-# on (agent._spill, recall(ref, from=n)); no size here is fixed (owner, 2026-10-07).
+# A tool returns what it found up to registry.COLLECT_BYTES and says what it left and how to ask for less; the agent
+# shows the model a page at a time and keeps the rest to read on (recall(ref, from=n)).
 WEB_TOOLS = ("web_search", "search_papers", "search_wikipedia", "fetch")   # what /local turns off
 WEB_SEARCHES = ("web_search", "search_papers", "search_wikipedia")   # one budget: Limits.web_searches
 TREE_MAX_DEPTH = 4      # bounds the walk's time, as GREP_SECONDS does grep's; a deeper look is a tree of a subfolder
@@ -295,7 +295,9 @@ class Toolbox:
             entries = self._visible(start, scope)
             lines.append(f"{start}/ {self._count(entries)}")
             self._tree(entries, 1, depth, lines, scope)
-        text = "\n".join(lines)
+        kept = registry.fitting(lines)
+        text = "\n".join(lines[:kept] + ([f"(the listing stops at {registry.size_label()}; give tree a folder inside "
+                                            "it, or glob)"] if kept < len(lines) else []))
         s = self.sources.add("file", f"{', '.join(map(str, starts))} (listing)", "folder listing", text)
         return f"[{s.id}] listing of {', '.join(map(str, starts))}\n{text}"
 
@@ -471,6 +473,10 @@ class Toolbox:
             entry += [f"  best passage: {d.where}" + (f" § {section}" if section else ""), "  " + _one_line(text)]
             entry += [f"  also in: {', '.join(d.copies)}"] if d.copies else []          # near-copies folded into it
             lines.append("\n".join(entry))
+            if len(lines) > 2 and registry.fitting(lines, "\n\n") < len(lines):    # one document kept whatever it holds
+                lines[-1:] = [f"({len(lines) - 2:,} of {len(docs):,} documents listed, {registry.size_label()}; narrow "
+                              "the topic or give a folder)"]
+                break
         lines += notes + self._not_indexed()
         lines.append("(read a document with read; search_notes finds passages, grep exact words)")
         return "\n\n".join(lines)
@@ -487,6 +493,10 @@ class Toolbox:
         for path in paths:
             heads, lead = self._picture(path)
             lines.append(path + (f" — {heads}" if heads else f" — {lead}" if lead else ""))
+            if len(lines) > 2 and registry.fitting(lines) < len(lines):   # past the limit (one kept): the rest said
+                lines[-1:] = [f"({len(lines) - 2:,} of {len(paths):,} files listed, {registry.size_label()}; give a "
+                              "folder or a topic)"]
+                break
         tail = self._not_indexed()
         return "\n".join(lines) + ("\n\n" + "\n\n".join(tail) if tail else "")
 
@@ -504,24 +514,27 @@ class Toolbox:
         found, left = _walk(scopes, glob)
         deadline = time.monotonic() + GREP_SECONDS            # the whole call: the result built from the matches too
         hits, stopped, too_large, unreadable = self._matches(found, pattern, rx, deadline)
+        # the result is built whatever time the search took (it once showed none of 5,786,799 lines found, 2026-10-21),
+        # up to the limit: the lines then shown are each file's first matches
         order = [p for p in found if hits.get(p)]
-        out, total, late = [], sum(len(v) for v in hits.values()), False
+        out, total, used, full = [], sum(len(v) for v in hits.values()), 0, False
         for turn in range(max((len(hits[p]) for p in order), default=0)):       # each file's match `turn`, in turn
             for p in order:
                 if turn < len(hits[p]):
-                    if time.monotonic() >= deadline:
-                        late = True
-                        break
                     where, line = hits[p][turn]
-                    self.last_scope.add(str(p.resolve()))
                     shown, before, after, note = _around(line, rx, where)
+                    used += len(registry.utf8(f"{where}: {before}{shown}{after}{note}")) + 12   # with "[N12345] ", "\n"
+                    if used > registry.COLLECT_BYTES:
+                        full = True
+                        break
+                    self.last_scope.add(str(p.resolve()))
                     s = self.sources.add("file", where, p.name, shown)
                     out.append(f"[{s.id}] {where}: {before}{s.text}{after}{note}")
-            if late:
+            if full:
                 break
-        assert len(out) == total or late, "grep showed a wrong number of lines"
-        notes = [f"(stopped after {GREP_SECONDS} s: {len(out):,} of {total:,} matching lines shown; narrow the pattern "
-                 "or the glob for the rest)"] if late else []
+        assert len(out) == total or full, "grep showed a wrong number of lines"
+        notes = [f"({len(out):,} of {total:,} matching lines shown, {registry.size_label()}: each file's first matches "
+                 "first; narrow the pattern or the glob for the rest)"] if full else []
         if too_large:
             limit = f"{parse.MAX_BYTES // 2**20} MiB" if parse.MAX_BYTES % 2**20 == 0 else f"{parse.MAX_BYTES} bytes"
             notes.append(f"({too_large} file{'s' * (too_large != 1)} over {limit} not searched)")
@@ -531,7 +544,7 @@ class Toolbox:
             notes.append(f"(stopped after {GREP_SECONDS} s: some files were not searched)")
         if _left_note(left, "not searched"):
             notes.append(_left_note(left, "not searched"))
-        return "\n".join((out or ["no match"]) + notes)
+        return "\n".join((out or ["no match in the files searched" if stopped else "no match"]) + notes)
 
     def _matches(self, found: list[Path], pattern: str, rx, deadline: float) -> tuple[dict[Path, list], bool, int, int]:
         """{file: [(place, line)]} for every match, in line order; whether the time ran out; how many text files were
@@ -615,10 +628,13 @@ class Toolbox:
     def glob(self, pattern: str) -> str:
         roots, pattern = self._scope(pattern, "glob")
         found, left = _walk(roots, pattern)
-        self.last_scope.update(str(p.resolve()) for p in found)
         out = [str(p) for p in found]
+        kept = registry.fitting(out)
+        self.last_scope.update(str(p.resolve()) for p in found[:kept])
+        notes = [f"({kept:,} of {len(out):,} files listed, {registry.size_label()}; narrow the pattern)"] \
+            if kept < len(out) else []
         note = _left_note(left, "not listed")
-        return "\n".join((out or ["no file matches"]) + ([note] if note else []))
+        return "\n".join((out[:kept] or ["no file matches"]) + notes + ([note] if note else []))
 
     def read(self, path: str, start: int = 1, end: int | None = None) -> str:
         p, _ = self._path(path, "read")
@@ -627,19 +643,34 @@ class Toolbox:
             return f"{p}: cannot be read ({doc.status}{': ' + doc.note if doc.note else ''})"
         if not any(b.text.strip() for b in doc.blocks):    # an empty file, deck, document or notebook
             return f"{p}: holds no text"
+        limit, note = registry.size_label(), ""
         if doc.blocks[0].unit == "line":
             lines = parse.lines(doc.blocks[0].text)
             start = max(1, start)
             end = min(len(lines), end or len(lines))
-            where, text = f"{p}:L{start}-{end}", "\n".join(lines[start - 1:end])
+            asked = lines[start - 1:end]
+            kept = registry.fitting(asked)
+            if kept == 0 and asked:           # one line past the limit (minified code, a data row): its head
+                where, text = f"{p}:L{start}-{start}", registry.head(asked[0])
+                note = f"(line {start} cut at {limit}; {len(lines)} lines in all; read on with start={start + 1})"
+            else:
+                where, text = f"{p}:L{start}-{start + kept - 1 if kept else end}", "\n".join(asked[:kept])
+                if kept < len(asked):
+                    note = (f"(lines {start}-{start + kept - 1} of {len(lines)} shown, {limit}; read on with "
+                            f"start={start + kept})")
         else:                                 # pages or cells: start/end number those units
             unit = doc.blocks[0].unit
             chosen = [b for b in doc.blocks if start <= b.start and (end is None or b.start <= end)]
-            label = "p." if unit == "page" else "cell "
+            kept = max(1, registry.fitting([b.text for b in chosen], "\n\n")) if chosen else 0
+            label, named = ("p.", "pages") if unit == "page" else ("cell ", "cells")
+            if kept < len(chosen):
+                note = (f"({named} {chosen[0].start}-{chosen[kept - 1].start} of {doc.blocks[-1].start} shown, "
+                        f"{limit}; read on with start={chosen[kept].start})")
+                chosen = chosen[:kept]
             where = f"{p}:{label}{chosen[0].start}-{chosen[-1].start}" if chosen else f"{p}:{label}{start}"
-            text = "\n\n".join(b.text for b in chosen)
+            text = registry.head("\n\n".join(b.text for b in chosen))   # one unit past the limit: its head
         s = self.sources.add("file", where, p.name, guard.redact(text)[0])
-        return f"[{s.id}] {where}\n{s.text}"
+        return f"[{s.id}] {where}\n{s.text}" + (f"\n{note}" if note else "")
 
     def web_search(self, query: str, n: int = 5) -> str:
         found = self.web.search(query, n)
@@ -697,11 +728,14 @@ class Toolbox:
         if found is None and url not in self.asked_urls:
             raise guard.Refused("fetch only opens URLs a search returned in this question or the user wrote in it")
         text = self.web.fetch(url)
+        cut = registry.head(text) if text else text
+        note = f"\n(the first {registry.size_label()} of the page; the rest is not kept)" if cut != text else ""
+        text = cut
         title = self.sources.items[found].title if found else url
         if not text:
             return f"[{found}] {url}\nthe page could not be read" if found else f"{url}\nthe page could not be read"
         s = self.sources.add("web", url, title, text)
-        return f"[{s.id}] {url}\n{text}"
+        return f"[{s.id}] {url}\n{text}{note}"
 
     def begin(self, question: str) -> None:
         """A new question: the URLs the user wrote in it may be opened by fetch (and none from an earlier one)."""
