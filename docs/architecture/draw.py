@@ -249,9 +249,9 @@ def overview():
     agent = d.box("agent", 410, 200, 370, 180, "agent", "Agent loop", "assembly.py → agent.py: Agent.ask", [
         "product/eval: shared assembly and limits", "tool results wrapped as untrusted",
         "citations and quotes checked", "writes sessions/<project>.jsonl"])
-    tools = d.box("tools", 410, 440, 370, 182, "agent", "Tools", "tools.py: Toolbox.call", [
-        "tree · search_notes · overview · grep · glob · read", "grep on ripgrep; files.walk's rules (tools.svg)",
-        "gaps, then web_search / search_papers, fetch", "sources N1…, W1… for citations"], mark=8)
+    tools = d.box("tools", 410, 440, 370, 182, "agent", "Tools", "registry.py: Registry.run · tools.py", [
+        "tree · search_notes · overview · grep · glob · read", "web_search · search_papers · wikipedia · fetch",
+        "one pipeline: arguments, permission, budget, run", "sources N1…, W1… for citations"], mark=8)
     rule = d.box("rule", 410, 685, 370, 96, "guard", "Reading rule", "guard.allowed · Toolbox._path", [
         "declared folders: read; protected: refused", "elsewhere under ~: ask the user"])
     folders = d.box("folders", 410, 840, 370, 80, "store", "Declared folders on disk", None, [
@@ -307,12 +307,12 @@ def agent_loop():
                 f"agent.py: Agent.ask. The model reads the message and decides; tools until it answers or a limit "
                 f"is hit. {AS_OF}.", 1540, 1420)
     start = d.box("start", 480, 100, 440, 148, "agent", "Agent.ask(question)", "agent.py", [
-        "retain source IDs; reset question counts and gaps", "system prompt; NO_WEB note without a provider",
+        "retain source IDs; a new Budget; the question's URLs", "system prompt; NO_WEB note without a provider",
         "history: this conversation's turns, whole;", "the oldest summarized by the model when they",
         "no longer fit; question marked current"])
     cancel = d.box("cancel", 550, 270, 300, 56, "decision", "cancelled (Esc)?")
     e_cancel = d.box("e_cancel", 980, 270, 300, 56, "end", "answer '(interrupted)'")
-    limit = d.box("limit", 550, 366, 300, 56, "decision", "≥ 12 calls or > 900 s?")
+    limit = d.box("limit", 550, 366, 300, 56, "decision", "step limit set and hit, or > 900 s?")
     n_limit = d.box("n_limit", 980, 356, 330, 80, "agent", "Limit reached", None, [
         "message: answer now with what you have", "no tools offered on this call"])
     call = d.box("call", 480, 470, 440, 112, "llm", "Agent._chat → LLM.chat(Request, stop)", "agent._fit · _fold", [
@@ -320,11 +320,11 @@ def agent_loop():
         "for length: trimmed to the server's count, again"])
     calls = d.box("calls", 550, 614, 300, 56, "decision", "tool calls, no limit?")
     each = d.box("each", 30, 614, 400, 44, "agent", "for each tool call")
-    before = d.box("before", 30, 698, 400, 120, "agent", "Before running it", None, [
-        "arguments unreadable → the reason, not run", "same name + arguments as before → 'already called'",
-        "over 4 searches or 6 pages → limit message", "otherwise run it"])
-    run = d.box("run", 30, 858, 400, 96, "agent", "Toolbox.call(name, args)", "tools.py", [
-        "refusals and errors returned as text", "events: tool, result"])
+    before = d.box("before", 30, 698, 400, 130, "agent", "Before running it", "registry.py: Registry.run", [
+        "arguments unreadable → the reason, not run", "schema, then permission (web off, not offered)",
+        "budget: repeated → 'already called'; a limit set", "by the user and reached → limit message"])
+    run = d.box("run", 30, 858, 400, 96, "agent", "The tool's function", "tools.py · recall (Kept)", [
+        "refusals and errors returned as text; 429 waited", "events: tool, result"])
     wrap = d.box("wrap", 30, 994, 400, 96, "guard", "Wrap as untrusted data", "agent._wrap", [
         "<tool_output trust=\"untrusted data\">", "+ warning if it reads like an instruction"])
     empty = d.box("empty", 550, 714, 300, 56, "decision", "answer text empty?")
@@ -538,12 +538,12 @@ def harness_frame():
         "assembly and workspace index use them"])
     sysp = d.box("sysp", 520, 100, 440, 148, "agent", "The system prompt", "Agent._system", [
         "today's date; the user's files first, then the", "web; search_notes first, grep to complete;",
-        "gaps before any web tool"])
+        "note what the files cover, then the web"])
     loop = d.box("loop", 520, 300, 440, 166, "agent", "The loop", "Agent.ask · Limits.from_settings", [
         "product/eval share tools and settings", "new eval agent per question; repeat not run;",
         "three rounds of refused calls in a row:", "told to answer with what it has"])
     tools = d.box("tools", 1050, 300, 420, 130, "retrieval", "Tools", "tools.py (Capabilities frame)", [
-        "files, then the web after gaps; /local refuses", "the web ones by name; every output whole"])
+        "files, then the web (instructed); /local refuses", "the web ones by name; every output whole"])
     ctx = d.box("ctx", 520, 520, 440, 184, "agent", "Within the model's context", "Agent._chat · _fit · _context", [
         "a result past the room left: its head + [R4: …", "recall(\"R4\", from=n) reads on]; the oldest",
         "results become [R3: read(…) returned …]; then the", "oldest turns summarized by the model (kept);",
@@ -714,9 +714,9 @@ def web_diagram():
                 f"web.py and papers.py, called by tools.web_search, tools.search_papers and tools.fetch. {AS_OF}.",
                 1500, 1310)
     q = d.box("q", 40, 100, 420, 96, "agent", "web_search(query, n)", "tools.py", [
-        "refused until gaps(); one budget with papers", "(≤ 4 searches a question); outbound_query"])
+        "one search budget with papers and Wikipedia", "(a limit only when set); outbound_query"])
     qp = d.box("qp", 520, 100, 460, 96, "agent", "search_papers(query, n)", "tools.py → papers.Papers", [
-        "refused until gaps(); counts as a web search", "query through guard.outbound_query"])
+        "counts as a web search", "query through guard.outbound_query"])
     prov = d.box("prov", 40, 236, 420, 130, "web", "The user's search MCP server", "web.McpSearch · mcp.Server", [
         "a command (stdio) or a URL (Streamable HTTP);", "its search tool called through its own schema;",
         "links read from its text; none set → said", "retry completes initialize + initialized first"])
@@ -729,7 +729,7 @@ def web_diagram():
         "RETRACTED · journal article / conference paper /", "preprint (published as …) · venue · citations",
         "authors · DOI page · open PDF (fetch may read it)"])
     f = d.box("f", 280, 576, 460, 96, "agent", "fetch(url)", "tools.py → Web.fetch", [
-        "a URL a search returned (or a paper's PDF), whole;", "≤ 6 pages a question, a page read again free"])
+        "a URL a search returned or the user wrote, whole;", "pages limited when set; a page read again free"])
     pub = d.box("pub", 280, 712, 460, 130, "guard", "Public address? Connect to it", "web._checked · web._pinned", [
         "localhost, 10.x, 192.168.x, 169.254.x, ::1, .local:", "refused; the name resolved once, the request",
         "sent to that address (Host and TLS name kept);", "again at every redirect (≤ 5)"])

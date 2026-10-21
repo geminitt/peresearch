@@ -31,7 +31,6 @@ def call(name, **args):
     return Reply("", [ToolCall(f"c-{name}-{len(args)}", name, args)])
 
 
-GAPS = call("gaps", have="the notes say what SuperBPE does", missing="the paper")
 # One scripted model for the whole run, prompt by prompt in PROMPTS' order.
 SCRIPT = {
     "greeting-vi": [Reply("Xin chào! Tôi giúp bạn tìm trong ghi chú của bạn.")],
@@ -42,10 +41,10 @@ SCRIPT = {
     "superbpe-exact": [call("grep", pattern="SuperBPE"), call("grep", pattern="SuperBPE"),     # the repeat: refused
                        Reply("bpe.md dòng 5 có cụm SuperBPE [N1].")],
     "nanovitok-folders": [call("tree"), Reply("Project có thư mục notes.")],
-    "superbpe-paper": [call("web_search", query="SuperBPE"),                                     # before gaps: refused
-                       call("search_notes", query="SuperBPE"), GAPS, call("web_search", query="SuperBPE paper"),
+    "superbpe-paper": [call("web_search", query="SuperBPE"),                                     # the web first: runs
+                       call("search_notes", query="SuperBPE"), call("web_search", query="SuperBPE paper"),
                        Reply("SuperBPE adds a stage [N1]; the paper [W1].")],
-    "vllm-latest": [GAPS, call("web_search", query="vLLM latest release"), Reply("vLLM's latest [W1].")],
+    "vllm-latest": [call("web_search", query="vLLM latest release"), Reply("vLLM's latest [W1].")],
     "vllm-latest-local": [call("web_search", query="vLLM"), Reply("Ghi chú của bạn không nói về phiên bản vLLM.")],
 }
 
@@ -96,9 +95,9 @@ def test_the_prompts_run_in_order_and_record_what_reached_the_tools(acceptance, 
     assert {k: [c["tool"] for c in r["calls"]] for k, r in recs.items()} == {
         "greeting-vi": [], "greeting-en": [], "bpe-notes": ["search_notes"], "where-follow-up": [],
         "tokenization-files": ["overview"], "superbpe-exact": ["grep"], "nanovitok-folders": ["tree"],
-        "superbpe-paper": ["web_search", "search_notes", "gaps", "web_search"],
-        "vllm-latest": ["gaps", "web_search"], "vllm-latest-local": ["web_search"]}
-    assert recs["superbpe-paper"]["calls"][0]["result"].startswith("refused: first record with gaps")
+        "superbpe-paper": ["web_search", "search_notes", "web_search"],
+        "vllm-latest": ["web_search"], "vllm-latest-local": ["web_search"]}
+    assert not recs["superbpe-paper"]["calls"][0]["result"].startswith("refused:")     # no gate before the web
     assert recs["superbpe-paper"]["calls"][0]["args"] == {"query": "SuperBPE"}
     assert recs["vllm-latest-local"]["calls"][0]["result"] == ("refused: the user turned the web off for this "
                                                                 "session (local only)")
@@ -106,7 +105,7 @@ def test_the_prompts_run_in_order_and_record_what_reached_the_tools(acceptance, 
     assert recs["superbpe-exact"]["loop_refused"] == {"grep": 1}
     assert [k for k, r in recs.items() if r["loop_refused"]] == ["superbpe-exact"]
     assert [r["asked_again"] for r in recs.values()] == [0, 1, 0, 0, 0, 0, 0, 0, 0, 0]
-    assert {k: r["outside"] for k, r in recs.items() if r["outside"]} == {"superbpe-paper": 1, "vllm-latest": 1}
+    assert {k: r["outside"] for k, r in recs.items() if r["outside"]} == {"superbpe-paper": 2, "vllm-latest": 1}
     assert [r["language"] for r in recs.values()] == ["vi", "en", "en", "vi", "en", "vi", "vi", "en", "en", "vi"]
     assert {k: Path(v).name for k, v in recs["bpe-notes"]["sources"].items()} == {
         "N1": "bpe.md:L1-5", "N2": "food.md:L1-3", "N3": "trap.md:L1-3"}            # where each source is
@@ -123,9 +122,8 @@ def test_the_prompts_run_in_order_and_record_what_reached_the_tools(acceptance, 
         "tokenization-files": {"overview ran": True, "in English": True},
         "superbpe-exact": {"grep ran": True, "names a file and a line": True},
         "nanovitok-folders": {"tree ran": True},
-        "superbpe-paper": {"files first": False, "gaps before any web tool": False, "web or papers ran": True,
-                           "cites": True},
-        "vllm-latest": {"gaps before any web tool": True, "web ran": True, "cites [W…]": True},
+        "superbpe-paper": {"files first": False, "web or papers ran": True, "cites": True},
+        "vllm-latest": {"files first": False, "web ran": True, "cites [W…]": True},
         "vllm-latest-local": {"no web tool called": False, "no web cited": True}}
     table = re.sub(r" \| [\d.]+ \|$", " |", acceptance.report(path, LIMITS), flags=re.M)
     assert table.splitlines()[2:] == [
@@ -133,9 +131,8 @@ def test_the_prompts_run_in_order_and_record_what_reached_the_tools(acceptance, 
         "| bpe-notes | ok | 3/3 | search_notes | 2 |", "| where-follow-up | ok | 2/2 | - | 1 |",
         "| tokenization-files | ok | 2/2 | overview | 2 |", "| superbpe-exact | ok | 2/2 | grep | 3 |",
         "| nanovitok-folders | ok | 1/1 | tree | 2 |",
-        "| superbpe-paper | ok | 2/4 (missed: files first, gaps before any web tool) | search_notes, gaps, web_search "
-        "| 5 |",
-        "| vllm-latest | ok | 3/3 | gaps, web_search | 3 |",
+        "| superbpe-paper | ok | 2/3 (missed: files first) | web_search, search_notes, web_search | 4 |",
+        "| vllm-latest | ok | 2/3 (missed: files first) | web_search | 2 |",
         "| vllm-latest-local | ok | 1/2 (missed: no web tool called) | - | 2 |"]
 
 
@@ -181,19 +178,14 @@ def ran_call(tool, result="ok"):
     (record(stopped="cancelled"), ["no answer came back (stopped 'cancelled')"]),
     (record(answer="  "), ["no answer came back (stopped '')"]),
     (record(stopped="steps"), []),
-    (record(calls=[ran_call("web_search")]), ["a web tool ran before gaps: web_search"]),
-    (record(calls=[ran_call("fetch"), ran_call("gaps"), ran_call("web_search")]), ["a web tool ran before gaps: fetch"]),
-    (record(calls=[ran_call("web_search", "refused: first record with gaps"), ran_call("gaps"),
-                   ran_call("web_search")]), []),
-    (record(calls=[ran_call("search_papers"), ran_call("search_wikipedia")]),
-     ["a web tool ran before gaps: search_papers, search_wikipedia"]),
-    (record(mode="local", calls=[ran_call("gaps")]), ["a web tool ran under /local"]),
+    (record(calls=[ran_call("web_search")]), []),                       # the web first: the model's rule, not a gate
+    (record(mode="local", calls=[ran_call("fetch")]), ["a web tool ran under /local"]),
     (record(mode="local", calls=[ran_call("web_search", "refused: local only")]), []),
     (record(mode="local", outside=2), ["2 requests left the machine under /local"]),
     (record(mode="new", outside=2), []),
-    (record(calls=[ran_call("gaps")] + [ran_call("web_search")] * 5),
+    (record(calls=[ran_call("web_search")] * 5),
      ["5 web searches for a limit of 4"]),
-    (record(calls=[ran_call("gaps")] + [ran_call("web_search")] * 4 + [ran_call("fetch")] * 3), []),
+    (record(calls=[ran_call("web_search")] * 4 + [ran_call("fetch")] * 3), []),
     (record(steps=14), []),
     (record(steps=15), ["15 model calls for a limit of 12"]),
     (record(mode="after:bpe-notes", earlier_messages=0), ["the follow-up was sent without its earlier turn"]),
@@ -202,6 +194,11 @@ def ran_call(tool, result="ok"):
 ])
 def test_the_harness_checks_say_each_broken_guarantee(acceptance, rec, said):
     assert acceptance.harness(rec, LIMITS) == said
+
+
+def test_no_limit_set_is_never_broken(acceptance):
+    rec = record(steps=500, calls=[ran_call("web_search")] * 40)
+    assert acceptance.harness(rec, {"steps": None, "web_searches": None}) == []
 
 
 def test_a_failed_question_misses_every_rule_and_is_failed_in_the_table(acceptance, tmp_path):
@@ -245,10 +242,10 @@ def test_a_place_names_a_file_and_a_line(acceptance, text, named):
     (record(id="greeting-vi", language="vi", calls=[ran_call("tree", "refused: outside the declared folders")]),
      {"no tool": False, "in Vietnamese": True}),                          # a refused call is still a call made
     (record(id="superbpe-paper", answer="It [N1][W1].",
-            calls=[ran_call("read", "refused: outside the declared folders"), ran_call("gaps"), ran_call("web_search")]),
-     {"files first": True, "gaps before any web tool": True, "web or papers ran": True, "cites": True}),
+            calls=[ran_call("read", "refused: outside the declared folders"), ran_call("web_search")]),
+     {"files first": True, "web or papers ran": True, "cites": True}),
     (record(id="superbpe-paper", answer="From memory.", calls=[ran_call("search_notes")]),
-     {"files first": True, "gaps before any web tool": True, "web or papers ran": False, "cites": False}),
+     {"files first": True, "web or papers ran": False, "cites": False}),
 ])
 def test_the_owners_rules_count_the_calls_made_refused_or_not(acceptance, rec, met):
     assert acceptance.rules(rec) == met

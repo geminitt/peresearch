@@ -6,9 +6,9 @@
   │ Settings                                                                                     │
   │                                                                                              │
   │ Research limits                                                                              │
-  │ steps                 12            model calls per question                                 │
-  │ web-searches          4             web, paper and Wikipedia searches per question           │
-  │ pages                 6             web pages read per question                              │
+  │ steps                 no limit      model calls per question                                 │
+  │ web-searches          no limit      web, paper and Wikipedia searches per question           │
+  │ pages                 no limit      web pages read per question                              │
   │ seconds               900           time per question, a cold model start included           │
   │ thinking              the server's  the model's reasoning: on or off                         │
   │ context               the server's  the model's context in tokens, when the server does not… │

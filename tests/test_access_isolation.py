@@ -83,8 +83,8 @@ def test_revocation_between_tool_execution_and_model_request_is_applied(home, tm
 def test_legacy_local_result_without_scope_requires_a_new_read(home):
     agent = Agent(Scripted(), Toolbox(), record=True)
     ref = agent.results().put("read", {"path": "unknown.md"}, "LEGACY-PRIVATE-SENTINEL")
-    result = agent._recall(ref, "recall")
-    assert result[0] is None and "refused:" in result[1] and "LEGACY-PRIVATE-SENTINEL" not in result[1]
+    result = agent._recall_run(ref)
+    assert isinstance(result, str) and "refused:" in result and "LEGACY-PRIVATE-SENTINEL" not in result
 
 
 @pytest.mark.parametrize("text", [

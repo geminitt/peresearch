@@ -386,8 +386,7 @@ def test_retained_web_versions_survive_resume_and_new_search_requirements(home, 
     root = tmp_path / "notes"
     root.mkdir()
     (root / "notes.md").write_text("BPE merges pairs.")
-    calls = [Reply("", [ToolCall("g", "gaps", {"have": [], "missing": ["history"]})]),
-             Reply("", [ToolCall("s", "web_search", {"query": "BPE"})]),
+    calls = [Reply("", [ToolCall("s", "web_search", {"query": "BPE"})]),
              Reply("", [ToolCall("f", "fetch", {"url": "https://example.org/bpe"})]), Reply("Page [W2].")]
     agent, _ = make_agent(home, root, *calls)
     original = agent.ask("Find its history.")

@@ -5,9 +5,9 @@ names refused); grep, glob and tree walk by the rules of files.py, as the index 
 when named in the pattern, unless the user excluded it). Elsewhere in the home folder they read only what the user
 allows when asked (`ask`: once, or a folder for the session); hidden folders, protected names, peresearch's own data
 and anything outside the home folder are refused without asking. Anything credential-like is redacted before the
-model sees it. `fetch` only opens URLs that a web search returned in this session, so the model cannot send data out
-by encoding it into a URL of its own. `web_search` is refused until the model has recorded with `gaps` what the
-user's files already cover and what is missing, so the web is searched for what the user does not have.
+model sees it. `fetch` only opens URLs that a search returned or the user wrote in the question, so the model cannot
+send data out by encoding it into a URL of its own. Looking at the user's files before the web is the model's
+instruction (agent.SYSTEM), not a gate here (owner, 2026-10-14).
 Each result carries source ids (N1, N2… for files, W1, W2… for the web) that answers must cite.
 """
 
@@ -26,16 +26,19 @@ from pathlib import Path
 from peresearch import files, guard
 from peresearch.evidence import Source, Sources
 from peresearch.messages import Tool
+from peresearch.registry import Registry, ToolSpec
 from peresearch.web import site_kind
 from peresearch.zetokrag import extracted, parse
 from peresearch.zetokrag.index import sha256
 
 # Every tool returns its whole output: the agent shows the model what fits its context and keeps the rest to read
 # on (agent._spill, recall(ref, from=n)); no size here is fixed (owner, 2026-10-07).
-WEB_TOOLS = ("gaps", "web_search", "search_papers", "search_wikipedia", "fetch")   # what /local turns off
+WEB_TOOLS = ("web_search", "search_papers", "search_wikipedia", "fetch")   # what /local turns off
+WEB_SEARCHES = ("web_search", "search_papers", "search_wikipedia")   # one budget: Limits.web_searches
 TREE_MAX_DEPTH = 4      # bounds the walk's time, as GREP_SECONDS does grep's; a deeper look is a tree of a subfolder
 # ripgrep from the environment peresearch runs in (pixi ships it), else from PATH; None: grep reads in Python
 RG = shutil.which("rg", path=os.pathsep.join([str(Path(sys.prefix) / "bin"), os.environ.get("PATH", "")]))
+_URL = re.compile(r"https?://[^\s<>\"'`)\]]+")   # a URL as a user writes it in a question
 RG_BATCH = 400           # paths per ripgrep call, so the command line stays short on every system
 GREP_SECONDS = 60        # a search stops here and says what it did not reach
 # grep locates, read reads: a matching line up to LINE_WHOLE characters is shown whole, a longer one (data on one line:
@@ -173,20 +176,6 @@ def _place(path: Path, unit: str, n: int) -> str:
     return f"{path}:" + {"line": "L", "page": "p.", "cell": "cell "}[unit] + str(n)
 
 
-def _whole(value) -> int | None:
-    """A whole number as a model may write it — 3, 3.0, "3", " 3 ", "3.0" — else None (a bool is not one)."""
-    if isinstance(value, bool):
-        return None
-    if isinstance(value, str):
-        try:
-            value = float(value) if "." in value else int(value)     # both take surrounding spaces
-        except ValueError:
-            return None
-    if isinstance(value, float) and value.is_integer():
-        return int(value)
-    return value if isinstance(value, int) else None
-
-
 class Toolbox:
     """The tools, their JSON schemas for the model, and the sources they produce."""
 
@@ -203,8 +192,7 @@ class Toolbox:
             # The persisted policy may change while this toolbox and its index remain alive.
             searcher.allowed = lambda path: guard.allowed(Path(path), self.roots)
         self.sources = Sources()
-        self.web_calls = 0
-        self.recorded_gaps = None        # set by gaps(); the agent clears it for every question
+        self.asked_urls: set[str] = set()   # the URLs the user wrote in the current question: fetch may open them
         self.local_only = False          # /local: the user turned the web off for this session
 
     # --- where the tools may read ---
@@ -354,15 +342,6 @@ class Toolbox:
                 inner = self._visible(Path(e.path), scope)
                 lines.append(f"{indent}{e.name}/ {self._count(inner)}")
                 self._tree(inner, level + 1, depth, lines, scope)
-
-    def gaps(self, have: list[str] | str = (), missing: list[str] | str = ()) -> str:
-        """What the user's files already cover and what is missing or not enough: the web is searched for the
-        second part."""
-        have = [have] if isinstance(have, str) else list(have or [])
-        missing = [missing] if isinstance(missing, str) else list(missing or [])
-        self.recorded_gaps = {"have": have, "missing": missing}
-        return (f"recorded: {len(have)} point(s) the user's files cover, {len(missing)} missing or not enough; "
-                "web_search, search_papers and search_wikipedia may now look for what is missing")
 
     def _ranked(self, marked: str, counted: str, scored: list) -> tuple[bool, list[str]]:
         """(whether a reranker scores what is shown, the notes saying how the search ranked): with no rerank endpoint
@@ -663,10 +642,6 @@ class Toolbox:
         return f"[{s.id}] {where}\n{s.text}"
 
     def web_search(self, query: str, n: int = 5) -> str:
-        if self.recorded_gaps is None:
-            raise guard.Refused("first record with gaps(have, missing) what the user's files already cover and what "
-                                "is missing; then search the web for what is missing")
-        self.web_calls += 1
         found = self.web.search(query, n)
         text = found.text.strip()
         if not text:
@@ -683,10 +658,6 @@ class Toolbox:
         """Scholarly papers, each with what kind of record it is (journal article, conference paper, preprint,
         RETRACTED), venue, year, citations and authors; a paper's open PDF can then be read with fetch. Counts as
         one of the question's web searches."""
-        if self.recorded_gaps is None:
-            raise guard.Refused("first record with gaps(have, missing) what the user's files already cover and what "
-                                "is missing; then search the web for what is missing")
-        self.web_calls += 1
         out = []
         for p in self.papers.search(query, n):
             facts = (["RETRACTED"] if p.retracted else []) + ([p.kind] if p.kind else []) + \
@@ -707,11 +678,7 @@ class Toolbox:
     def search_wikipedia(self, query: str, languages: list[str] | str = ("en",), n: int = 3) -> str:
         """Wikipedia articles in the editions named: each one's lead summary, address and title in the other target
         languages. Counts as one of the question's web searches."""
-        if self.recorded_gaps is None:
-            raise guard.Refused("first record with gaps(have, missing) what the user's files already cover and what "
-                                "is missing; then search the web for what is missing")
         langs = [languages] if isinstance(languages, str) else list(languages or ["en"])
-        self.web_calls += 1
         articles, missed = self.wiki.search(query, langs, n)
         out = []
         for a in articles:
@@ -726,14 +693,19 @@ class Toolbox:
     def fetch(self, url: str) -> str:
         """The whole main text of a page a search returned (a paper runs to tens of thousands of characters: the agent
         shows what fits the context, the rest read on with recall); the source keeps it for the quote check."""
-        if url not in self.sources.urls:
-            raise guard.Refused("fetch only opens URLs returned by web_search in this question")
+        found = self.sources.urls.get(url)
+        if found is None and url not in self.asked_urls:
+            raise guard.Refused("fetch only opens URLs a search returned in this question or the user wrote in it")
         text = self.web.fetch(url)
-        s = self.sources.items[self.sources.urls[url]]
+        title = self.sources.items[found].title if found else url
         if not text:
-            return f"[{s.id}] {url}\nthe page could not be read"
-        s = self.sources.add("web", url, s.title, text)
+            return f"[{found}] {url}\nthe page could not be read" if found else f"{url}\nthe page could not be read"
+        s = self.sources.add("web", url, title, text)
         return f"[{s.id}] {url}\n{text}"
+
+    def begin(self, question: str) -> None:
+        """A new question: the URLs the user wrote in it may be opened by fetch (and none from an earlier one)."""
+        self.asked_urls = {u.rstrip(".,;:!?") for u in _URL.findall(question)}
 
     # --- for the model ---
 
@@ -770,74 +742,62 @@ class Toolbox:
                  "A file outside the declared folders is read only if the user allows it when asked.",
                  {"path": ("string", "path from a previous result"), "start": ("integer", "first line/page/cell"),
                   "end": ("integer", "last line/page/cell")}, ["path"]),
-        "gaps": ("Record, before searching the web, what the user's own files already cover and what is missing "
-                 "or not enough. web_search is refused until this is called.",
-                 {"have": ("array", "points the user's files cover (with source ids), may be empty"),
-                  "missing": ("array", "what is missing or not enough, to look for on the web")}, ["have", "missing"]),
-        "web_search": ("Search the web for what gaps recorded as missing, or to check that something is current. "
-                       "Each result says what kind of site it comes from (university, preprint server, blog…).",
+        "web_search": ("Search the web: for what the user's files do not cover, or to check that something is "
+                       "current. Each result says what kind of site it comes from (university, preprint server, "
+                       "blog…).",
                        {"query": ("string", "search query, no personal or secret data"),
                         "n": ("integer", "number of results, default 5")}, ["query"]),
         "search_papers": ("Search scholarly papers (Semantic Scholar, arXiv, and OpenAlex when configured): each "
                           "result says what kind of record it is (journal article, conference paper, preprint, "
                           "RETRACTED), "
                           "its venue, year, citation count and authors, and its open PDF when there is one (read it "
-                          "with fetch). Use it for research questions; only after gaps. Counts as a web search.",
+                          "with fetch). Use it for research questions. Counts as a web search.",
                           {"query": ("string", "what to look for, in the language of the papers you want"),
                            "n": ("integer", "number of papers, default 5")}, ["query"]),
         "search_wikipedia": ("Search Wikipedia in one or more languages (e.g. [\"vi\", \"en\"]): each article's lead "
                              "summary, its address and its title in English, Vietnamese, Chinese, Japanese, Korean "
                              "and Hindi, to find the term to search for in another language. A starting point and a "
-                             "map to sources, not primary evidence. Only after gaps. Counts as a web search.",
+                             "map to sources, not primary evidence. Counts as a web search.",
                              {"query": ("string", "what to look for, in the edition's language"),
                               "languages": ("array", "edition codes such as en, vi, zh, ja, ko, hi; default en; "
                                                      "at most 3"),
                               "n": ("integer", "articles per edition, default 3")}, ["query"]),
-        "fetch": ("Read the main text of a page a search returned (a web page, a paper's PDF, an article).",
-                  {"url": ("string", "a URL from search results")}, ["url"]),
+        "fetch": ("Read the main text of a page a search returned or the user wrote in the question (a web page, a "
+                  "paper's PDF, an article).",
+                  {"url": ("string", "a URL from search results or the question")}, ["url"]),
     }
 
-    def schemas(self, web: bool = True) -> list[Tool]:
-        web = web and not self.local_only
+    def _works(self, name: str) -> bool:
+        """Whether a tool can work in this session: each web one needs its service set; fetch, the page reader (also
+        for URLs the user writes, with no search server)."""
+        return {"web_search": bool(self.web and self.web.searcher),
+                "search_papers": bool(self.papers and self.papers.sources),
+                "search_wikipedia": bool(self.wiki), "fetch": bool(self.web)}.get(name, True)
+
+    def specs(self) -> list[ToolSpec]:
+        """Each tool as the registry runs it: its schema, permission group, budget and function."""
         out = []
         for name, (desc, props, required) in self.SPECS.items():
-            assert callable(getattr(self, name, None)), f"tool {name} has a schema but no method"
-            pages = bool(web and self.web and self.web.searcher)
-            scholarly = bool(web and self.papers and self.papers.sources)
-            encyclopedia = bool(web and self.wiki)
-            if (name == "web_search" and not pages) or (name == "search_papers" and not scholarly) or \
-                    (name == "search_wikipedia" and not encyclopedia) or \
-                    (name in ("gaps", "fetch") and not (pages or scholarly or encyclopedia)):
-                continue
-            out.append(Tool(name, desc, {"type": "object", "required": required, "properties": {
+            method = getattr(self, name, None)
+            assert callable(method), f"tool {name} has a schema but no method"
+
+            def run(_method=method, **kwargs):
+                self.last_scope = set()                     # what this call reads: the agent keeps it with the result
+                return _method(**kwargs)
+            out.append(ToolSpec(name, desc, {"type": "object", "required": required, "properties": {
                 k: {"type": t, "description": d, **({"items": {"type": "string"}} if t == "array" else {})}
-                for k, (t, d) in props.items()}}))
+                for k, (t, d) in props.items()}}, "web" if name in WEB_TOOLS else "files", run,
+                budget="search" if name in WEB_SEARCHES else "page" if name == "fetch" else "",
+                offered=lambda _name=name: self._works(_name)))
         return out
 
+    def registry(self, web: bool = True) -> Registry:
+        """The registry of these tools; web ones only while the web is on (`web`, and not /local)."""
+        return Registry(self.specs(), web_on=lambda: web and not self.local_only)
+
+    def schemas(self, web: bool = True) -> list[Tool]:
+        return self.registry(web).tools()
+
     def call(self, name: str, args: dict) -> str:
-        """Run one tool; errors come back as text for the model, never as a crash. Arguments are read by their
-        schema type: a model may write a number as a string (Llama-3.2-1B through Ollama: {"k": "10"}, 2026-10-06)."""
-        self.last_scope = set()
-        if name not in self.SPECS:
-            return f"unknown tool {name!r}"
-        if self.local_only and name in WEB_TOOLS:            # offered no more, yet a model may still name them
-            return "refused: the user turned the web off for this session (local only)"
-        props, kwargs = self.SPECS[name][1], {}
-        for k, v in args.items():
-            if k not in props or v is None:         # null for an optional argument: not given (strict schemas)
-                continue
-            if props[k][0] == "integer":
-                v = _whole(v)
-                if v is None:
-                    return f"bad arguments for {name}: {k} must be a whole number (got {args[k]!r})"
-            kwargs[k] = v
-        try:
-            return getattr(self, name)(**kwargs)
-        except guard.Refused as e:
-            return f"refused: {e}"
-        except TypeError as e:
-            return f"bad arguments for {name}: {e}"
-        except AssertionError:          # an internal check failed: a bug, shown to the user, never handed to the model
-            raise
-        except Exception as e:
-            return f"{name} failed: {type(e).__name__}: {str(e)[:200]}"
+        """Run one tool outside a question (nothing counted): its result, or what was refused, as text."""
+        return self.registry().run(name, args).text

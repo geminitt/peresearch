@@ -28,25 +28,38 @@ from peresearch.llm import LLM, Interrupted, Reply, ToolCall
 from peresearch.protocols.chat import chat_tools, request_size
 from peresearch.tools import Source, Sources, Toolbox
 from peresearch.messages import Message, Text, Tool
+from peresearch.registry import REPEATED, WEB_OFF, Kept, ToolSpec
 from tests.helpers import DictModel, agent, notes, request, streamed, toolbox
 from tests.test_guard import CANARIES
 
-WEB_TOOLS = ("gaps", "web_search", "fetch")
+FILE_TOOLS = ("tree", "read", "grep", "glob")
+WEB_TOOLS = ("web_search", "fetch")                      # offered when the web is on
+SEARCHES = ("web_search", "search_papers", "search_wikipedia")
+NOT_OFFERED = ("search_papers", "search_wikipedia")      # declared, never offered: a model may still name them
 
 
 class FakeToolbox:
     """Records what is run; answers each call with a numbered result."""
 
     def __init__(self, web=True):
-        self.web, self.ran, self.sources, self.web_calls, self.recorded_gaps = web, [], Sources(), 0, None
+        self.web, self.ran, self.sources = web, [], Sources()
+
+    def offered(self, name):
+        return name not in WEB_TOOLS + NOT_OFFERED or (self.web and name not in NOT_OFFERED)
+
+    def specs(self):
+        return [ToolSpec(n, "", {}, "web" if n in WEB_TOOLS + NOT_OFFERED else "files",
+                         lambda _n=n, **args: self.call(_n, args),
+                         budget="search" if n in SEARCHES else "page" if n == "fetch" else "",
+                         offered=lambda _n=n: self.offered(_n))
+                for n in FILE_TOOLS + WEB_TOOLS + NOT_OFFERED]
 
     def schemas(self):
-        names = ["tree", "read", "grep"] + (list(WEB_TOOLS) if self.web else [])
+        names = list(FILE_TOOLS) + (list(WEB_TOOLS) if self.web else [])
         return [Tool(n, "", {}) for n in names]
 
     def call(self, name, args):
         self.ran.append((name, args))
-        self.web_calls += name in ("web_search", "search_papers", "search_wikipedia")
         s = self.sources.add("web" if name in ("web_search", "search_papers", "search_wikipedia", "fetch") else "file", f"{name}:{len(self.ran)}", name,
                              f"result {len(self.ran)}")
         return f"[{s.id}] result {len(self.ran)} of {name}"
@@ -124,7 +137,6 @@ def check_loop(home, script, steps, webs, pages, web, record, local=False):
     """`local`: the user turned the web off for the session (/local): no web tools, and the model is told why."""
     tb, events = FakeToolbox(web), []
     tb.local_only = local
-    tb.web_calls, tb.recorded_gaps = 9, {"stale": True}                 # left over from an earlier question
     model = FakeModel(build(script))
     a = Agent(model, tb, limits=Limits(steps=steps, web_searches=webs, fetches=pages), record=record,
               on_event=lambda kind, detail: events.append((kind, detail)))
@@ -133,7 +145,7 @@ def check_loop(home, script, steps, webs, pages, web, record, local=False):
     # the reference: what the loop must do, step by step
     plan, ref_tb = build(script), FakeToolbox(web)
     ran, results, requests, n_fetch, stopped, assistant, ref_events = [], [], [], 0, "", [], []
-    read_pages, refused_rounds = set(), 0
+    read_pages, refused_rounds, searched, budgeted = set(), 0, 0, []
     while True:
         over = "steps" if len(requests) >= steps else "refused" if refused_rounds >= 3 else ""
         requests.append((over or "tools", None))
@@ -156,16 +168,25 @@ def check_loop(home, script, steps, webs, pages, web, record, local=False):
                 results.append(_wrap(c.name, f"not run: {c.error}; call {c.name} again with its arguments as one "
                                              "JSON object"))
                 continue
-            repeat = (c.name, c.args) in ran
             ran.append((c.name, c.args))
-            if repeat:
-                out = "already called with the same arguments; its result is above. Use it, or answer."
-            elif c.name in ("web_search", "search_papers", "search_wikipedia") and ref_tb.web_calls >= webs:
+            # the pipeline's order: permission (web off, not offered), then the budget (repeated, limits)
+            permitted = not (local and c.name in WEB_TOOLS + NOT_OFFERED) and ref_tb.offered(c.name)
+            repeat = permitted and (c.name, c.args) in budgeted
+            if permitted and not repeat:
+                budgeted.append((c.name, c.args))
+            if local and c.name in WEB_TOOLS + NOT_OFFERED:
+                out = WEB_OFF
+            elif not permitted:
+                out = f"refused: {c.name} is not available in this session"
+            elif repeat:
+                out = REPEATED
+            elif c.name in SEARCHES and searched >= webs:
                 out = f"limit: at most {webs} web searches per question"
             elif c.name == "fetch" and (c.args.get("url") is None or c.args["url"] not in read_pages) \
                     and n_fetch >= pages:
                 out = f"limit: at most {pages} pages per question"
             else:
+                searched += c.name in SEARCHES
                 if c.name == "fetch" and (c.args.get("url") is None or c.args["url"] not in read_pages):
                     n_fetch += 1                                    # another part of a page read is not a new page
                     read_pages.add(c.args.get("url"))
@@ -184,7 +205,6 @@ def check_loop(home, script, steps, webs, pages, web, record, local=False):
     assert (ans.prompt_tokens, ans.completion_tokens) == (3 * used, 2 * used)
     assert ans.reasoning == "\n\n".join(f"thought {i}" for i, (k, _) in enumerate(script[:used]) if k == "calls")
     assert ans.sources == ref_tb.sources.items and ans.sources is not tb.sources.items
-    assert tb.recorded_gaps is None and tb.web_calls == ref_tb.web_calls          # reset, then counted afresh
 
     # what the model was shown, request by request
     first = model.seen[0]["messages"]
@@ -229,7 +249,12 @@ class SizedToolbox(FakeToolbox):
         self.sizes, self.outputs = list(sizes), []
 
     def schemas(self):
-        return Toolbox(None, None, roots=[]).schemas()
+        return [s.tool() for s in self.specs() if s.offered()]
+
+    def specs(self):                    # every argument optional: the scripted calls name a tool, not a file
+        return [dataclasses.replace(s, run=lambda _n=s.name, **args: self.call(_n, args),
+                                    parameters={**s.parameters, "required": []})
+                for s in Toolbox(None, None, roots=[]).specs()]
 
     def call(self, name, args):
         out = super().call(name, args) + " " + "x" * self.sizes[len(self.ran) - 1]
@@ -1058,19 +1083,19 @@ def test_a_result_kept_outside_the_context_is_read_back_with_recall(home):
     assert results["c2"] == _wrap("recall", ResultStore(a.project, a.conversation).get("R1")["text"])   # whole, as
     assert results["c1"] == _wrap("read", ResultStore(a.project, a.conversation).get("R1")["text"])     # first read
     assert results["c3"] == _wrap("recall", "no result R7 in this conversation (it holds R1)")
-    assert results["c4"] == _wrap("recall", "recall needs a ref such as R1: each trimmed result's note gives it")
+    assert results["c4"] == _wrap("recall", "bad arguments for recall: ref is required (the ref, e.g. R3)")
     assert [n for n, _ in tb.ran] == ["read"]                                      # recall never reaches the tools
     assert ResultStore(a.project, a.conversation).get("R2") is None                # nor the store
     assert a.llm.seen[0]["tools"][-1] == chat_tools([agent_module.RECALL])[0]
     a.results().put("read", {"path": "b.md"}, "another result")                     # a second one held: R2
-    assert a._recall("R9", "x") == (None, "no result R9 in this conversation (it holds R1, R2)", 0)
-    assert a._recall("R2", "x", 8) == ("R2", "result", 8)                           # from character 8 on
-    assert a._recall("R2", "x", 14) == (None, "R2 holds 14 characters: from must be 0 to 13", 0)
-    assert a._recall("R2", "x", -1) == (None, "R2 holds 14 characters: from must be 0 to 13", 0)
-    assert a._recall("R2", "x", "3") == ("R2", "ther result", 3)                   # a number written as text
-    assert a._recall("R2", "x", "x") == (None, "R2 holds 14 characters: from must be 0 to 13", 0)
+    assert a._recall_run("R9") == "no result R9 in this conversation (it holds R1, R2)"
+    assert a._recall_run("R2", **{"from": 8}) == Kept("R2", "result", 8)             # from character 8 on
+    assert a._recall_run("R2", **{"from": 14}) == "R2 holds 14 characters: from must be 0 to 13"
+    assert a._recall_run("R2", **{"from": -1}) == "R2 holds 14 characters: from must be 0 to 13"
+    assert a._recall_run("R2", **{"from": "3"}) == Kept("R2", "ther result", 3)     # a number written as text
+    assert a._recall_run("R2", **{"from": "x"}) == "R2 holds 14 characters: from must be 0 to 13"
     a.new_session()                                                                  # a conversation holding none
-    assert a._recall("R1", "x") == (None, "no result R1 in this conversation (it holds none)", 0)
+    assert a._recall_run("R1") == "no result R1 in this conversation (it holds none)"
     quiet = Agent(FakeModel([Reply("", [ToolCall("q1", "read", {"path": "a.md"})]),
                              Reply("", [ToolCall("q2", "recall", {"ref": "R1"})]), Reply("done")]), FakeToolbox(),
                   record=False)
@@ -1146,11 +1171,12 @@ def test_the_limits_come_from_the_settings(home, monkeypatch):
 
 def test_the_system_prompt_keeps_the_owners_rules():
     """The owner's rules for the agent (2026-10-03/04): the user's files first, then the web — the web not only for
-    what is missing; search_notes first, grep to complete it; gaps recorded before any web tool."""
+    what is missing; search_notes first, grep to complete it; what the files cover noted before the web (an
+    instruction since the gaps gate was removed, owner 2026-10-14)."""
     rules = " ".join(agent_module.SYSTEM.split()).lower()
     for said in ("look at the user's files first, then the web",
                  "search_notes first: it finds passages by meaning; then grep to complete it",
-                 "before any web tool, call gaps with what the files cover and what they do not",
+                 "note what the files cover and what they do not, then search the web",
                  "the web is not only for what is missing"):
         assert said in rules, said
 
@@ -1227,7 +1253,6 @@ def test_history_written_before_conversation_ids_and_a_torn_line_are_read(home):
 def test_a_full_question_through_the_real_tools_checks_its_citations(home, notes):
     a, llm = agent(home, notes,
                    Reply("", [ToolCall("c0", "search_notes", {"query": "BPE"})]),
-                   Reply("", [ToolCall("c1", "gaps", {"have": ["BPE merges pairs [N1]"], "missing": ["its origin"]})]),
                    Reply("", [ToolCall("c2", "web_search", {"query": "byte pair encoding history"})]),
                    Reply("", [ToolCall("c3", "fetch", {"url": "https://example.org/bpe"})]),
                    Reply('Notes: BPE merges pairs [N1]. Web: "It was introduced for neural machine translation in 2016" [W2].'))
@@ -1237,8 +1262,8 @@ def test_a_full_question_through_the_real_tools_checks_its_citations(home, notes
     assert ans.sources["W1"].text == (
         "1. [BPE explained](https://example.org/bpe)\nabout byte pair encoding history")
     second, llm2 = agent(home, notes, Reply("", [ToolCall("d", "web_search", {"query": "x"})]), Reply("ok"))
-    second.ask("another question")                                          # gaps are recorded per question
-    assert "record" in [m["content"] for m in llm2.seen[-1][0] if m["role"] == "tool"][-1]
+    second.ask("another question")                                          # no gate before the web
+    assert "(web search:" in [m["content"] for m in llm2.seen[-1][0] if m["role"] == "tool"][-1]
 
 
 def test_no_secret_reaches_the_model_through_the_real_client(home, notes):

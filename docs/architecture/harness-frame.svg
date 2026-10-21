@@ -20,7 +20,7 @@
 <text x="532.0" y="141.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#7A55C9" text-anchor="start">Agent._system</text>
 <text x="532.0" y="164.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">today&#x27;s date; the user&#x27;s files first, then the</text>
 <text x="532.0" y="181.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">web; search_notes first, grep to complete;</text>
-<text x="532.0" y="198.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">gaps before any web tool</text>
+<text x="532.0" y="198.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">note what the files cover, then the web</text>
 <rect x="520" y="300" width="440" height="166" rx="10" fill="#F1ECFB" stroke="#7A55C9" stroke-width="1.4"/>
 <text x="532.0" y="323.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#45288A" text-anchor="start">The loop</text>
 <text x="532.0" y="341.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#7A55C9" text-anchor="start">Agent.ask · Limits.from_settings</text>
@@ -31,7 +31,7 @@
 <rect x="1050" y="300" width="420" height="130" rx="10" fill="#E3F4EC" stroke="#2E9467" stroke-width="1.4"/>
 <text x="1062.0" y="323.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#155A3B" text-anchor="start">Tools</text>
 <text x="1062.0" y="341.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#2E9467" text-anchor="start">tools.py (Capabilities frame)</text>
-<text x="1062.0" y="364.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">files, then the web after gaps; /local refuses</text>
+<text x="1062.0" y="364.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">files, then the web (instructed); /local refuses</text>
 <text x="1062.0" y="381.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">the web ones by name; every output whole</text>
 <rect x="520" y="520" width="440" height="184" rx="10" fill="#F1ECFB" stroke="#7A55C9" stroke-width="1.4"/>
 <text x="532.0" y="543.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#45288A" text-anchor="start">Within the model&#x27;s context</text>

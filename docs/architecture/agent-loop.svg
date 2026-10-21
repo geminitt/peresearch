@@ -6,7 +6,7 @@
 <rect x="480" y="100" width="440" height="148" rx="10" fill="#F1ECFB" stroke="#7A55C9" stroke-width="1.4"/>
 <text x="492.0" y="123.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#45288A" text-anchor="start">Agent.ask(question)</text>
 <text x="492.0" y="141.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#7A55C9" text-anchor="start">agent.py</text>
-<text x="492.0" y="164.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">retain source IDs; reset question counts and gaps</text>
+<text x="492.0" y="164.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">retain source IDs; a new Budget; the question&#x27;s URLs</text>
 <text x="492.0" y="181.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">system prompt; NO_WEB note without a provider</text>
 <text x="492.0" y="198.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">history: this conversation&#x27;s turns, whole;</text>
 <text x="492.0" y="215.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">the oldest summarized by the model when they</text>
@@ -16,7 +16,7 @@
 <rect x="980" y="270" width="300" height="56" rx="10" fill="#EDEDED" stroke="#6B6B6B" stroke-width="1.4"/>
 <text x="992.0" y="293.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#2B2B2B" text-anchor="start">answer &#x27;(interrupted)&#x27;</text>
 <rect x="550" y="366" width="300" height="56" rx="10" fill="#FFF6D6" stroke="#B8960B" stroke-width="1.4"/>
-<text x="562.0" y="389.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#5E4B00" text-anchor="start">≥ 12 calls or &gt; 900 s?</text>
+<text x="562.0" y="389.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#5E4B00" text-anchor="start">step limit set and hit, or &gt; 900 s?</text>
 <rect x="980" y="356" width="330" height="80" rx="10" fill="#F1ECFB" stroke="#7A55C9" stroke-width="1.4"/>
 <text x="992.0" y="379.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#45288A" text-anchor="start">Limit reached</text>
 <text x="992.0" y="402.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">message: answer now with what you have</text>
@@ -31,16 +31,17 @@
 <text x="562.0" y="637.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#5E4B00" text-anchor="start">tool calls, no limit?</text>
 <rect x="30" y="614" width="400" height="44" rx="10" fill="#F1ECFB" stroke="#7A55C9" stroke-width="1.4"/>
 <text x="42.0" y="637.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#45288A" text-anchor="start">for each tool call</text>
-<rect x="30" y="698" width="400" height="120" rx="10" fill="#F1ECFB" stroke="#7A55C9" stroke-width="1.4"/>
+<rect x="30" y="698" width="400" height="130" rx="10" fill="#F1ECFB" stroke="#7A55C9" stroke-width="1.4"/>
 <text x="42.0" y="721.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#45288A" text-anchor="start">Before running it</text>
-<text x="42.0" y="744.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">arguments unreadable → the reason, not run</text>
-<text x="42.0" y="761.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">same name + arguments as before → &#x27;already called&#x27;</text>
-<text x="42.0" y="778.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">over 4 searches or 6 pages → limit message</text>
-<text x="42.0" y="795.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">otherwise run it</text>
+<text x="42.0" y="739.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#7A55C9" text-anchor="start">registry.py: Registry.run</text>
+<text x="42.0" y="762.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">arguments unreadable → the reason, not run</text>
+<text x="42.0" y="779.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">schema, then permission (web off, not offered)</text>
+<text x="42.0" y="796.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">budget: repeated → &#x27;already called&#x27;; a limit set</text>
+<text x="42.0" y="813.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">by the user and reached → limit message</text>
 <rect x="30" y="858" width="400" height="96" rx="10" fill="#F1ECFB" stroke="#7A55C9" stroke-width="1.4"/>
-<text x="42.0" y="881.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#45288A" text-anchor="start">Toolbox.call(name, args)</text>
-<text x="42.0" y="899.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#7A55C9" text-anchor="start">tools.py</text>
-<text x="42.0" y="922.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">refusals and errors returned as text</text>
+<text x="42.0" y="881.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#45288A" text-anchor="start">The tool&#x27;s function</text>
+<text x="42.0" y="899.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#7A55C9" text-anchor="start">tools.py · recall (Kept)</text>
+<text x="42.0" y="922.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">refusals and errors returned as text; 429 waited</text>
 <text x="42.0" y="939.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">events: tool, result</text>
 <rect x="30" y="994" width="400" height="96" rx="10" fill="#FCE8E8" stroke="#C94343" stroke-width="1.4"/>
 <text x="42.0" y="1017.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#7D1F1F" text-anchor="start">Wrap as untrusted data</text>
@@ -79,7 +80,7 @@
 <path d="M 700.0 582.0 L 700.0 614.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
 <path d="M 550.0 642.0 L 430.0 642.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
 <path d="M 230.0 658.0 L 230.0 698.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
-<path d="M 230.0 818.0 L 230.0 858.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
+<path d="M 230.0 828.0 L 230.0 858.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
 <path d="M 230.0 954.0 L 230.0 994.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>
 <path d="M 430.0 1042.0 L 455.0 1042.0 L 455.0 298.0 L 550.0 298.0" fill="none" stroke="#8A877C" stroke-width="1.5" stroke-dasharray="6 4" marker-end="url(#arrow-back)"/>
 <path d="M 700.0 670.0 L 700.0 714.0" fill="none" stroke="#55554F" stroke-width="1.5" marker-end="url(#arrow-flow)"/>

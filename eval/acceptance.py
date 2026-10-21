@@ -6,14 +6,15 @@ checkpointed per prompt: a rerun of the same label and model goes on where it st
 
 Each prompt is checked two ways:
 - HARNESS: what peresearch guarantees whatever the model behind it — an answer comes back (no error, not
-  interrupted), no web tool runs before `gaps` in a question, none at all under /local, the per-question limits hold,
-  the follow-up is sent with its earlier turn. A failure here is a defect of peresearch.
+  interrupted), no web tool runs under /local, the per-question limits the user set hold, the follow-up is sent with
+  its earlier turn. A failure here is a defect of peresearch. (Files before the web is the model's instruction since
+  the `gaps` gate was removed, 2026-10-14: a rule below, not a guarantee.)
 - RULES: the owner's pass rule for the prompt — the tools a good model picks, citations, language. With a small
   stand-in model they are recorded, not required (owner 2026-09-29: the small model checks mechanics only); the
   acceptance itself is the owner's reading of the full answers, which the records keep.
 
-Records (one JSON line a prompt): the answer, every tool call that reached the tools with the first line of its result,
-the calls the loop itself refused (repeats, limits), sources, the citation check, language, model calls, tokens, time,
+Records (one JSON line a prompt): the answer, every tool call that passed the budget with the first line of its result,
+the calls the budget refused (repeats, limits), sources, the citation check, language, model calls, tokens, time,
 empty answers asked again, and the requests that left the machine when the caller counts them.
 """
 
@@ -74,20 +75,15 @@ def harness(record: dict, limits: dict) -> list[str]:
         return bad
     if record["stopped"] == "cancelled" or not record["answer"].strip():
         bad.append(f"no answer came back (stopped {record['stopped']!r})")
-    tools = [c["tool"] for c in record["calls"]]
-    gaps = tools.index("gaps") if "gaps" in tools else len(tools)
-    early = [c["tool"] for c in record["calls"][:gaps] if c["tool"] in WEB and not c["result"].startswith("refused:")]
-    if early:
-        bad.append(f"a web tool ran before gaps: {', '.join(early)}")
     if record["mode"] == "local":
-        if any(t in WEB or t == "gaps" for t in ran(record)):
+        if any(t in WEB for t in ran(record)):
             bad.append("a web tool ran under /local")
         if record.get("outside"):
             bad.append(f"{record['outside']} requests left the machine under /local")
     searches = sum(t in WEB[:3] for t in ran(record))
-    if searches > limits["web_searches"]:
+    if limits["web_searches"] is not None and searches > limits["web_searches"]:
         bad.append(f"{searches} web searches for a limit of {limits['web_searches']}")
-    if record["steps"] > limits["steps"] + 2:              # the limit's own call and one re-ask
+    if limits["steps"] is not None and record["steps"] > limits["steps"] + 2:     # the limit's own call, one re-ask
         bad.append(f"{record['steps']} model calls for a limit of {limits['steps']}")
     if record["mode"].startswith("after:") and record["earlier_messages"] < 2:     # its question and answer
         bad.append("the follow-up was sent without its earlier turn")
@@ -107,18 +103,17 @@ def rules(record: dict) -> dict[str, bool]:
         "greeting-vi": lambda: {"no tool": not tools, "in Vietnamese": record["language"] == "vi"},
         "greeting-en": lambda: {"no tool": not tools, "in English": record["language"] == "en"},
         "bpe-notes": lambda: {"search_notes ran": "search_notes" in done, "cites [N…]": "[N" in text,
-                              "no web": not web_ran and "gaps" not in tools},
+                              "no web": not web_ran},
         "where-follow-up": lambda: {"names a file and a line": bool(_PLACE.search(text)),
                                     "no web": not web_ran},
         "tokenization-files": lambda: {"overview ran": "overview" in done, "in English": record["language"] == "en"},
         "superbpe-exact": lambda: {"grep ran": "grep" in done, "names a file and a line": bool(_PLACE.search(text))},
         "nanovitok-folders": lambda: {"tree ran": "tree" in done},
         "superbpe-paper": lambda: {"files first": any(t in FILES for t in before_web),
-                                   "gaps before any web tool": first_web is None or "gaps" in before_web,
                                    "web or papers ran": web_ran, "cites": cited},
-        "vllm-latest": lambda: {"gaps before any web tool": first_web is None or "gaps" in before_web,
+        "vllm-latest": lambda: {"files first": any(t in FILES for t in before_web),
                                 "web ran": web_ran, "cites [W…]": "[W" in text},
-        "vllm-latest-local": lambda: {"no web tool called": not any(t in WEB or t == "gaps" for t in tools),
+        "vllm-latest-local": lambda: {"no web tool called": not any(t in WEB for t in tools),
                                       "no web cited": "[W" not in text},
     }[record["id"]]()
 
@@ -197,13 +192,20 @@ def run(label: str, make_agent, config: dict, outside=None, say=print) -> Path:
             continue
         if agent is None:
             agent = make_agent(lambda kind, detail: events.append((kind, detail)))
-            real = agent.toolbox.call
+            made = agent._registry
 
-            def call(name, args):
-                result = real(name, args)
-                reached.append({"tool": name, "args": args, "result": result.strip().split("\n")[0][:200]})
-                return result
-            agent.toolbox.call = call
+            def registry():                                 # every call the budget let through, with its result
+                r = made()
+                real = r.run
+
+                def run(name, args, budget=None, on_run=None):
+                    out = real(name, args, budget, on_run)
+                    if out.refused != "budget":
+                        reached.append({"tool": name, "args": args, "result": out.text.strip().split("\n")[0][:200]})
+                    return out
+                r.run = run
+                return r
+            agent._registry = registry
         ask(pid, prompt, mode)
     return path
 

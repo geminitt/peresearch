@@ -746,7 +746,7 @@ def paper(**kw):
     return Paper(**{**base, **kw})
 
 
-def test_papers_are_searched_after_gaps_with_what_kind_of_record_each_is_and_their_pdf_can_be_read():
+def test_papers_are_searched_with_what_kind_of_record_each_is_and_their_pdf_can_be_read():
     web = FakeWeb()
     web.pages["https://arxiv.org/pdf/1706.03762"] = "[p. 1]\nfull text"
     found = [paper(), paper(title="Withdrawn", url="https://doi.org/10.9/w", pdf=None, kind="journal article",
@@ -755,8 +755,6 @@ def test_papers_are_searched_after_gaps_with_what_kind_of_record_each_is_and_the
              paper(title="Fresh", url="https://arxiv.org/abs/2601.00002v1", pdf=None, kind="preprint; published as ICML 2026",
                    venue="ICML 2026", citations=None, authors=[], abstract="", year=None, found_by=["arxiv"])]
     tb = Toolbox(None, web, roots=[], papers=FakePapers(found))
-    assert tb.call("search_papers", {"query": "attention"}).startswith("refused: first record with gaps")
-    tb.call("gaps", {"have": [], "missing": "x"})
     out = tb.call("search_papers", {"query": "attention", "n": 3})
     assert out.split("\n\n") == [
         "[W1] Attention Is All You Need (2017)\nconference paper · NeurIPS · 120,000 citations · found by semantic "
@@ -765,7 +763,6 @@ def test_papers_are_searched_after_gaps_with_what_kind_of_record_each_is_and_the
         "[W2] Withdrawn (2019)\nRETRACTED · journal article · J. Results · 40 citations · found by openalex\nC. Author\n"
         "https://doi.org/10.9/w\n" + "x" * 700,                                       # the abstract whole
         "[W3] Fresh\npreprint; published as ICML 2026 · found by arxiv\nhttps://arxiv.org/abs/2601.00002v1"]
-    assert tb.web_calls == 1                                            # one search of the question's budget
     assert tb.call("fetch", {"url": "https://arxiv.org/pdf/1706.03762"}) == "[W4] https://arxiv.org/pdf/1706.03762\n[p. 1]\nfull text"
     assert tb.sources.items["W4"].where == "https://arxiv.org/pdf/1706.03762" and tb.sources.items["W4"].text == "[p. 1]\nfull text"
     assert tb.sources.items["W1"].text == "The dominant sequence transduction models."
@@ -785,7 +782,7 @@ class FakeWiki:
         return self.found[:n], self.missed
 
 
-def test_wikipedia_is_searched_after_gaps_with_each_articles_titles_in_other_languages():
+def test_wikipedia_is_searched_with_each_articles_titles_in_other_languages():
     from peresearch.wiki import Article
     web = FakeWeb()
     web.pages["https://vi.wikipedia.org/wiki/Học_máy"] = "full article"
@@ -793,8 +790,6 @@ def test_wikipedia_is_searched_after_gaps_with_each_articles_titles_in_other_lan
                      {"en": "Machine learning", "ja": "機械学習"}),
              Article("Học sâu", "https://vi.wikipedia.org/wiki/Học_sâu", "vi", "", {})]
     tb = Toolbox(None, web, roots=[], wiki=FakeWiki(found, ["en.wikipedia (503)"]))
-    assert tb.call("search_wikipedia", {"query": "học máy"}).startswith("refused: first record with gaps")
-    tb.call("gaps", {"have": [], "missing": "x"})
     out = tb.call("search_wikipedia", {"query": "học máy", "languages": ["vi", "en"], "n": 2})
     assert out.split("\n\n") == [
         "[W1] Học máy (vi.wikipedia: an encyclopedia, a starting point, not primary evidence)\n"
@@ -803,14 +798,14 @@ def test_wikipedia_is_searched_after_gaps_with_each_articles_titles_in_other_lan
         "[W2] Học sâu (vi.wikipedia: an encyclopedia, a starting point, not primary evidence)\n"
         "https://vi.wikipedia.org/wiki/Học_sâu",
         "(did not answer: en.wikipedia (503); results may be missing)"]
-    assert tb.wiki.asked == [("học máy", ["vi", "en"], 2)] and tb.web_calls == 1
+    assert tb.wiki.asked == [("học máy", ["vi", "en"], 2)]
     assert tb.call("fetch", {"url": "https://vi.wikipedia.org/wiki/Học_máy"}).endswith("\nfull article")
     tb.call("search_wikipedia", {"query": "y"})
     assert tb.wiki.asked[-1] == ("y", ["en"], 3)                         # English by default
     tb.wiki.found, tb.wiki.missed = [], ["ja.wikipedia (503)", "ko.wikipedia (ConnectError)"]
     assert tb.call("search_wikipedia", {"query": "z", "languages": "vi"}) == (
         "no articles found\n\n(did not answer: ja.wikipedia (503), ko.wikipedia (ConnectError); results may be missing)")
-    assert tb.wiki.asked[-1][1] == ["vi"] and tb.web_calls == 3          # a single code as a string; three searches
+    assert tb.wiki.asked[-1][1] == ["vi"]                                # a single code as a string
     tb.call("search_wikipedia", {"query": "w", "languages": []})
     assert tb.wiki.asked[-1][1] == ["en"]
     assert (tb.sources.items["W1"].title, tb.sources.items["W1"].text) == ("Học máy", "Học máy là " + "x" * 700)  # longest
@@ -824,7 +819,6 @@ def test_a_long_page_is_returned_whole():
     page = "\n".join(f"line {i:05d} " + "w" * 40 for i in range(2_000))       # 100,000 characters
     web.pages["https://u/1"] = page
     tb = Toolbox(None, web, roots=[])
-    tb.call("gaps", {"have": [], "missing": "x"})
     tb.call("web_search", {"query": "x"})
     assert tb.call("fetch", {"url": "https://u/1"}) == "[W3] https://u/1\n" + page
     assert tb.call("fetch", {"url": "https://u/1", "part": 2}) == "[W3] https://u/1\n" + page   # an old argument: dropped
@@ -834,25 +828,17 @@ def test_a_long_page_is_returned_whole():
     assert "part" not in tb.SPECS["fetch"][1]
 
 
-def test_the_web_is_searched_after_gaps_and_only_returned_pages_are_read():
+def test_the_web_is_searched_and_only_returned_pages_are_read():
     web = FakeWeb()
     tb = Toolbox(None, web, roots=[])
-    assert tb.call("web_search", {"query": "x"}) == ("refused: first record with gaps(have, missing) what the user's "
-                                                     "files already cover and what is missing; then search the web for "
-                                                     "what is missing") and web.searched == []
-    assert tb.call("gaps", {"have": "one point", "missing": ["a", "b"]}) == \
-        ("recorded: 1 point(s) the user's files cover, 2 missing or not enough; web_search, search_papers and "
-         "search_wikipedia may now look for what is missing")
-    assert tb.recorded_gaps == {"have": ["one point"], "missing": ["a", "b"]}
     assert tb.call("web_search", {"query": "x", "n": 1}) == (
         "(web search: fake)\n\nTitle: T1\nURL: https://u/1\ns1\n\nsources (cite their ids; fetch reads a page):\n"
         "[W1] T1 — https://u/1 (web page)")                     # the server's text as it came, then its links
-    assert tb.web_calls == 1
     assert tb.sources.items["W1"].title == "T1" and web.searched == ["x"]
     assert tb.sources.items["W1"].text == "Title: T1\nURL: https://u/1\ns1"                 # its paragraph
     assert tb.call("fetch", {"url": "https://u/2"}).startswith("refused: fetch only opens URLs")
     tb.call("web_search", {"query": "y"})
-    assert tb.web_calls == 2 and web.searched == ["x", "y"]
+    assert web.searched == ["x", "y"]
     assert tb.call("fetch", {"url": "https://u/1"}) == "[W3] https://u/1\npage text"
     assert tb.sources.items["W3"].text == "page text"
     assert tb.sources.items["W1"].text == "Title: T1\nURL: https://u/1\ns1"
@@ -863,10 +849,6 @@ def test_the_web_is_searched_after_gaps_and_only_returned_pages_are_read():
     assert tb.call("web_search", {"query": "z"}) == "(web search: fake)\n\nnothing found for that\n\n(no link in it)"
     web.search = lambda query, n: Found("fake", "  ", [])
     assert tb.call("web_search", {"query": "z"}) == "(web search: fake)\n\nno results"
-    tb.call("gaps", {"have": ["a", "b"], "missing": "c"})
-    assert tb.recorded_gaps == {"have": ["a", "b"], "missing": ["c"]}
-    tb.call("gaps", {"have": None, "missing": None})
-    assert tb.recorded_gaps == {"have": [], "missing": []}
 
 
 def test_a_tool_error_is_text_for_the_model_never_a_crash(tmp_path):
@@ -895,56 +877,62 @@ def test_arguments_are_read_by_their_schema_type(tmp_path, name, arg, given, rea
     """A model may write a number as a string (Llama-3.2-1B through Ollama sent {"k": "10", "page": "2"}, recorded
     2026-10-06; read then failed on "'>' not supported between 'str' and 'int'"): every integer argument reaches its
     tool as a number when it is one; otherwise the model is told which argument and why, and the tool does not run."""
-    tb = Toolbox(None, None, roots=[tmp_path])
+    tb = Toolbox(None, FakeWeb(), roots=[tmp_path], papers=FakePapers([]), wiki=FakeWiki([]))   # every tool offered
     got = []
     setattr(tb, name, lambda **kw: got.append(kw) or "ran")
-    out = tb.call(name, {arg: given})
+    required = {k: "x" for k in Toolbox.SPECS[name][2]}                # the tool's other required arguments
+    out = tb.call(name, {**required, arg: given})
     if reaches is None:
         assert out == f"bad arguments for {name}: {arg} must be a whole number (got {given!r})" and got == []
     else:
-        assert out == "ran" and got == [{arg: reaches}] and type(got[0][arg]) is int
+        assert out == "ran" and got == [{**required, arg: reaches}] and type(got[0][arg]) is int
 
 
 def test_schemas_describe_every_tool_and_hide_the_web_without_a_search_server():
     full = Toolbox(None, FakeWeb(), roots=[], papers=FakePapers([]), wiki=FakeWiki([])).schemas()
     assert [s.name for s in full] == list(Toolbox.SPECS)
     only_papers = [s.name for s in Toolbox(None, None, roots=[], papers=FakePapers([])).schemas()]
-    assert only_papers == [n for n in Toolbox.SPECS if n not in ("web_search", "search_wikipedia")]   # gaps, fetch: both
+    assert only_papers == [n for n in Toolbox.SPECS if n not in ("web_search", "search_wikipedia", "fetch")]  # no reader
     only_web = [s.name for s in Toolbox(None, FakeWeb(), roots=[]).schemas()]
     assert only_web == [n for n in Toolbox.SPECS if n not in ("search_papers", "search_wikipedia")]
     only_wiki = [s.name for s in Toolbox(None, None, roots=[], wiki=FakeWiki([])).schemas()]
-    assert only_wiki == [n for n in Toolbox.SPECS if n not in ("web_search", "search_papers")]
+    assert only_wiki == [n for n in Toolbox.SPECS if n not in ("web_search", "search_papers", "fetch")]
+    budgets = {s.name: (s.group, s.budget) for s in Toolbox(None, FakeWeb(), roots=[]).specs()}
+    assert budgets == {"tree": ("files", ""), "search_notes": ("files", ""), "overview": ("files", ""),
+                       "grep": ("files", ""), "glob": ("files", ""), "read": ("files", ""),
+                       "web_search": ("web", "search"), "search_papers": ("web", "search"),
+                       "search_wikipedia": ("web", "search"), "fetch": ("web", "page")}   # each a question's search
     wire = chat_tools(full)                                               # as the gateway sends them
     read = next(s for s in wire if s["function"]["name"] == "read")      # the shape the model's API reads
     desc, props, required = Toolbox.SPECS["read"]
     assert read == {"type": "function", "function": {"name": "read", "description": desc, "parameters": {
         "type": "object", "required": required, "properties": {k: {"type": t, "description": d} for k, (t, d) in props.items()}}}}
-    gaps = next(s for s in wire if s["function"]["name"] == "gaps")["function"]["parameters"]["properties"]
-    assert gaps["have"] == {"type": "array", "description": Toolbox.SPECS["gaps"][1]["have"][1], "items": {"type": "string"}}
+    wiki = next(s for s in wire if s["function"]["name"] == "search_wikipedia")["function"]["parameters"]["properties"]
+    assert wiki["languages"] == {"type": "array", "description": Toolbox.SPECS["search_wikipedia"][1]["languages"][1],
+                                 "items": {"type": "string"}}
     for s in full:
         params = s.parameters
         assert set(params["required"]) <= set(params["properties"])
         assert all(v.get("items") == {"type": "string"} for v in params["properties"].values() if v["type"] == "array")
     offline = [s.name for s in Toolbox(None, FakeWeb(), roots=[], papers=FakePapers([]),
                                                        wiki=FakeWiki([])).schemas(web=False)]
-    assert offline == [n for n in Toolbox.SPECS if n not in ("gaps", "web_search", "search_papers", "search_wikipedia",
+    assert offline == [n for n in Toolbox.SPECS if n not in ("web_search", "search_papers", "search_wikipedia",
                                                              "fetch")]
     assert [s.name for s in Toolbox(None, None, roots=[]).schemas()] == offline
     no_providers = FakeWeb()
     no_providers.searcher = None                                 # no search server set
-    assert [s.name for s in Toolbox(None, no_providers, roots=[]).schemas()] == offline
+    assert [s.name for s in Toolbox(None, no_providers, roots=[]).schemas()] == offline + ["fetch"]   # the reader
     web, papers, wiki = FakeWeb(), FakePapers([paper()]), FakeWiki([])
     local = Toolbox(None, web, roots=[], papers=papers, wiki=wiki)
     local.local_only = True                                      # /local: the user turned the web off
     assert [s.name for s in local.schemas()] == offline
-    for name, args in (("gaps", {"have": [], "missing": ["x"]}), ("web_search", {"query": "x"}),
+    for name, args in (("web_search", {"query": "x"}),
                        ("search_papers", {"query": "x"}), ("search_wikipedia", {"query": "x"}),
                        ("fetch", {"url": "https://u/1"})):
         assert local.call(name, args) == "refused: the user turned the web off for this session (local only)"
-    assert web.searched == [] and papers.asked == [] and wiki.asked == [] and local.web_calls == 0
+    assert web.searched == [] and papers.asked == [] and wiki.asked == []
     local.local_only = False                                     # on again: the web as before
     assert [s.name for s in local.schemas()] == list(Toolbox.SPECS)
-    local.gaps([], ["x"])
     assert "[W1] T1" in local.web_search("x") and web.searched == ["x"]
 
 
@@ -1117,7 +1105,7 @@ def test_context_is_redacted_and_shown_whole():
     assert "§ S; the match: L3-8" in out                                # a path holding ":" keeps its place
 
 
-def test_glob_tree_gaps_and_read_at_their_edges(tmp_path, monkeypatch):
+def test_glob_tree_and_read_at_their_edges(tmp_path, monkeypatch):
     import json
     for name in ("s/a.md", "s/b.md", "t/c.md", "big/1.md", "big/2.md", "big/3.md"):
         (tmp_path / name).parent.mkdir(parents=True, exist_ok=True)
@@ -1130,9 +1118,6 @@ def test_glob_tree_gaps_and_read_at_their_edges(tmp_path, monkeypatch):
     assert "  big/ (not searched: 3 files)" in out
     both = Toolbox(None, None, roots=[tmp_path / "s", tmp_path / "t"]).tree()
     assert both.startswith(f"[N1] listing of {tmp_path / 's'}, {tmp_path / 't'}\n")
-    assert tb.gaps(have="one point", missing="a gap") == ("recorded: 1 point(s) the user's files cover, 1 missing or "
-                                                         "not enough; web_search, search_papers and search_wikipedia "
-                                                         "may now look for what is missing")
     assert tb.read("s/a.md", 1, 450).split("\n")[0].endswith(":L1-450")                 # every line asked for
     assert tb.read("s/a.md").split("\n")[0].endswith(":L1-500")                         # no end: the whole file
     (tmp_path / "one.ipynb").write_text(json.dumps({"cells": [{"cell_type": "markdown", "source": "only"}]}))

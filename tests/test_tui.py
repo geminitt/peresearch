@@ -254,7 +254,7 @@ def test_the_log_and_the_status_line_follow_what_the_agent_does(home, notes, mon
               ("tool", "grep([/b]SuperBPE[b])", "Searching"), ("tool", "glob(*.md)", "Searching"),   # the model's
               ("result", "a line [/i] of a page", None),                     # text: shown as written, never markup
               ("tool", 'web_search("bpe")', "Searching"), ("tool", "tree(~/notes)", "Looking through folders"),
-              ("tool", "gaps(…)", "Noting what is missing"), ("tool", "read(bpe.md)", "Reading"),
+              ("tool", "read(bpe.md)", "Reading"),
               ("tool", "fetch(https://e.org)", "Reading"), ("tokens", "12345", None), ("think", "", "Thinking"),
               ("wait", "Waking the model up\x1b[2J", "Waking the model up"), ("result", "page read", None)]
 

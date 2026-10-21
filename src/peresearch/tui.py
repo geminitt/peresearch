@@ -888,8 +888,7 @@ class Chat(App):
         if kind == "tool":
             self.add(Static(Text.assemble(("● ", "green"), guard.sanitize(detail)), classes="tool"))   # its arguments
             self.doing = ("Searching" if detail.startswith(("search", "grep", "glob", "web")) else
-                          "Looking through folders" if detail.startswith("tree") else
-                          "Noting what is missing" if detail.startswith("gaps") else "Reading")
+                          "Looking through folders" if detail.startswith("tree") else "Reading")
         elif kind == "result":
             self.add(Static(f"  ⎿  {guard.sanitize(detail)}", classes="result", markup=False))
         elif kind == "tokens":

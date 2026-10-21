@@ -537,7 +537,6 @@ def test_a_clicked_link_shows_a_source_or_opens_only_what_is_safe(home, notes, m
 
     def make(on_event):
         a, llm = agent(home, notes, Reply("", [ToolCall("c1", "read", {"path": "bpe.md", "start": 2, "end": 4})]),
-                       Reply("", [ToolCall("c2", "gaps", {"have": [], "missing": ["x"]})]),
                        Reply("", [ToolCall("c3", "web_search", {"query": "bpe"})]),
                        Reply("BPE merges pairs [N1] and has a history [W1]."))
         return a
@@ -609,7 +608,7 @@ def test_local_turns_the_web_off_for_the_session_and_back_on(home, notes):
     llm = made[0][1]
     first_tools = [t["function"]["name"] for t in llm.seen[0][1]]
     later_tools = [t["function"]["name"] for t in llm.seen[1][1]]
-    assert "web_search" not in first_tools and "gaps" not in first_tools and "overview" in first_tools
+    assert "web_search" not in first_tools and "fetch" not in first_tools and "overview" in first_tools
     assert "web_search" in later_tools
     assert "turned the web OFF" in llm.seen[0][0][0]["content"] and "turned the web OFF" not in llm.seen[1][0][0]["content"]
     assert "/local" in tui.COMMANDS
@@ -955,14 +954,14 @@ def test_config_shows_sets_and_resets_the_harness_settings(home, notes, monkeypa
         app.later = notes_of(app)[-2:], shown_log(app)[-1][1].split("\n")
     app = tui_run(make, steps)
     assert app.listing == ("page", "**Settings** (`/config <name> <value>` sets one, `/config <name>` resets it; "
-                                   "they apply from the next question)\nNone set: each has its default — steps 12 · "
-                                   "web-searches 4 · pages 6 · seconds 900 · thinking the server's · context the "
-                                   "server's")
+                                   "they apply from the next question)\nNone set: each has its default — steps no limit · "
+                                   "web-searches no limit · pages no limit · seconds 900 · thinking the server's · "
+                                   "context the server's")
     assert app.said == ["steps is now 20; it applies from the next question.",
                         "pages must be a whole number from 0 to 30 (got '99')",
                         "unknown setting colour: steps, web-searches, pages, seconds, thinking, context, rerank-depth"]
     assert len(made) == 2 and made[1].limits.steps == 20 and app.same          # rebuilt, same conversation
-    assert app.reset == ["steps is back to its default (12).",
+    assert app.reset == ["steps is back to its default (no limit).",
                          "pages is now 4; it applies from the next question. PERESEARCH_PAGES is set in the "
                          "environment, which wins over the file."]
     assert app.refused == "wait for the current question to finish, or press esc"
@@ -971,7 +970,8 @@ def test_config_shows_sets_and_resets_the_harness_settings(home, notes, monkeypa
         "thinking is now off; it applies from the next question."]
     assert app.later[1][1:] == ["- pages: 3 (environment) — web pages read per question",
                                 "- thinking: off (saved) — the model's reasoning: on or off",
-                                "Defaults: steps 12 · web-searches 4 · seconds 900 · context the server's"]
+                                "Defaults: steps no limit · web-searches no limit · seconds 900 · context the "
+                                "server's"]
     assert settings.saved() == {"PERESEARCH_PAGES": "4", "PERESEARCH_LLM_THINKING": "off"} and "/settings" in COMMANDS and "/config" not in COMMANDS
 
 

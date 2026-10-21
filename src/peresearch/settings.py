@@ -58,9 +58,11 @@ FIELDS = [("PERESEARCH_LLM_URL", "model endpoint (an OpenAI-compatible …/v1), 
 
 # What /config shows and sets (the model and the keys are /setup's): (key, setting, default shown, what it does,
 # its range: (low, high) for a whole number, "on/off", or "context")
-CONFIG = [("steps", "PERESEARCH_STEPS", "12", "model calls per question", (1, 50)),
-          ("web-searches", "PERESEARCH_WEB_SEARCHES", "4", "web, paper and Wikipedia searches per question", (0, 20)),
-          ("pages", "PERESEARCH_PAGES", "6", "web pages read per question", (0, 30)),
+# steps, web searches and pages: no limit unless the user sets one (owner, 2026-10-14, as OpenCode's optional `steps`)
+CONFIG = [("steps", "PERESEARCH_STEPS", "no limit", "model calls per question", (1, 50)),
+          ("web-searches", "PERESEARCH_WEB_SEARCHES", "no limit", "web, paper and Wikipedia searches per question",
+           (0, 20)),
+          ("pages", "PERESEARCH_PAGES", "no limit", "web pages read per question", (0, 30)),
           ("seconds", "PERESEARCH_SECONDS", "900", "time per question, a cold model start included", (30, 7200)),
           ("thinking", "PERESEARCH_LLM_THINKING", "the server's", "the model's reasoning: on or off", "on/off"),
           ("context", "PERESEARCH_LLM_CONTEXT", "the server's", "the model's context in tokens, when the server does "

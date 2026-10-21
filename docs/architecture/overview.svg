@@ -44,10 +44,10 @@
 <text x="422.0" y="315.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">writes sessions/&lt;project&gt;.jsonl</text>
 <rect x="410" y="440" width="370" height="182" rx="10" fill="#F1ECFB" stroke="#7A55C9" stroke-width="1.4"/>
 <text x="422.0" y="463.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#45288A" text-anchor="start">Tools</text>
-<text x="422.0" y="481.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#7A55C9" text-anchor="start">tools.py: Toolbox.call</text>
+<text x="422.0" y="481.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#7A55C9" text-anchor="start">registry.py: Registry.run · tools.py</text>
 <text x="422.0" y="504.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">tree · search_notes · overview · grep · glob · read</text>
-<text x="422.0" y="521.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">grep on ripgrep; files.walk&#x27;s rules (tools.svg)</text>
-<text x="422.0" y="538.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">gaps, then web_search / search_papers, fetch</text>
+<text x="422.0" y="521.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">web_search · search_papers · wikipedia · fetch</text>
+<text x="422.0" y="538.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">one pipeline: arguments, permission, budget, run</text>
 <text x="422.0" y="555.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">sources N1…, W1… for citations</text>
 <rect x="410" y="685" width="370" height="96" rx="10" fill="#FCE8E8" stroke="#C94343" stroke-width="1.4"/>
 <text x="422.0" y="708.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#7D1F1F" text-anchor="start">Reading rule</text>

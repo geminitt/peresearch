@@ -219,7 +219,7 @@ def test_injected_toolbox_without_policy_keeps_history_and_results_usable(home, 
     assert agent.history()[1].text == "PERMITTED HISTORY"
     assert not agent._stop_with_access(None)()
     agent.ask("Continue.")
-    assert agent._recall("R1", "recall")[0] == "R1"
+    assert agent._recall_run("R1").ref == "R1"
 
 
 @pytest.mark.parametrize("scoped", [False, True])
@@ -274,7 +274,7 @@ def test_history_that_fits_keeps_verbatim_answers_without_summary_requests(home)
 def test_refused_recall_has_no_retained_ref_or_continuation_offset(home):
     agent = Agent(Scripted(), Toolbox())
     ref = agent.results().put("read", {}, "UNKNOWN-PRIVATE-EVIDENCE")
-    assert agent._recall(ref, "recall", 3) == (None, REVOKED_RESULT, 0)
+    assert agent._recall_run(ref, **{"from": 3}) == REVOKED_RESULT
 
 
 @pytest.mark.parametrize("summary,resume", [(False, False), (False, True), (True, False), (True, True)])

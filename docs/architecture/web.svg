@@ -6,12 +6,12 @@
 <rect x="40" y="100" width="420" height="96" rx="10" fill="#F1ECFB" stroke="#7A55C9" stroke-width="1.4"/>
 <text x="52.0" y="123.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#45288A" text-anchor="start">web_search(query, n)</text>
 <text x="52.0" y="141.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#7A55C9" text-anchor="start">tools.py</text>
-<text x="52.0" y="164.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">refused until gaps(); one budget with papers</text>
-<text x="52.0" y="181.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">(≤ 4 searches a question); outbound_query</text>
+<text x="52.0" y="164.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">one search budget with papers and Wikipedia</text>
+<text x="52.0" y="181.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">(a limit only when set); outbound_query</text>
 <rect x="520" y="100" width="460" height="96" rx="10" fill="#F1ECFB" stroke="#7A55C9" stroke-width="1.4"/>
 <text x="532.0" y="123.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#45288A" text-anchor="start">search_papers(query, n)</text>
 <text x="532.0" y="141.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#7A55C9" text-anchor="start">tools.py → papers.Papers</text>
-<text x="532.0" y="164.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">refused until gaps(); counts as a web search</text>
+<text x="532.0" y="164.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">counts as a web search</text>
 <text x="532.0" y="181.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">query through guard.outbound_query</text>
 <rect x="40" y="236" width="420" height="130" rx="10" fill="#E4F4F7" stroke="#2A8FA6" stroke-width="1.4"/>
 <text x="52.0" y="259.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#12505E" text-anchor="start">The user&#x27;s search MCP server</text>
@@ -41,8 +41,8 @@
 <rect x="280" y="576" width="460" height="96" rx="10" fill="#F1ECFB" stroke="#7A55C9" stroke-width="1.4"/>
 <text x="292.0" y="599.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#45288A" text-anchor="start">fetch(url)</text>
 <text x="292.0" y="617.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#7A55C9" text-anchor="start">tools.py → Web.fetch</text>
-<text x="292.0" y="640.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">a URL a search returned (or a paper&#x27;s PDF), whole;</text>
-<text x="292.0" y="657.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">≤ 6 pages a question, a page read again free</text>
+<text x="292.0" y="640.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">a URL a search returned or the user wrote, whole;</text>
+<text x="292.0" y="657.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#2B2B28" text-anchor="start">pages limited when set; a page read again free</text>
 <rect x="280" y="712" width="460" height="130" rx="10" fill="#FCE8E8" stroke="#C94343" stroke-width="1.4"/>
 <text x="292.0" y="735.0" font-family="'DejaVu Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#7D1F1F" text-anchor="start">Public address? Connect to it</text>
 <text x="292.0" y="753.0" font-family="'DejaVu Sans Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#C94343" text-anchor="start">web._checked · web._pinned</text>

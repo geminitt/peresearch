@@ -2,12 +2,13 @@
 
 One agent, one loop, written out rather than taken from a framework:
 1. The model reads the message first. A greeting or small talk is answered without tools. A question about the
-   user's own work sends it into their files (tree, search_notes, overview, grep, glob, read). Before the web it
-   must record with `gaps` what the files cover and what is missing, and the web is searched for what is missing.
-2. It calls tools until it answers or a limit is reached: steps, web searches, pages read, wall time. At the
-   limit it must answer with what it has.
+   user's own work sends it into their files (tree, search_notes, overview, grep, glob, read), and the web after
+   them: an instruction to the model, not a gate (owner, 2026-10-14).
+2. It calls tools until it answers or a limit is reached: wall time always; steps, web searches and pages read only
+   when the user set them. At a limit it must answer with what it has.
 3. Tool results are untrusted data: they are wrapped as such, and text in them that reads like an instruction
-   is flagged. The tools themselves are read-only, and `fetch` only opens URLs a search returned.
+   is flagged. The tools themselves are read-only, and `fetch` only opens URLs a search returned or the user
+   wrote.
 4. The answer cites sources by id ([N1] for a file, [W2] for the web). A rule-based check then verifies every
    cited id was retrieved and every quoted passage appears in a cited source; what fails is reported, not
    hidden.
@@ -29,7 +30,8 @@ from peresearch import guard, settings
 from peresearch.llm import Interrupted, too_long
 from peresearch.protocols.chat import request_size
 from peresearch.messages import Message, Request, Tool
-from peresearch.tools import _whole, Source, Toolbox
+from peresearch.registry import Budget, Kept, Registry, ToolSpec, whole
+from peresearch.tools import WEB_SEARCHES, Source, Toolbox
 
 SYSTEM = """You are peresearch, a personal research assistant. You can look through the user's own files (their
 projects, notes and courses, in the folders they declared) and search the web.
@@ -41,11 +43,11 @@ Read the message first and decide what it needs:
   exact names or text, and for complete lists; tree shows what a folder or project contains; overview lists the
   documents on a topic (for "everything I have on X" or "which files cover Y"); glob lists files by pattern; read
   opens a file. Read what you rely on.
-- A question that needs sources: look at the user's files first, then the web. Before any web tool, call gaps with
-  what the files cover and what they do not; then search the web (web_search for web pages, search_papers for
-  scholarly papers, which says whether each is peer-reviewed, a preprint or retracted, search_wikipedia for an
-  overview or a term's name in another language), and read what you rely on. The web is not only for what is
-  missing: a question about the world beyond the user's files is searched there, after the files.
+- A question that needs sources: look at the user's files first, then the web: note what the files cover and what
+  they do not, then search the web (web_search for web pages, search_papers for scholarly papers, which says whether
+  each is peer-reviewed, a preprint or retracted, search_wikipedia for an overview or a term's name in another
+  language), and read what you rely on. The web is not only for what is missing: a question about the world beyond
+  the user's files is searched there, after the files. fetch opens a URL the user wrote in the message.
   When the question is about a topic the user may have studied or worked on, look at their files before deciding.
 - Use as few calls as the question needs.
 - Outside the declared folders, the user is asked before anything is read; if they refuse, do not ask again.
@@ -61,7 +63,6 @@ How to answer:
   ids that appeared in tool results. When you quote, quote exactly and cite the source of the quote.
 - If the sources do not support an answer, say so instead of guessing."""
 
-WEB_SEARCHES = ("web_search", "search_papers", "search_wikipedia")   # one budget: Limits.web_searches
 LOCAL_TOOLS = ("tree", "glob", "grep", "read", "search_notes", "overview")
 REVOKED_RESULT = "refused: retained file evidence is outside current access or has unknown scope; read it again"
 REFUSED_STARTS = ("refused:", "already called", "limit:")   # how a refused call's result starts (tools.py, the loop)
@@ -90,9 +91,9 @@ _INJECTION = re.compile(r"(?i)\b(ignore (all |any )?(previous|prior|above) (inst
 
 @dataclass
 class Limits:
-    steps: int = 12            # model calls per question
-    web_searches: int = 4
-    fetches: int = 6
+    steps: int | None = None   # model calls per question; None: no limit unless the user sets one (owner, 2026-10-14)
+    web_searches: int | None = None
+    fetches: int | None = None
     seconds: float = 900.0     # wall time per question, including a cold model start
 
     @classmethod
@@ -700,11 +701,17 @@ class Agent:
         tb = self.toolbox
         return SYSTEM + f"\n\nToday is {time.strftime('%Y-%m-%d, %A')}." + (
             LOCAL_ONLY if getattr(tb, "local_only", False) else
-            "" if any(t.name in WEB_SEARCHES for t in tb.schemas()) else NO_WEB)
+            "" if any(t.name in WEB_SEARCHES for t in self._tools()) else NO_WEB)
+
+    def _registry(self) -> Registry:
+        """The toolbox's tools and recall (every result is kept), through one pipeline."""
+        tb = self.toolbox
+        recall = ToolSpec(RECALL.name, RECALL.description, RECALL.parameters, "files", self._recall_run, store=False)
+        return Registry(tb.specs() + [recall], web_on=lambda: not getattr(tb, "local_only", False))
 
     def _tools(self) -> list[Tool]:
-        """The tool schemas sent with a request: the toolbox's, and recall (every result is kept)."""
-        return self.toolbox.schemas() + [RECALL]
+        """The tool schemas sent with a request."""
+        return self._registry().tools()
 
     def context_report(self) -> dict:
         """/context: the next question's request before its own messages — the system prompt, the tools, the
@@ -720,23 +727,23 @@ class Agent:
         return {"parts": parts, "ratio": self._ratio, "tokens": round(sum(n for _, n in parts) / self._ratio),
                 "context": context}
 
-    def _recall(self, ref, call_id: str, start=0) -> tuple[str | None, str, int]:
-        """(its ref, a kept result of this conversation from character `start`, start); its note, if trimmed again,
-        names the original. A bad ref or start: (None, what is wrong, 0)."""
+    def _recall_run(self, ref=None, **more) -> "Kept | str":
+        """A kept result of this conversation from character `from` (Kept), its note, if trimmed again, naming the
+        original (self._recalled); a bad ref or start: what is wrong."""
         if not isinstance(ref, str) or not ref.strip():
-            return None, "recall needs a ref such as R1: each trimmed result's note gives it", 0
+            return "recall needs a ref such as R1: each trimmed result's note gives it"
         got = self.results().get(ref.strip())
         if got is None:
             held = ", ".join(t["ref"] for t in self.results()._lines()) or "none"
-            return None, f"no result {ref.strip()} in this conversation (it holds {held})", 0
+            return f"no result {ref.strip()} in this conversation (it holds {held})"
         if not self._result_allowed(got["tool"], got.get("scope")):
-            return None, REVOKED_RESULT, 0
-        start = _whole(start or 0)                      # read by its schema type, as the tools' arguments are
+            return REVOKED_RESULT
+        start = whole(more.get("from") or 0)          # read by its schema type, as the tools' arguments are
         if start is None or not 0 <= start < max(1, len(got["text"])):
-            return None, f"{got['ref']} holds {len(got['text']):,} characters: from must be 0 to {len(got['text']) - 1}", 0
-        self._kept[call_id] = (got["ref"], got["tool"], got["args"], len(got["text"]))
+            return f"{got['ref']} holds {len(got['text']):,} characters: from must be 0 to {len(got['text']) - 1}"
+        self._recalled = (got["ref"], got["tool"], got["args"], len(got["text"]))
         self._scopes[got["ref"]] = (got["tool"], got.get("scope"))
-        return got["ref"], got["text"][start:], start
+        return Kept(got["ref"], got["text"][start:], start)
 
     def rename(self, name: str) -> None:
         """Name the current conversation (the last name given wins; clean_name says what a name may be)."""
@@ -984,7 +991,10 @@ class Agent:
         self.source_registry().begin_question()
         if hasattr(tb, "_once"):
             tb._once = []
-        tb.web_calls, tb.recorded_gaps, fetches, read_pages = 0, None, 0, set()
+        if hasattr(tb, "begin"):
+            tb.begin(question)                          # the URLs the user wrote: fetch may open them
+        registry = self._registry()
+        budget = Budget(searches=lim.web_searches, pages=lim.fetches, deadline=time.monotonic() + lim.seconds)
         self._base = self._system()
         (self._summary, self._done), past, self._side = self.earlier(), self.history(), [0, 0]
         self._past = len(past) // 2                    # earlier turns at the start of the messages
@@ -1001,7 +1011,8 @@ class Agent:
             if self.cancelled:
                 stopped, text = "cancelled", "_(interrupted)_"
                 break
-            over = ("steps" if steps >= lim.steps else "time" if time.time() - start > lim.seconds else
+            over = ("steps" if lim.steps is not None and steps >= lim.steps else
+                    "time" if time.time() - start > lim.seconds else
                     "refused" if refused_rounds >= REFUSED_ROUNDS else "")
             if over:
                 stopped = over
@@ -1044,24 +1055,14 @@ class Agent:
                     shown.append((c.id, None, c.name, f"not run: {c.error}; call {c.name} again with its arguments as "
                                                       "one JSON object", 0))
                     continue
-                repeat = (c.name, c.args) in calls
                 calls.append((c.name, c.args))
-                ref, offset = None, 0               # the stored result this message shows (a part of)
-                if repeat:                  # a small model can loop on one call; the answer is already above
-                    result = "already called with the same arguments; its result is above. Use it, or answer."
-                elif c.name == "recall":    # kept results, read back from the store: not a tool
-                    ref, result, offset = self._recall(c.args.get("ref"), c.id, c.args.get("from", 0))
-                elif c.name in WEB_SEARCHES and tb.web_calls >= lim.web_searches:   # one budget for all three
-                    result = f"limit: at most {lim.web_searches} web searches per question"
-                elif c.name == "fetch" and (c.args.get("url") is None or c.args["url"] not in read_pages) \
-                        and fetches >= lim.fetches:
-                    result = f"limit: at most {lim.fetches} pages per question"
-                else:
-                    if c.name == "fetch" and (c.args.get("url") is None or c.args["url"] not in read_pages):
-                        fetches += 1                # a page read again is not another page
-                        read_pages.add(c.args.get("url"))
-                    self.on_event("tool", f"{c.name}({', '.join(json.dumps(v, ensure_ascii=False) for v in c.args.values())[:120]})")
-                    result = tb.call(c.name, c.args)
+                out = registry.run(c.name, c.args, budget, on_run=lambda name, args: self.on_event(
+                    "tool", f"{name}({', '.join(json.dumps(v, ensure_ascii=False) for v in args.values())[:120]})"))
+                ref, offset, result = None, 0, out.text     # the stored result this message shows (a part of)
+                if out.kept:                # recall: a kept result, read back from the store
+                    ref, offset = out.kept.ref, out.kept.start
+                    self._kept[c.id] = self._recalled
+                elif out.store:
                     ref = self.results().put(c.name, c.args, result)    # kept whole: restorable (ResultStore)
                     if c.name in LOCAL_TOOLS and hasattr(tb, "last_scope"):
                         scope = sorted(tb.last_scope)
@@ -1080,7 +1081,7 @@ class Agent:
             refused = len(outcomes) == len(reply.calls) and all(o.startswith(REFUSED_STARTS) for o in outcomes)
             refused_rounds = refused_rounds + 1 if refused else 0
         sources = tb.sources.selected(text, self.results(), getattr(tb, "retained_allowed", None))
-        assert steps <= lim.steps + 2, f"{steps} model calls for a limit of {lim.steps}"   # the limit call, one re-ask
+        assert lim.steps is None or steps <= lim.steps + 2, f"{steps} model calls for a limit of {lim.steps}"
         assert stopped in ("", "steps", "time", "cancelled", "length", "refused"), f"unknown stop reason {stopped!r}"
         prompt, completion = prompt + self._side[0], completion + self._side[1]      # summaries made on the way
         answer = Answer(text, sources, check(text, sources), steps, prompt, completion, stopped, calls,
