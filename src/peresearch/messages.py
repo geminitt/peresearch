@@ -84,6 +84,24 @@ class Message:
         return replace(self, parts=tuple(p for p in self.parts if not isinstance(p, Text)) + (Text(text),))
 
 
+_PARTS = {"text": Text, "reasoning": Reasoning, "call": ToolCall, "result": ToolResult}
+_TYPES = {cls: name for name, cls in _PARTS.items()}
+
+
+def to_json(m: Message) -> dict:
+    """A message as a conversation file keeps it: its role, each part named by its type with its fields, and what
+    providers attached (plain JSON values, as the gateway received them)."""
+    return {"role": m.role, "provider": m.provider,
+            "parts": [{"type": _TYPES[type(p)], **{f: getattr(p, f) for f in p.__dataclass_fields__}}
+                      for p in m.parts]}
+
+
+def from_json(data: dict) -> Message:
+    """The message to_json kept."""
+    parts = tuple(_PARTS[p["type"]](**{k: v for k, v in p.items() if k != "type"}) for p in data["parts"])
+    return Message(data["role"], parts, data.get("provider") or {})
+
+
 @dataclass(frozen=True)
 class Tool:
     name: str

@@ -821,11 +821,9 @@ def test_resume_rows_line_up_and_long_questions_end_in_an_ellipsis(home, notes):
     the width is cut near the end with "…" instead of wrapping, and one with line breaks is kept on one line."""
     import json as _json
 
-    from peresearch.agent import history_file
+    from peresearch.agent import conversation_file
     from peresearch.tui import Prompt
 
-    path = history_file("default")
-    path.parent.mkdir(parents=True, exist_ok=True)
     firsts = ["short", "a question with\nseveral lines\ninside it",
               "a very long first question about tokenization " * 8, "twelve"]
     lines = []
@@ -834,7 +832,10 @@ def test_resume_rows_line_up_and_long_questions_end_in_an_ellipsis(home, notes):
             lines.append({"time": 1_800_000_000 + n * 1000 + i, "conversation": f"c{n}",
                           "question": first if i == 0 else f"follow-up {i}", "answer": "ok", "sources": {}})
     lines.append({"time": 1_800_000_000 + 2002, "conversation": "c2", "name": "a named conversation"})
-    path.write_text("\n".join(_json.dumps(x) for x in lines) + "\n")     # the long one named: its name, then the question
+    for cid in {x["conversation"] for x in lines}:                      # each conversation's file
+        path = conversation_file("default", cid)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("".join(_json.dumps(x) + "\n" for x in lines if x["conversation"] == cid))
 
     async def steps(app, pilot):
         app.query_one("#ask", Prompt).value = "/resume"

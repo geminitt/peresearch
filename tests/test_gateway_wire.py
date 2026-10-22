@@ -132,6 +132,8 @@ def conversation(case, home, notes, tmp_path, monkeypatch):
     assert [a.text for a in answers] == list(ANSWERS) and answers[0].calls == [("search_notes", json.loads(CALL_ARGS))]
     text = json.dumps(sent, ensure_ascii=False, indent=1, sort_keys=True)
     text = text.replace(str(tmp_path), "<tmp>")
+    # a kept result's note counts its characters, the temporary path's included: that count varies with the path
+    text = re.sub(r"returned [\d,]+ characters, kept outside", "returned <n> characters, kept outside", text)
     return re.sub(r"Today is \d{4}-\d{2}-\d{2}, \w+\.", "Today is <date>.", text)
 
 

@@ -234,6 +234,7 @@ def ready(a, ratio=1.0, past=0):
     a._ratio, a._fold_blocked, a.cancelled, a._told = ratio, False, False, None
     a._base = a._prompt = "sys"
     a._summary, a._done, a._past, a._side = "", 0, past, [0, 0]
+    a._sizes = [2] * past                                                 # each earlier turn: question, answer
     a._kept, a._scopes, a._replayed_scope = {}, {}, set()
     return a
 
@@ -298,7 +299,8 @@ def summarize(text="tóm tắt tiếng Việt", tokens=10):
 
 def test_as_few_turns_as_free_the_need_are_summarized(home):
     turns = [(f"question {i}", "z" * 10_000) for i in range(3)]
-    gain = len("question 0") + 10_000 + 2 * FRAMING * 1.0
+    gain = _size("", [Message.user("question 0"), Message.assistant("z" * 10_000)], None) - _size("", [], None) \
+        + 2 * FRAMING * 1.0
     a, wire, messages = folding(home, turns, summarize())
     assert a._fold(messages, gain - 100) is True and a._done == 1         # freed exactly: one turn
     assert "question 1" not in wire.requests[0].messages[0].text
@@ -430,7 +432,8 @@ def test_a_part_prefers_a_line_end_in_its_second_half_and_is_never_longer_than_t
 
 def test_folding_frees_the_need_with_its_frame_by_the_characters_a_token(home):
     turns = [(f"question {i}", "z" * 10_000) for i in range(3)]
-    gain = len("question 0") + 10_000 + 2 * FRAMING * 2.0
+    first = [Message.user("question 0"), Message.assistant("z" * 10_000)]
+    gain = _size("", first, None) - _size("", [], None) + 2 * FRAMING * 2.0     # as a request measures it
     longest = 100 * 2.0
     a, wire, messages = folding(home, turns, summarize())
     a._ratio = 2.0

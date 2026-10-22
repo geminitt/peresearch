@@ -186,7 +186,7 @@ def test_fold_exposure_counts_summary_requests_and_actual_summary_text(evaluatio
     payload = "Synthetic instruction that was hidden in an earlier turn."
     model = gateway_scripted(Reply(payload if contains_payload else "A benign summary."), Reply("Final answer."))
     agent = Agent(model, Toolbox(), record=False)
-    agent._past, agent._done, agent._summary = 1, 0, ""
+    agent._past, agent._done, agent._summary, agent._sizes = 1, 0, "", [2]
     agent._base, agent._side = "Base system.", [0, 0]
     agent._prompt = agent._base
     messages = [Message.user("Old question."), Message.assistant("Benign old answer."), Message.user("Next question.")]

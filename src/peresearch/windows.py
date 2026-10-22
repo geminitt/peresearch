@@ -756,10 +756,10 @@ class SessionWindow(Window):
         self.query_one(SelectList).focus()
 
     def refresh_sessions(self) -> None:
-        from peresearch.agent import conversations, history_file
+        from peresearch.agent import conversations
         from peresearch.tui import conversation_rows
 
-        self.past = conversations(history_file(self.app.project))
+        self.past = conversations(self.app.project)
         listing = self.query_one(SelectList)
         listing.clear_options()
         width = (listing.size.width or max(8, min(96, self.app.size.width) - 4)) - 2

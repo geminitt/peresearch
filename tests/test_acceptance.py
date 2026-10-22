@@ -89,7 +89,7 @@ def test_the_prompts_run_in_order_and_record_what_reached_the_tools(acceptance, 
     assert [r["id"] for r in map(json.loads, path.read_text().splitlines())] == [p for p, _, _ in acceptance.PROMPTS]
     assert len(made) == 1 and not llm.replies                              # one agent; every reply used
     assert recs["where-follow-up"]["conversation"] == recs["bpe-notes"]["conversation"]
-    assert recs["where-follow-up"]["earlier_messages"] == 2                 # bpe-notes' question and answer
+    assert recs["where-follow-up"]["earlier_messages"] == 4    # bpe-notes whole: question, call, result, answer
     assert len({r["conversation"] for r in recs.values()}) == 9           # a fresh one for every other prompt
     assert [r["earlier_messages"] for k, r in recs.items() if k != "where-follow-up"] == [0] * 9
     assert {k: [c["tool"] for c in r["calls"]] for k, r in recs.items()} == {
@@ -158,7 +158,7 @@ def test_a_run_stopped_midway_goes_on_where_it_stopped(acceptance, home, notes, 
                    "superbpe-exact", "nanovitok-folders", "superbpe-paper", "vllm-latest", "vllm-latest-local"]
     recs = acceptance.done(path)
     assert recs["where-follow-up"]["conversation"] == recs["bpe-notes"]["conversation"]
-    assert recs["where-follow-up"]["earlier_messages"] == 2 and not llm.replies
+    assert recs["where-follow-up"]["earlier_messages"] == 4 and not llm.replies
     assert acceptance.checkpoint("t", {"model": "other"}) != path              # another model: a run of its own
 
 

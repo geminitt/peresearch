@@ -55,8 +55,8 @@ from textual.widgets.option_list import Option
 from textual.widgets.text_area import Selection
 
 from peresearch import connections, guard, mascot, settings
-from peresearch.agent import (Answer, Check, USAGE, _CITE, check, clean_name, conversations, find_conversation, history_file, read_turns,
-                              usage)
+from peresearch.agent import (Answer, Check, USAGE, _CITE, check, clean_name, conversation_file, conversations,
+                              find_conversation, read_turns, usage)
 from peresearch.tools import Source
 from peresearch.widgets import GUTTER, SelectList, hints, home_path, row
 from peresearch.workspace import brief, complete, quiet
@@ -1176,13 +1176,13 @@ class Chat(App):
                 return
             key = text[len(name):].strip()
             if key:
-                found = find_conversation(history_file(self.project), key)
+                found = find_conversation(self.project, key)
                 if found is None:
                     self.note(f"no conversation named or numbered “{key}”")
                 else:
                     self.resume(found.id)
                 return
-            past = conversations(history_file(self.project))
+            past = conversations(self.project)
             if not past:
                 self.note("no earlier conversation in this project")
                 return
@@ -1235,7 +1235,7 @@ class Chat(App):
                 # Renaming a resumed conversation must persist even before the next model is constructed.
                 import json
                 from peresearch.agent import _append_private
-                _append_private(history_file(self.project), json.dumps({"time": time.time(),
+                _append_private(conversation_file(self.project, self.pending_resume), json.dumps({"time": time.time(),
                                 "conversation": self.pending_resume, "name": clean_name(name)}))
                 self.pending_name = None
             else:
@@ -1256,11 +1256,10 @@ class Chat(App):
 
     def usage_text(self) -> str:
         """Model requests and tokens (sent, generated) of this conversation, of today and of the project."""
-        path = history_file(self.project)
         current = self.agent.conversation if self.agent is not None else self.pending_resume
         today = time.mktime(time.localtime()[:3] + (0, 0, 0, 0, 0, -1))
-        rows = [("this conversation", usage(path, current) if current else dict.fromkeys(USAGE, 0)),
-                ("today, this project", usage(path, since=today)), ("this project", usage(path))]
+        rows = [("this conversation", usage(self.project, current) if current else dict.fromkeys(USAGE, 0)),
+                ("today, this project", usage(self.project, since=today)), ("this project", usage(self.project))]
         return "**Usage** (model requests · tokens sent · tokens generated)\n" + "\n".join(
             f"- {label}: {u['requests']:,} · {u['prompt_tokens']:,} · {u['completion_tokens']:,}" for label, u in rows)
 
@@ -1441,7 +1440,7 @@ class Chat(App):
         if self.agent is not None:
             turns = self.agent.resume(conversation)
         else:
-            turns = [t for t in read_turns(history_file(self.project)) if t["conversation"] == conversation]
+            turns = read_turns(conversation_file(self.project, conversation))
             self.pending_resume, self.pending_name = conversation, None   # a name waiting
             # for the conversation left behind is not this one's
         log = self.query_one("#log", VerticalScroll)

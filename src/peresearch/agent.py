@@ -12,14 +12,16 @@ One agent, one loop, written out rather than taken from a framework:
 4. The answer cites sources by id ([N1] for a file, [W2] for the web). A rule-based check then verifies every
    cited id was retrieved and every quoted passage appears in a cited source; what fails is reported, not
    hidden.
-Questions and answers are kept per project in $PERESEARCH_HOME/sessions/<project>.jsonl, each with the id of its
-conversation. Every agent starts a new conversation; the most recent turns of the current conversation that fit a
-character budget go back to the model as context. `conversations()` lists a project's conversations and
-`Agent.resume()` continues one.
+Each conversation has one file, $PERESEARCH_HOME/sessions/<project>/<conversation>.jsonl: a header, every turn (its
+question, answer, sources and scope) followed by its messages whole (calls, provider data, results as notes with their
+refs), the summaries of its earliest turns, its name, and the tool results under their refs (ResultStore). Every agent
+starts a new conversation; its earlier turns go back to the model whole. `conversations()` lists a project's
+conversations and `Agent.resume()` continues one.
 """
 
 import json
 import os
+from itertools import accumulate
 import re
 import secrets
 import time
@@ -29,7 +31,7 @@ from pathlib import Path
 from peresearch import guard, settings
 from peresearch.llm import Interrupted, too_long
 from peresearch.protocols.chat import request_size
-from peresearch.messages import Message, Request, Tool
+from peresearch.messages import Message, Request, Tool, ToolCall, from_json, to_json
 from peresearch.registry import Budget, Kept, Registry, ToolSpec, utf8, whole
 from peresearch.registry import head as registry_head
 from peresearch.tools import WEB_SEARCHES, Source, Toolbox
@@ -215,7 +217,7 @@ _WRAPPED = re.compile(r'^<tool_output tool="(?P<name>[^"]+)" trust="untrusted da
                       r'(?:\n\[warning: [^\]]*\])?$', re.S)
 
 
-class MemoryStore:
+class InMemoryResults:
     """The result store of an agent that keeps no history (evaluations): the same refs, in memory only."""
 
     def __init__(self):
@@ -353,72 +355,73 @@ class Conversation:
     name: str = ""              # the last name given (/rename, /clear <name>), else ""
 
 
-def history_file(project: str) -> Path:
-    return guard.home() / "sessions" / f"{re.sub(r'[^A-Za-z0-9_.-]', '_', project)}.jsonl"
+def _safe(name: str) -> str:
+    return re.sub(r"[^A-Za-z0-9_.-]", "_", name)
 
 
-def read_turns(path: Path) -> list[dict]:
-    """Every question and answer, each with its conversation id. Lines written before ids existed get one from the
-    /new markers of that time; a line cut short by a crash is skipped rather than failing every later question."""
-    if not path.exists():
-        return []
-    turns, before_ids = [], 0
-    for line in path.read_text(errors="replace").splitlines():     # a line cut mid-character: that line alone lost
-        try:
-            t = json.loads(line)
-        except ValueError:
-            continue
-        if not isinstance(t, dict):
-            continue
-        if t.get("new"):
-            before_ids += 1
-        elif isinstance(t.get("question"), str) and isinstance(t.get("answer"), str):
-            t.setdefault("conversation", f"before-ids-{before_ids}")
-            turns.append(t)
-    return turns
+def sessions_folder(project: str) -> Path:
+    """A project's conversation files."""
+    return guard.home() / "sessions" / _safe(project)
 
 
-def read_summary(path: Path, conversation: str) -> tuple[str, int]:
-    """(the latest summary the model made of a conversation's earliest turns, how many turns it covers); none: ("", 0).
-    A torn line is skipped."""
-    found = ("", 0)
+def conversation_file(project: str, conversation: str) -> Path:
+    """One conversation's file (module docstring); the tool-result store writes its result lines there too."""
+    return sessions_folder(project) / f"{_safe(conversation)}.jsonl"
+
+
+def _records(path: Path):
+    """Each JSON object line of a file, in order; a line cut short by a crash (or mid-character) is skipped."""
     for line in path.read_text(errors="replace").splitlines() if path.exists() else []:
         try:
             t = json.loads(line)
         except ValueError:
             continue
-        if isinstance(t, dict) and t.get("conversation") == conversation and isinstance(t.get("summary"), str) \
-                and isinstance(t.get("turns"), int):
+        if isinstance(t, dict):
+            yield t
+
+
+def read_turns(path: Path) -> list[dict]:
+    """A conversation's turns — question, answer, sources, scope, usage — oldest first, each with the conversation's
+    id."""
+    return [{**t, "conversation": path.stem} for t in _records(path)        # the file is the conversation
+            if isinstance(t.get("question"), str) and isinstance(t.get("answer"), str)]
+
+
+def read_messages(path: Path) -> dict[int, list[Message]]:
+    """Each turn's messages whole, by the turn's index; a turn kept without them (a crash after its turn line) has
+    none."""
+    out: dict[int, list[Message]] = {}
+    broken = set()                                    # a message that cannot be read: the turn as question and answer
+    for t in _records(path):
+        if isinstance(t.get("turn"), int) and isinstance(t.get("message"), dict):
+            try:
+                out.setdefault(t["turn"], []).append(from_json(t["message"]))
+            except (KeyError, TypeError, ValueError):
+                broken.add(t["turn"])
+    return {turn: messages for turn, messages in out.items() if turn not in broken}
+
+
+def read_summary(path: Path) -> tuple[str, int]:
+    """(the latest summary the model made of the conversation's earliest turns, how many turns it covers); none:
+    ("", 0)."""
+    found = ("", 0)
+    for t in _records(path):
+        if isinstance(t.get("summary"), str) and isinstance(t.get("turns"), int):
             found = (t["summary"], t["turns"])
     return found
 
 
-def _names(path: Path) -> dict[str, str]:
-    """Each conversation's name: the last name line given for it (a torn line skipped)."""
-    names = {}
-    for line in path.read_text(errors="replace").splitlines() if path.exists() else []:
-        try:
-            t = json.loads(line)
-        except ValueError:
+def conversations(project: str) -> list[Conversation]:
+    """A project's conversations, the most recently active first, each with its name (the last one given)."""
+    found = []
+    for path in sessions_folder(project).glob("*.jsonl"):
+        turns = read_turns(path)
+        if not turns:
             continue
-        if isinstance(t, dict) and isinstance(t.get("name"), str) and isinstance(t.get("conversation"), str):
-            names[t["conversation"]] = t["name"]
-    return names
-
-
-def conversations(path: Path) -> list[Conversation]:
-    """A project's conversations, the most recently active first, each with its name."""
-    found: dict[str, Conversation] = {}
-    names = _names(path)
-    for t in read_turns(path):
-        when = t.get("time", 0.0)
-        c = found.get(t["conversation"])
-        if c is None:
-            found[t["conversation"]] = Conversation(t["conversation"], when, when, t["question"], 1,
-                                                    names.get(t["conversation"], ""))
-        else:
-            c.last, c.questions = max(c.last, when), c.questions + 1
-    return sorted(found.values(), key=lambda c: c.last, reverse=True)
+        name = next((t["name"] for t in reversed(list(_records(path))) if isinstance(t.get("name"), str)), "")
+        times = [t.get("time", 0.0) for t in turns]
+        found.append(Conversation(path.stem, min(times), max(times), turns[0]["question"], len(turns), name))
+    return sorted(found, key=lambda c: c.last, reverse=True)
 
 
 def clean_name(name: str) -> str:
@@ -431,9 +434,9 @@ def clean_name(name: str) -> str:
     return name
 
 
-def find_conversation(path: Path, key: str) -> Conversation | None:
+def find_conversation(project: str, key: str) -> Conversation | None:
     """The conversation named `key` (any letter case; the latest when two share it), else the one with that id."""
-    past = conversations(path)
+    past = conversations(project)
     folded = " ".join(key.split()).casefold()
     return next((c for c in past if c.name and c.name.casefold() == folded), None) or \
         next((c for c in past if c.id == key.strip()), None)
@@ -455,12 +458,13 @@ def _append_private(path: Path, line: str) -> None:
 USAGE = ("requests", "prompt_tokens", "completion_tokens")
 
 
-def usage(path: Path, conversation: str | None = None, since: float = 0.0) -> dict[str, int]:
+def usage(project: str, conversation: str | None = None, since: float = 0.0) -> dict[str, int]:
     """Model requests and tokens summed over a project's turns, one conversation's, or those since a time (a turn
     written before usage was kept counts as none)."""
     out = dict.fromkeys(USAGE, 0)
-    for t in read_turns(path):
-        if (conversation is None or t["conversation"] == conversation) and t.get("time", 0.0) >= since:
+    paths = [conversation_file(project, conversation)] if conversation else sessions_folder(project).glob("*.jsonl")
+    for t in (t for path in paths for t in read_turns(path)):
+        if t.get("time", 0.0) >= since:
             got = t.get("usage") if isinstance(t.get("usage"), dict) else {}
             for k in USAGE:
                 out[k] += got.get(k, 0) if isinstance(got.get(k, 0), int) else 0
@@ -477,7 +481,7 @@ class ResultStore:
     than the part indexed) is indexed again. Nothing kept is cut or dropped."""
 
     def __init__(self, project: str, conversation: str):
-        self.conversation, self.path = conversation, history_file(project).with_suffix("") / f"{conversation}.jsonl"
+        self.conversation, self.path = conversation, conversation_file(project, conversation)
         self._count = None                       # refs given so far: read from the file once
         self._at, self._scopes = {}, {}          # ref -> (start, end) of its line; ref -> the paths of its scope
         self._indexed, self._inode, self._refs = 0, None, 0   # bytes indexed, of which file; ref lines seen
@@ -582,7 +586,6 @@ class Agent:
         self._told = None                                     # the model's context as a refusal told it
         self.on_event = on_event or (lambda kind, detail: None)
         self.cancelled = False
-        self.history_path = history_file(project)
         self.conversation = _new_id()                  # every agent (every opening of the interface) starts afresh
         self._results = None                           # the conversation's tool-result store (results())
         self._source_conversation = None
@@ -593,16 +596,29 @@ class Agent:
         # this question's: the system prompt without the summary, the summary and the turns it covers, the earlier
         # turns still in the messages, and the tokens summarizing used (_fold)
         self._base, self._summary, self._done, self._past, self._side = "", "", 0, 0, [0, 0]
+        self._sizes: list[int] = []                    # the messages of each earlier turn in the messages
         self._prompt = ""                              # the system prompt as sent: _base, then the summary
         self._fold_blocked = False
 
     # --- history ---
 
+    @property
+    def history_path(self) -> Path:
+        """The current conversation's file."""
+        return conversation_file(self.project, self.conversation)
+
     def history(self) -> list[Message]:
         """The current conversation's turns the model has not summarized (earlier()), whole, as messages."""
-        return [m for t in self._turns()[self.earlier()[1]:]
-                for m in (Message.user(t["question"]),
-                          Message.assistant(t["answer"] if self._turn_allowed(t) else REVOKED_RESULT))]
+        return [m for turn in self._history() for m in turn]
+
+    def _history(self) -> list[list[Message]]:
+        """Each earlier turn not summarized as its messages: as kept (calls, results as notes) or, kept without them,
+        its question and answer; a turn whose evidence the user may no longer read, its question and REVOKED_RESULT."""
+        done = self.earlier()[1]
+        kept = read_messages(self.history_path) if self.record else {}
+        return [kept.get(i) or [Message.user(t["question"]), Message.assistant(t["answer"])]
+                if self._turn_allowed(t) else [Message.user(t["question"]), Message.assistant(REVOKED_RESULT)]
+                for i, t in enumerate(self._turns()[done:], start=done)]
 
     def _turn_scope(self, turn: dict) -> list:
         scope = turn.get("scope")
@@ -639,11 +655,15 @@ class Agent:
             self._prompt = self._base
             self._fold_blocked = True
             changed = True
-        for i, turn in enumerate(turns[self._done:self._done + self._past]):
-            answer = messages[1 + 2 * i]                # each earlier turn: its question, then its answer
-            if not self._turn_allowed(turn) and answer.text != REVOKED_RESULT:
-                messages[1 + 2 * i] = answer.with_text(REVOKED_RESULT)
+        start = 0
+        for i, turn in enumerate(turns[self._done:self._done + self._past]):   # each earlier turn, its messages
+            size = self._sizes[i]
+            withheld = [messages[start], Message.assistant(REVOKED_RESULT)]
+            if not self._turn_allowed(turn) and messages[start:start + size] != withheld:
+                messages[start:start + size] = withheld
+                self._sizes[i] = size = 2
                 changed = True
+            start += size
         for j, message in enumerate(messages):
             held = self._kept.get(message.call_id) if message.role == "tool" else None
             if held and held[0] in self._scopes and not self._result_allowed(*self._scopes[held[0]]) \
@@ -668,7 +688,7 @@ class Agent:
     def _turns(self) -> list[dict]:
         if not self.record:
             return []
-        turns = [t for t in read_turns(self.history_path) if t["conversation"] == self.conversation]
+        turns = read_turns(self.history_path)
         inherited = set()
         for turn in turns:
             scope = self._turn_scope(turn)
@@ -682,7 +702,7 @@ class Agent:
 
     def earlier(self) -> tuple[str, int]:
         """(the model's summary of this conversation's earliest turns, how many it covers): ("", 0) when none."""
-        got = read_summary(self.history_path, self.conversation) if self.record else ("", 0)
+        got = read_summary(self.history_path) if self.record else ("", 0)
         # Regenerate from filtered turns rather than replaying a summary that can
         # contain revoked file evidence. Keep the original record on disk.
         return ("", 0) if got[0] and any(not self._turn_allowed(t) for t in self._turns()[:got[1]]) else got
@@ -704,12 +724,12 @@ class Agent:
             self._source_conversation = self.conversation
         return self.toolbox.sources
 
-    def results(self) -> "ResultStore | MemoryStore":
+    def results(self) -> "ResultStore | InMemoryResults":
         """The current conversation's tool-result store (one per conversation, so its ref count is read once); in
         memory for an agent that keeps no history."""
         if not self.record:
             if self._results is None:
-                self._results = MemoryStore()
+                self._results = InMemoryResults()
             return self._results
         if self._results is None or self._results.conversation != self.conversation:
             self._results = ResultStore(self.project, self.conversation)
@@ -774,13 +794,15 @@ class Agent:
         """Continue an earlier conversation: its turns become the context again. Returns them, oldest first."""
         self.conversation = conversation
         self._source_conversation = None  # reload versions and current access even when resuming this conversation
-        return [t for t in read_turns(self.history_path) if t["conversation"] == conversation]
+        return read_turns(self.history_path)
 
     def cancel(self) -> None:
         """Stop the current question at once: a model call in flight is dropped (its connection closed)."""
         self.cancelled = True
 
-    def _remember(self, question: str, answer: Answer) -> None:
+    def _remember(self, question: str, answer: Answer, messages: list[Message]) -> None:
+        """The turn's line, then its messages (a crash between them leaves the turn as question and answer)."""
+        index = len(read_turns(self.history_path))
         _append_private(self.history_path, json.dumps({
             "time": time.time(), "conversation": self.conversation, "question": question, "answer": answer.text,
             "sources": {k: s.where for k, s in answer.sources.items()},
@@ -790,6 +812,29 @@ class Agent:
                              for path in paths or []}),
             "usage": {"requests": answer.steps, "prompt_tokens": answer.prompt_tokens,
                       "completion_tokens": answer.completion_tokens}}, ensure_ascii=False))
+        for m in messages:
+            _append_private(self.history_path, json.dumps({"turn": index, "message": to_json(m)}, ensure_ascii=False))
+
+    def _turn_messages(self, question: str, messages: list[Message], current: Message, text: str) -> list[Message]:
+        """What a turn keeps of its messages: the question as asked, the model's messages and the tools' (a kept
+        result as its note with its ref; the harness's own prompts left out), every call answered (one an
+        interruption left without a result: "not run"), then the answer."""
+        at = next(i for i, m in enumerate(messages) if m is current)
+        out, answered = [Message.user(question)], set()
+        for m in messages[at + 1:]:
+            if m.role == "user":
+                continue                            # "Limit reached…", "Write the final answer now…": not the user's
+            if m.role == "tool":
+                held = self._kept.get(m.call_id)
+                m = m.with_text(kept_note(*held)) if held else m
+                answered.add(m.call_id)
+            out.append(m)
+        # only the last round can be cut short (an interruption ends the question): its calls with no result, after
+        # those it has
+        last = next((m for m in reversed(out) if m.calls), None)
+        out += [Message.tool(c.id, c.name, "not run: the question was interrupted")
+                for c in (last.calls if last else []) if c.id not in answered]
+        return out + [Message.assistant(text)]
 
     # --- the loop ---
 
@@ -827,9 +872,11 @@ class Agent:
         context = self._context()
         if need <= 0 or not self._past or not context:
             return False
-        frame = 2 * FRAMING * self._ratio                             # a turn's two messages, framed
-        gains = [len(messages[2 * i].text) + len(messages[2 * i + 1].text) + frame
-                 for i in range(self._past)]
+        starts = [0, *accumulate(self._sizes)]                       # each earlier turn's first message
+        turn = [messages[starts[i]:starts[i + 1]] for i in range(self._past)]
+        # what each turn takes of a request: its messages (calls included) and each one's framing
+        empty = _size("", [], None)                                   # a request's own frame (an empty tool list)
+        gains = [_size("", t, None) - empty + FRAMING * self._ratio * len(t) for t in turn]
         longest = self._reserve() * self._ratio                       # what a summary may run to
         freed = lambda k: sum(gains[:k]) + len(self._summary) - longest     # noqa: E731
         k = next((k for k in range(1, self._past + 1) if longest and freed(k) >= need), None)
@@ -837,8 +884,7 @@ class Agent:
             if enough:
                 return False
             k = self._past
-        texts = [f"User: {messages[2 * i].text}\nAssistant: {messages[2 * i + 1].text}"
-                 for i in range(k)]
+        texts = [f"User: {t[0].text}\nAssistant: {t[-1].text}" for t in turn[:k]]      # its question, its answer
         summary, refusals = self._summary, 0
         while texts:
             head = f"Your summary of what came before:\n{summary}\n\n" if summary else ""
@@ -878,10 +924,11 @@ class Agent:
                 return False                                          # no summary: nothing is dropped
             summary = reply.text.strip()
         self._summary, self._done, self._past = summary, self._done + k, self._past - k
+        freed_messages, self._sizes = starts[k], self._sizes[k:]
         _append_private(self.history_path, json.dumps({"time": time.time(), "conversation": self.conversation,
                                                        "summary": summary, "turns": self._done}, ensure_ascii=False))
         self._prompt = self._base + EARLIER.format(summary=summary)
-        del messages[:2 * k]
+        del messages[:freed_messages]
         self.on_event("think", "earlier turns summarized to fit the model's context")
         return True
 
@@ -1028,12 +1075,18 @@ class Agent:
         registry = self._registry()
         budget = Budget(searches=lim.web_searches, pages=lim.fetches, deadline=time.monotonic() + lim.seconds)
         self._base = self._system()
-        (self._summary, self._done), past, self._side = self.earlier(), self.history(), [0, 0]
-        self._past = len(past) // 2                    # earlier turns at the start of the messages
+        if self.record and not any("schema" in t for t in _records(self.history_path)):   # its header, once
+            _append_private(self.history_path, json.dumps({"schema": 1, "project": self.project,
+                                                           "conversation": self.conversation, "started": time.time()}))
+        (self._summary, self._done), self._side = self.earlier(), [0, 0]
+        turns = self._history()
+        past = [m for turn in turns for m in turn]
+        self._past, self._sizes = len(turns), [len(turn) for turn in turns]   # earlier turns first in the messages
         self._prompt = self._base + (EARLIER.format(summary=self._summary) if self._summary else "")
         asked = (f"Current question (answer this one; the turns above are earlier context):\n{question}"
                  if (past or self._summary) and MARK_CURRENT else question)
-        messages = [*past, Message.user(asked)]
+        current = Message.user(asked)
+        messages = [*past, current]
         prompt = completion = steps = refused_rounds = 0
         self._kept = {}
         self._scopes = {}
@@ -1120,6 +1173,6 @@ class Agent:
         answer = Answer(text, sources, check(text, sources), steps, prompt, completion, stopped, calls,
                         "\n\n".join(thoughts))
         if self.record:
-            self._remember(question, answer)
+            self._remember(question, answer, self._turn_messages(question, messages, current, text))
         self.on_event("answer", "")
         return answer

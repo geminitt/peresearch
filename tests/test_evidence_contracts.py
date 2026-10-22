@@ -132,10 +132,10 @@ def test_source_counter_boundary_works_with_the_minimum_python_digit_guard():
     import sys
     script = '''
 import sys
-from peresearch.agent import MemoryStore
+from peresearch.agent import InMemoryResults
 from peresearch.evidence import Sources
 identifier = "N" + "9" * 640
-registry = Sources.load([{"answer": "Unverified [" + identifier + "]."}], MemoryStore())
+registry = Sources.load([{"answer": "Unverified [" + identifier + "]."}], InMemoryResults())
 source = registry.add("file", "current.md:L1", "current.md", "Current evidence.")
 assert source.id == "N1" + "0" * 640
 assert not registry.items[identifier].known
@@ -201,14 +201,12 @@ def test_damaged_retained_evidence_requires_a_read_and_reserves_its_id(home, tmp
         rows = [row for row in rows if row.get("ref") != record["ref"]]
     elif damage == "collision":
         rows.append({"source_versions": [{**record, "where": "other.md:L1"}]})
-    elif damage == "missing-version":
-        turn = read_turns(agent.history_path)[0]
-        turn.pop("source_versions")
-        agent.history_path.write_text(json.dumps(turn) + "\n")
+    elif damage == "missing-version":                   # the turn's line, in the conversation file the store shares
+        next(row for row in rows if "question" in row).pop("source_versions")
     else:
         legacy = {"conversation": agent.conversation, "question": "Unrelated legacy question",
                   "answer": "Unrelated original [N1].", "scope_version": 2, "scope": []}
-        agent.history_path.write_text(json.dumps(legacy) + "\n" + agent.history_path.read_text())
+        rows.insert(0, legacy)
     store.path.write_text("".join(json.dumps(row) + "\n" for row in rows) + "{torn")
     resumed = Agent(Scripted(reading(path), Reply("Fresh [N2]; old [N1].")), Toolbox(roots=[tmp_path]))
     resumed.resume(agent.conversation)
@@ -307,9 +305,9 @@ def test_new_ephemeral_conversation_starts_with_fresh_evidence_and_results(home,
 
 def test_whitespace_transformed_results_restore_the_exact_immutable_excerpt():
     from dataclasses import FrozenInstanceError
-    from peresearch.agent import MemoryStore
+    from peresearch.agent import InMemoryResults
     from peresearch.evidence import Sources
-    registry, store = Sources(), MemoryStore()
+    registry, store = Sources(), InMemoryResults()
     source = registry.add("web", "https://example.org/evidence", "Research", "Alpha\n\n  beta\tgamma.")
     ref = store.put("web_search", {}, "[W1] Alpha beta gamma.")
     registry.retain(ref, store.get(ref)["text"], store)
@@ -328,9 +326,9 @@ def test_whitespace_transformed_results_restore_the_exact_immutable_excerpt():
 @pytest.mark.parametrize("text,result", [("Alpha\n beta", "Alpha beta"),
                                          ("Alpha\n beta Alpha\n gamma.", "Alpha beta Alpha gamma."), ("", "")])
 def test_result_links_preserve_excerpts_at_the_start_and_repeated_words(text, result):
-    from peresearch.agent import MemoryStore
+    from peresearch.agent import InMemoryResults
     from peresearch.evidence import Sources
-    registry, store = Sources(), MemoryStore()
+    registry, store = Sources(), InMemoryResults()
     source = registry.add("web", "https://example.org/evidence", "Evidence", text)
     ref = store.put("web_search", {}, result)
     registry.retain(ref, result, store)
@@ -338,10 +336,10 @@ def test_result_links_preserve_excerpts_at_the_start_and_repeated_words(text, re
 
 
 def test_misordered_or_missing_result_text_cannot_restore_an_excerpt():
-    from peresearch.agent import MemoryStore
+    from peresearch.agent import InMemoryResults
     from peresearch.evidence import Sources
     for result in ("beta Alpha", "Alpha only"):
-        registry, store = Sources(), MemoryStore()
+        registry, store = Sources(), InMemoryResults()
         source = registry.add("web", "https://example.org/evidence", "Evidence", "Alpha\n beta")
         ref = store.put("web_search", {}, result)
         registry.retain(ref, result, store)
@@ -363,14 +361,14 @@ def test_torn_utf8_and_malformed_records_do_not_hide_later_version_metadata(home
 
 
 def test_legacy_location_only_ids_are_reserved_even_without_citations():
-    from peresearch.agent import MemoryStore
+    from peresearch.agent import InMemoryResults
     from peresearch.evidence import Sources
     turn = {"answer": "An uncited answer.", "sources": {"N7": "original.md:L1"}}
-    restored = Sources.load([turn], MemoryStore())
+    restored = Sources.load([turn], InMemoryResults())
     assert restored.add("file", "fresh.md:L1", "Fresh", "Fresh evidence.").id == "N8"
     unknown = restored.for_turn(turn)["N7"]
     assert unknown.id == "N7" and unknown.where == "original.md:L1" and not unknown.known
-    selected = restored.selected("Earlier [N7].", MemoryStore())
+    selected = restored.selected("Earlier [N7].", InMemoryResults())
     assert selected["N7"].where == "original.md:L1" and not selected["N7"].known
 
 
@@ -399,10 +397,10 @@ def test_retained_web_versions_survive_resume_and_new_search_requirements(home, 
 
 
 def test_recorded_unicode_excerpt_versions_remain_readable():
-    from peresearch.agent import MemoryStore
+    from peresearch.agent import InMemoryResults
     from peresearch.evidence import Source, Sources
     fixture = json.loads((Path(__file__).parent / "data/evidence/retained-unicode.json").read_text())
-    store = MemoryStore()
+    store = InMemoryResults()
     store.items = fixture["results"]
     store.set_sources(fixture["source_versions"])
     restored = Sources.load([], store, lambda path: False)
@@ -419,9 +417,9 @@ def test_recorded_unicode_excerpt_versions_remain_readable():
 
 @pytest.mark.parametrize("metadata", [None, [], "invalid", {"id": 1}, {"id": "N7", "kind": "web"}])
 def test_bad_version_metadata_does_not_hide_later_valid_results(metadata):
-    from peresearch.agent import MemoryStore
+    from peresearch.agent import InMemoryResults
     from peresearch.evidence import Sources
-    registry, store = Sources(), MemoryStore()
+    registry, store = Sources(), InMemoryResults()
     source = registry.add("web", "https://example.org/evidence", "Evidence", "Original evidence.")
     ref = store.put("web_search", {}, source.text)
     store.set_sources([metadata])
@@ -432,9 +430,9 @@ def test_bad_version_metadata_does_not_hide_later_valid_results(metadata):
 
 @pytest.mark.parametrize("conflict", [False, True])
 def test_duplicate_version_records_only_conflict_when_their_identities_differ(conflict):
-    from peresearch.agent import MemoryStore
+    from peresearch.agent import InMemoryResults
     from peresearch.evidence import Source, Sources, link
-    registry, store = Sources(), MemoryStore()
+    registry, store = Sources(), InMemoryResults()
     source = registry.add("web", "https://example.org/evidence", "Evidence", "Original evidence.")
     ref = store.put("web_search", {}, "Original evidence. Changed evidence.")
     registry.retain(ref, store.get(ref)["text"], store)
@@ -456,9 +454,9 @@ def test_unknown_citations_accumulate_across_separate_positions():
 
 @pytest.mark.parametrize("damage", ["title", "where", "kind", "boolean-range", "extra-range", "scope"])
 def test_matching_hash_cannot_make_malformed_retained_metadata_valid(damage):
-    from peresearch.agent import MemoryStore
+    from peresearch.agent import InMemoryResults
     from peresearch.evidence import Source, Sources
-    store, registry = MemoryStore(), Sources()
+    store, registry = InMemoryResults(), Sources()
     source = registry.add("file", "evidence.md:L1", "Evidence", "Original evidence.")
     ref = store.put("read", {}, "x" + source.text)
     store.set_scope(ref, ["evidence.md"])
@@ -478,9 +476,9 @@ def test_matching_hash_cannot_make_malformed_retained_metadata_valid(damage):
 
 
 def test_injected_file_evidence_without_a_policy_can_restore_without_scope_metadata():
-    from peresearch.agent import MemoryStore
+    from peresearch.agent import InMemoryResults
     from peresearch.evidence import Sources
-    store, registry = MemoryStore(), Sources()
+    store, registry = InMemoryResults(), Sources()
     source = registry.add("file", "evidence.md:L1", "Evidence", "Original evidence.")
     ref = store.put("read", {}, source.text)
     registry.retain(ref, source.text, store)

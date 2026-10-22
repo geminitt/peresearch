@@ -260,7 +260,7 @@ def test_scope_provenance_covers_every_local_tool_including_uncited_catalogs(hom
 def test_legacy_history_paths_are_included_in_gateway_revocation_checks(home, tmp_path, scope):
     import httpx
     from openai import RateLimitError
-    from peresearch.agent import history_file
+    from peresearch.agent import conversation_file
     notes = tmp_path / "notes"
     notes.mkdir()
     path = notes / "research.md"
@@ -270,7 +270,7 @@ def test_legacy_history_paths_are_included_in_gateway_revocation_checks(home, tm
               "sources": {"N1": str(path) + ":L1"}}
     if scope != "absent":
         stored["scope"] = scope
-    history = history_file("legacy-access")
+    history = conversation_file("legacy-access", "legacy")
     history.parent.mkdir(parents=True)
     history.write_text(json.dumps(stored) + "\n")
     requests = []

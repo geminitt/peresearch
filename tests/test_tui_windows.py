@@ -299,9 +299,9 @@ def test_sessions_window_renames_exports_and_resumes_without_control_messages(ho
     from textual.widgets import OptionList
     from tests.helpers import agent
     from peresearch.llm import Reply
-    from peresearch.agent import history_file
+    from peresearch.agent import conversation_file
     import json
-    path = history_file("default")
+    path = conversation_file("default", "saved")
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps({"conversation": "saved", "time": 1000, "question": "Saved question", "answer": "Saved answer",
                                "sources": {}}) + "\n")

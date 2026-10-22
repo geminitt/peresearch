@@ -23,7 +23,7 @@ from hypothesis import HealthCheck, assume, example, given, settings as hsetting
 from hypothesis import strategies as st
 
 from peresearch import agent as agent_module
-from peresearch.agent import (Agent, Limits, ResultStore, check, conversations, find_conversation, history_file,
+from peresearch.agent import (Agent, Limits, ResultStore, check, conversation_file, conversations, find_conversation,
                               read_summary, read_turns, usage, _summary, _wrap)
 from peresearch.llm import LLM, Interrupted, Reply, ToolCall
 from peresearch.protocols.chat import chat_tools, request_size
@@ -236,9 +236,8 @@ def check_loop(home, script, steps, webs, pages, web, record, local=False):
     assert [e for e in events if e[0] in ("think", "tool", "result")] == ref_events
     assert events[-1] == ("answer", "")
     assert [d for k, d in events if k == "tokens"] == [str(5 * min(i, len(script))) for i in range(1, len(requests) + 1)]
-    path = history_file("default")
-    lines = path.read_text().splitlines() if path.exists() else []
-    assert len(lines) == record and (not record or json.loads(lines[0])["question"] == "the question")
+    turns = read_turns(conversation_file("default", a.conversation))
+    assert len(turns) == record and (not record or turns[0]["question"] == "the question")
 
 
 class SizedToolbox(FakeToolbox):
@@ -507,10 +506,13 @@ def test_the_history_sent_is_every_turn_of_the_conversation_whole(tmp_path_facto
 
 
 def write_turns(a, turns, others=0):
-    """The session file holding `turns` (question, answer) of the agent's conversation, after `others` of another."""
+    """The agent's conversation file holding `turns` (question, answer), and `others` turns of another conversation
+    in its own file."""
     a.history_path.parent.mkdir(parents=True, exist_ok=True)
-    lines = [{"time": i, "conversation": "other", "question": "elsewhere", "answer": "no"} for i in range(others)]
-    lines += [{"time": i, "conversation": a.conversation, "question": q, "answer": ans} for i, (q, ans) in enumerate(turns)]
+    other = [{"time": i, "conversation": "other", "question": "elsewhere", "answer": "no"} for i in range(others)]
+    if other:
+        conversation_file(a.project, "other").write_text("".join(json.dumps(x) + "\n" for x in other))
+    lines = [{"time": i, "conversation": a.conversation, "question": q, "answer": ans} for i, (q, ans) in enumerate(turns)]
     a.history_path.write_text("".join(json.dumps(x) + "\n" for x in lines))
 
 
@@ -561,7 +563,7 @@ def test_earlier_turns_are_summarized_by_the_model_when_they_no_longer_fit(home)
     ans = a.ask("next")
     assert ans.text == "final answer" and model.refused == 0 and model.inputs                # every request fit
     sent = asked(model)[-1]["messages"]
-    folded = json.loads(a.history_path.read_text().splitlines()[-2])                       # before the new turn
+    folded = [json.loads(x) for x in a.history_path.read_text().splitlines() if '"summary"' in x][-1]
     k = folded["turns"]
     assert folded == {"time": folded["time"], "conversation": a.conversation, "summary": model.say(len(model.inputs)),
                       "turns": k} and 0 < k < 6
@@ -596,9 +598,9 @@ def test_a_summary_is_extended_with_the_one_before_it(home):
     a.ask("later")
     assert len(model.inputs) > first
     assert model.inputs[first].startswith(f"Your summary of what came before:\n{model.say(first)}\n\n")
-    done = read_summary(a.history_path, a.conversation)[1]                   # every turn folded, counted once
+    done = read_summary(a.history_path)[1]                   # every turn folded, counted once
     sent = asked(model)[-1]["messages"]
-    assert done > json.loads(a.history_path.read_text().splitlines()[6])["turns"]
+    assert done > [json.loads(x) for x in a.history_path.read_text().splitlines() if '"summary"' in x][0]["turns"]
     assert sent[1]["content"] == ([t["question"] for t in read_turns(a.history_path)] + ["later"])[done]
 
 
@@ -610,7 +612,7 @@ def test_a_refused_or_empty_summary_loses_nothing(home):
     turns = [(f"question {i}", f"answer {i} " + "z" * 6_000) for i in range(4)]
     write_turns(a, turns)
     assert a.ask("next").text == "final answer" and model.refused >= 1
-    k = read_summary(a.history_path, a.conversation)[1]
+    k = read_summary(a.history_path)[1]
     read = "".join(model.inputs)
     assert k and all(q in read and read.count("z" * 500) for q, _ in turns[:k])
     assert sum(x.count("z") for x in model.inputs) >= sum(len(ans) - len(f"answer {i} ") for i, (_, ans) in
@@ -620,10 +622,10 @@ def test_a_refused_or_empty_summary_loses_nothing(home):
     b = Agent(silent, FakeToolbox())
     write_turns(b, turns[:2])
     messages = b.history() + [Message.user("q")]
-    b._past, b._base, b._prompt = 2, "s", "s"
+    b._past, b._base, b._prompt, b._sizes = 2, "s", "s", [2, 2]
     before = list(messages)
     assert b._fold(messages, 1_000) is False and messages == before and b._prompt == "s" and silent.inputs
-    assert read_summary(b.history_path, b.conversation) == ("", 0)
+    assert read_summary(b.history_path) == ("", 0)
 
 
 @pytest.mark.parametrize("result", [3_000, 200_000])   # 3,000: past the ~1,000 left, within what folding frees
@@ -702,7 +704,7 @@ def test_the_current_question_is_marked_when_there_is_history(home):
     assert model.seen[1]["messages"][1:] == [{"role": "user", "content": "one"}, {"role": "assistant", "content": "first"},
                                              {"role": "user", "content": "Current question (answer this one; the turns "
                                               "above are earlier context):\ntwo"}]
-    line = json.loads(a.history_path.read_text().splitlines()[-1])
+    line = read_turns(a.history_path)[-1]
     assert (line["conversation"], line["question"], line["answer"], line["sources"]) == (a.conversation, "two", "second", {})
 
 
@@ -720,45 +722,45 @@ def test_conversations_are_listed_newest_first_and_resumed(home):
     a.new_session()
     assert a.conversation != first and re.fullmatch(r"\d{8}-\d{6}-[0-9a-f]{6}", a.conversation) and a.history() == []
     a.ask("What is pho?")
-    past = conversations(a.history_path)
+    past = conversations("default")
     assert [(c.id, c.questions, c.first) for c in past] == [(a.conversation, 1, "What is pho?"),
                                                            (first, 2, "How does BPE work?")]
     assert past[1].started <= past[1].last
     assert [t["question"] for t in a.resume(first)] == ["How does BPE work?", "And SuperBPE?"]
     a.ask("Where does it come from?")
-    assert [c.questions for c in conversations(a.history_path)] == [3, 1]
-    turns = read_turns(a.history_path)
+    assert [c.questions for c in conversations("default")] == [3, 1]
+    turns = read_turns(conversation_file("default", first)) + read_turns(conversation_file("default", past[0].id))
     assert [t["usage"] for t in turns] == [{"requests": 1, "prompt_tokens": 100, "completion_tokens": 7}] + \
         [{"requests": 1, "prompt_tokens": 0, "completion_tokens": 0}] * 3
-    assert usage(a.history_path) == {"requests": 4, "prompt_tokens": 100, "completion_tokens": 7}
-    assert usage(a.history_path, first) == {"requests": 3, "prompt_tokens": 100, "completion_tokens": 7}
+    assert usage("default") == {"requests": 4, "prompt_tokens": 100, "completion_tokens": 7}
+    assert usage("default", first) == {"requests": 3, "prompt_tokens": 100, "completion_tokens": 7}
     since = turns[1]["time"]                                           # from a turn's own time on: it counts
-    assert usage(a.history_path, since=since)["requests"] == sum(t["time"] >= since for t in turns)
+    assert usage("default", since=since)["requests"] == sum(t["time"] >= since for t in turns)
     with a.history_path.open("a") as f:                                # no time (written long ago), a bad count
         f.write(json.dumps({"conversation": first, "question": "q", "answer": "a",
                             "usage": {"requests": "2", "prompt_tokens": 5, "completion_tokens": None}}) + "\n")
-    assert usage(a.history_path, first) == {"requests": 3, "prompt_tokens": 105, "completion_tokens": 7}
+    assert usage("default", first) == {"requests": 3, "prompt_tokens": 105, "completion_tokens": 7}
     # names: the last given wins, spaces folded; empty or overlong refused with the reason; found by name or by id
-    assert [c.name for c in conversations(a.history_path)] == ["", ""]
+    assert [c.name for c in conversations("default")] == ["", ""]
     a.rename("  BPE \n study ")
-    assert conversations(a.history_path)[0].name == "BPE study"
+    assert conversations("default")[0].name == "BPE study"
     a.rename("BPE and SuperBPE")
-    assert [(c.id, c.name) for c in conversations(a.history_path)] == [(first, "BPE and SuperBPE"), (past[0].id, "")]
+    assert [(c.id, c.name) for c in conversations("default")] == [(first, "BPE and SuperBPE"), (past[0].id, "")]
     for bad, why in (("   ", "a name needs a word"), ("x" * 81, "a name is at most 80 characters")):
         with pytest.raises(ValueError, match=f"^{why}$"):
             a.rename(bad)
     with a.history_path.open("a") as f:
         f.write('{"conversation": "x", "name": "cut by a cra\n')         # torn: the names after it still read
     a.rename("y" * 80)                                                 # 80 characters: the longest name
-    assert conversations(a.history_path)[0].name == "y" * 80
+    assert conversations("default")[0].name == "y" * 80
     a.rename("BPE and SuperBPE")
-    assert find_conversation(a.history_path, "bpe AND superbpe").id == first            # any letter case
-    assert find_conversation(a.history_path, past[0].id).first == "What is pho?"
-    assert find_conversation(a.history_path, "nothing like it") is None
+    assert find_conversation("default", "bpe AND superbpe").id == first            # any letter case
+    assert find_conversation("default", past[0].id).first == "What is pho?"
+    assert find_conversation("default", "nothing like it") is None
     a.new_session()
     a.rename("BPE and SuperBPE")                                  # a name given twice: the latest conversation's
     a.ask("What is a merge?")
-    assert find_conversation(a.history_path, "BPE and SuperBPE").id == a.conversation
+    assert find_conversation("default", "BPE and SuperBPE").id == a.conversation
     assert [t["question"] for t in read_turns(a.history_path)][-1] == "What is a merge?"     # names are no turns
     import os                                  # questions and answers come from private notes: the user's alone
     assert oct(os.stat(a.history_path).st_mode & 0o777) == "0o600"
@@ -766,7 +768,7 @@ def test_conversations_are_listed_newest_first_and_resumed(home):
     a.rename("closed again")
     assert oct(os.stat(a.history_path).st_mode & 0o777) == "0o600"
     assert oct(os.stat(a.history_path.parent).st_mode & 0o777) == "0o700"
-    assert history_file("My project/ü") == home / "sessions" / "My_project__.jsonl"
+    assert conversation_file("My project/ü", "c/1") == home / "sessions" / "My_project__" / "c_1.jsonl"
     b = Agent(FakeModel([Reply("Chào bạn")]), FakeToolbox(), project="vi")
     b.ask("Xin chào")
     assert "Xin chào" in b.history_path.read_text() and "Chào bạn" in b.history_path.read_text()   # not \u-escaped
@@ -1249,25 +1251,19 @@ def test_every_tool_result_is_kept_redacted_and_read_back_by_its_ref(home):
     assert not ResultStore(quiet.project, quiet.conversation).path.exists()
 
 
-def test_history_written_before_conversation_ids_and_a_torn_line_are_read(home):
-    path = home / "sessions" / "default.jsonl"
+def test_a_conversation_file_s_torn_and_foreign_lines_are_skipped(home):
+    path = conversation_file("default", "c1")
     path.parent.mkdir(parents=True)
     path.write_text("\n".join([
-        '{"time": 1, "question": "old one", "answer": "a", "sources": {}}',
-        '{"time": 2, "question": "old two", "answer": "b", "sources": {}}',
-        '{"time": 3, "new": true}', '["not a turn"]', '{"question": 1, "answer": "x"}', '{broken',
-        '{"time": 4, "question": "old three", "answer": "c", "sources": {}}', '{"new": true}',
-        '{"question": "no time", "answer": "d"}',
-        '{"time": 5, "question": "cut by a cra']) + "\n")
+        '{"schema": 1, "conversation": "c1"}', '{"time": 1, "question": "one", "answer": "a", "sources": {}}',
+        '["not a turn"]', '{"question": 1, "answer": "x"}', '{broken', '{"ref": "R1", "tool": "tree", "text": "t"}',
+        '{"time": 2, "question": "two", "answer": "b", "sources": {}}', '{"time": 5, "question": "cut by a cra']) + "\n")
     with path.open("ab") as f:                          # cut mid-character (Vietnamese): that line alone is lost
         f.write('{"time": 6, "question": "ghi chú'.encode()[:-1] + b"\n")
-    assert [(t["question"], t["conversation"]) for t in read_turns(path)] == [
-        ("old one", "before-ids-0"), ("old two", "before-ids-0"), ("old three", "before-ids-1"),
-        ("no time", "before-ids-2")]
-    past = conversations(path)
-    assert [(c.first, c.questions) for c in past] == [("old three", 1), ("old one", 2), ("no time", 1)]
-    assert (past[2].started, past[2].last) == (0.0, 0.0)
-    assert read_turns(home / "none.jsonl") == [] and conversations(home / "none.jsonl") == []
+    assert [(t["question"], t["conversation"]) for t in read_turns(path)] == [("one", "c1"), ("two", "c1")]
+    past = conversations("default")
+    assert [(c.id, c.first, c.questions, c.started, c.last) for c in past] == [("c1", "one", 2, 1, 2)]
+    assert read_turns(home / "none.jsonl") == [] and conversations("nothing") == []
 
 
 # --- with the real tools and client ----------------------------------------------------------------------------

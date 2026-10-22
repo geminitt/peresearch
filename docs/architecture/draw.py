@@ -244,11 +244,11 @@ def overview():
     d.box("store", 45, 690, 330, 190, "store", "$PERESEARCH_HOME", "~/.local/share/peresearch", [
         "config.json      declared folders", "settings.env     active keys (0600)",
         "models.json      saved APIs and IDs",
-        "index.sqlite     files, chunks, vectors", "sessions/*.jsonl  turns per project",
+        "index.sqlite     files, chunks, vectors", "sessions/<p>/*.jsonl  a file per conversation",
         "web/             page cache", "audit.jsonl      crossings (counts only)"])
     agent = d.box("agent", 410, 200, 370, 180, "agent", "Agent loop", "assembly.py → agent.py: Agent.ask", [
         "product/eval: shared assembly and limits", "tool results wrapped as untrusted",
-        "citations and quotes checked", "writes sessions/<project>.jsonl"])
+        "citations and quotes checked", "writes the conversation's file"])
     tools = d.box("tools", 410, 440, 370, 182, "agent", "Tools", "registry.py: Registry.run · tools.py", [
         "tree · search_notes · overview · grep · glob · read", "web_search · search_papers · wikipedia · fetch",
         "one pipeline: arguments, permission, budget, run", "sources N1…, W1… for citations"], mark=8)
@@ -336,7 +336,7 @@ def agent_loop():
         "cited IDs identify known conversation excerpts", "a quote just before a citation is verbatim",
         "sources but no citation → flagged"])
     save = d.box("save", 480, 1092, 440, 80, "store", "Save the turn", "agent._remember", [
-        "sessions/<project>.jsonl: answer, places, versions"])
+        "the conversation's file: turn, then its messages"])
     end = d.box("end", 550, 1212, 300, 50, "end", "return Answer; event 'answer'")
 
     d.arrow([start.s(), cancel.n()])
@@ -496,10 +496,10 @@ def storage_frame():
                 f"Everything lives in $PERESEARCH_HOME (default ~/.local/share/peresearch), a folder only the user may "
                 f"enter (guard.ensure_home, at every command). {AS_OF}.", 1500, 980)
     d.group(20, 92, 1460, 640, "$PERESEARCH_HOME  (0700)")
-    ses = d.box("ses", 40, 130, 460, 166, "store", "Sessions", "sessions/<project>.jsonl (0600)", [
-        "turn: answer, source versions, locations, scope;", "conversation, usage; inherits replayed file scope;",
-        "a line per name (the last one wins);", "/sessions: resume, new, rename; /status: usage"])
-    res = d.box("res", 40, 336, 460, 148, "store", "Tool-result store", "sessions/<project>/<conv>.jsonl (0600)", [
+    ses = d.box("ses", 40, 130, 460, 166, "store", "Conversations", "sessions/<project>/<conv>.jsonl (0600)", [
+        "a header; each turn: answer, sources, scope, usage,", "then its messages whole (calls, provider data,",
+        "results as notes); summaries; names (last wins);", "/sessions: resume, new, rename; /status: usage"])
+    res = d.box("res", 40, 336, 460, 148, "store", "Tool results (same file)", "agent.ResultStore · InMemoryResults", [
         "every result redacted, with accessed path scope;", "R refs; excerpt ranges + hashes verify resume;",
         "restorable compression; originals retained"])
     idx = d.box("idx", 540, 130, 440, 148, "retrieval", "Index", "index.sqlite (+ text/: 0700, 0600)", [

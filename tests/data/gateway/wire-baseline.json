@@ -407,6 +407,34 @@
      "role": "user"
     },
     {
+     "content": [
+      {
+       "signature": "sig-1",
+       "thinking": "look in the notes",
+       "type": "thinking"
+      },
+      {
+       "id": "toolu_1",
+       "input": {
+        "query": "BPE merges"
+       },
+       "name": "search_notes",
+       "type": "tool_use"
+      }
+     ],
+     "role": "assistant"
+    },
+    {
+     "content": [
+      {
+       "content": "[R1: search_notes(query=\"BPE merges\") returned <n> characters, kept outside the context: recall(\"R1\") reads them again]",
+       "tool_use_id": "toolu_1",
+       "type": "tool_result"
+      }
+     ],
+     "role": "user"
+    },
+    {
      "content": "BPE merges frequent symbol pairs into new tokens [N1].",
      "role": "assistant"
     },
@@ -1056,6 +1084,30 @@
      "role": "user"
     },
     {
+     "content": "",
+     "role": "assistant",
+     "tool_calls": [
+      {
+       "extra_content": {
+        "google": {
+         "thought_signature": "c2lnbmF0dXJlLW9m"
+        }
+       },
+       "function": {
+        "arguments": "{\"query\": \"BPE merges\"}",
+        "name": "search_notes"
+       },
+       "id": "call-1",
+       "type": "function"
+      }
+     ]
+    },
+    {
+     "content": "[R1: search_notes(query=\"BPE merges\") returned <n> characters, kept outside the context: recall(\"R1\") reads them again]",
+     "role": "tool",
+     "tool_call_id": "call-1"
+    },
+    {
      "content": "BPE merges frequent symbol pairs into new tokens [N1].",
      "role": "assistant"
     },
@@ -1324,6 +1376,14 @@
     },
     {
      "content": "What do my notes say about BPE?",
+     "role": "user"
+    },
+    {
+     "content": "<tool_call>{\"name\": \"search_notes\", \"arguments\": {\"query\": \"BPE merges\"}}</tool_call>",
+     "role": "assistant"
+    },
+    {
+     "content": "<tool_response name=\"search_notes\">\n[R1: search_notes(query=\"BPE merges\") returned <n> characters, kept outside the context: recall(\"R1\") reads them again]\n</tool_response>",
      "role": "user"
     },
     {
@@ -1781,6 +1841,29 @@
       }
      ],
      "type": "user_input"
+    },
+    {
+     "signature": "c2lnLTE=",
+     "type": "thought"
+    },
+    {
+     "arguments": {
+      "query": "BPE merges"
+     },
+     "id": "fc1",
+     "name": "search_notes",
+     "type": "function_call"
+    },
+    {
+     "call_id": "fc1",
+     "name": "search_notes",
+     "result": [
+      {
+       "text": "[R1: search_notes(query=\"BPE merges\") returned <n> characters, kept outside the context: recall(\"R1\") reads them again]",
+       "type": "text"
+      }
+     ],
+     "type": "function_result"
     },
     {
      "content": [
@@ -2387,6 +2470,17 @@
     {
      "content": "What do my notes say about BPE?",
      "role": "user"
+    },
+    {
+     "arguments": "{\"query\": \"BPE merges\"}",
+     "call_id": "call_1",
+     "name": "search_notes",
+     "type": "function_call"
+    },
+    {
+     "call_id": "call_1",
+     "output": "[R1: search_notes(query=\"BPE merges\") returned <n> characters, kept outside the context: recall(\"R1\") reads them again]",
+     "type": "function_call_output"
     },
     {
      "content": "BPE merges frequent symbol pairs into new tokens [N1].",

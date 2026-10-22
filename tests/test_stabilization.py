@@ -189,13 +189,13 @@ def test_workspace_rebuilds_configured_index_for_effective_embedding_changes(liv
 @pytest.mark.parametrize("body", ["selected answer [N1]", "selected answer [N1]\n<sub>quoted note</sub>\nend of answer"])
 def test_resume_rebinds_export_retry_and_sources(home, tmp_path, existing_agent, usage, expected_usage, body):
     import json
-    from peresearch.agent import Agent, Answer, Check, history_file
+    from peresearch.agent import Agent, Answer, Check, conversation_file
     from peresearch.llm import Reply
     from peresearch.tools import Source
     from tests.helpers import ScriptedLLM
     from peresearch.tui import Chat
     from types import SimpleNamespace
-    history = history_file("default")
+    history = conversation_file("default", "selected")
     history.parent.mkdir(parents=True, exist_ok=True)
     turn = {"conversation": "selected", "question": "selected question", "answer": body,
             "sources": {"N1": "/selected.md:L2"}}

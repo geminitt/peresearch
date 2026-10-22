@@ -138,9 +138,9 @@ def retained_turns(agent, paths, answers):
 def fold_messages(agent):
     """The messages of the next question; the system prompt, sent before them, is agent._prompt."""
     agent._base = agent._prompt = "base rules"
-    past = agent.history()
-    agent._past = len(past) // 2
-    return [*past, Message.user("Continue.")]
+    turns = agent._history()
+    agent._past, agent._sizes = len(turns), [len(t) for t in turns]
+    return [*[m for t in turns for m in t], Message.user("Continue.")]
 
 
 def test_direct_history_retains_permitted_turns_and_withholds_revoked_answers(home, tmp_path):
@@ -160,11 +160,11 @@ def test_access_filter_reports_changes_and_preserves_useful_context(home, tmp_pa
     retained_turns(agent, [path], ["PRIVATE"])
     messages = fold_messages(agent)
     if retained == "summary":
-        agent._summary, agent._done, agent._past = "PRIVATE SUMMARY", 1, 0
+        agent._summary, agent._done, agent._past, agent._sizes = "PRIVATE SUMMARY", 1, 0, []
         messages = [messages[-1]]
         agent._prompt += EARLIER.format(summary=agent._summary)
     elif retained == "tool":
-        agent._past = 0
+        agent._past, agent._sizes = 0, []
         agent._kept["read"] = ("R1", "read", {}, 7)
         agent._scopes["R1"] = ("read", [str(path)])
         messages = [messages[-1], Message.tool("read", "read", "PRIVATE")]
@@ -249,6 +249,7 @@ def test_revoked_summary_blocks_further_folds_but_preserves_remaining_allowed_tu
     agent = Agent(Folding(), Toolbox(roots=[permitted]))
     retained_turns(agent, [denied, permitted], ["PRIVATE", "PERMITTED " * 1000])
     agent._base, agent._summary, agent._done, agent._past = "base rules", "PRIVATE SUMMARY", 1, 1
+    agent._sizes = [2]
     agent._prompt = "PRIVATE SUMMARY"
     messages = [Message.user("Read"), Message.assistant("PERMITTED " * 1000), Message.user("Continue")]
     assert agent._fold(messages, 100) is False

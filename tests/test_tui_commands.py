@@ -15,7 +15,7 @@ import pytest
 from rich.cells import cell_len
 
 from peresearch import settings, tui
-from peresearch.agent import Agent, Answer, Check, Limits, history_file
+from peresearch.agent import Agent, Answer, Check, Limits, conversation_file
 from peresearch.tools import Source
 from peresearch.llm import Reply, ToolCall
 from peresearch.tui import COMMANDS, KEYS, Permission, Prompt
@@ -172,11 +172,12 @@ def test_busy_guards_retry_sources_new_clear_and_setup(home, notes):
 
 
 def write_history(conversations):
-    """A project's history as the agent writes it: one line per turn, with its conversation."""
-    path = history_file("default")
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text("".join(json.dumps({"time": when, "conversation": cid, "question": q, "answer": a, "sources": src}) + "\n"
-                            for cid, turns in conversations for when, q, a, src in turns))
+    """A project's history as the agent writes it: each conversation's file, one line per turn."""
+    for cid, turns in conversations:
+        path = conversation_file("default", cid)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("".join(json.dumps({"time": when, "conversation": cid, "question": q, "answer": a,
+                                            "sources": src}) + "\n" for when, q, a, src in turns))
 
 
 def minute(t):
@@ -781,7 +782,7 @@ def test_conversations_are_named_cleared_resumed_by_name_and_their_usage_shown(h
     from peresearch.agent import conversations, read_turns
     midnight = time.mktime(time.localtime()[:3] + (0, 0, 0, 0, 0, -1))
     write_history([("c-2001", [(1_000_000_000, "An old one", "ok", {})])])      # an earlier day: not today's
-    with history_file("default").open("a") as f:
+    with conversation_file("default", "c-2001").open("a") as f:
         for when, question, n in ((1_000_000_001, "Old?", 5), (midnight - 1800, "Late last night?", 7),
                                   (midnight, "Just after midnight?", 11)):            # the last one is today's
             f.write(json.dumps({"time": when, "conversation": "c-2001", "question": question, "answer": "ok",
@@ -833,11 +834,10 @@ def test_conversations_are_named_cleared_resumed_by_name_and_their_usage_shown(h
         menu = app.query_one("#commands", OptionList)
         app.rows = [str(menu.get_option_at_index(i).prompt) for i in range(menu.option_count)]
     app = tui_run(make, steps)
-    path = history_file("default")
-    assert [(c.id, c.name, c.questions) for c in conversations(path)] == [
+    assert [(c.id, c.name, c.questions) for c in conversations("default")] == [
         (app.first, "BPE notes", 2), (app.second, "tokenizers", 1), (app.zero, "", 1), ("c-2001", "", 4)]
     assert app.kept == (app.first, "a name is at most 80 characters")
-    assert app.third == app.first and read_turns(path)[-1]["question"] == "Again?"
+    assert app.third == app.first and read_turns(conversation_file("default", app.first))[-1]["question"] == "Again?"
     assert app.usage_one == ("page", "**Usage** (model requests · tokens sent · tokens generated)\n"
                                      "- this conversation: 1 · 1,200 · 40\n- today, this project: 13 · 2,300 · 150\n"
                                      "- this project: 25 · 3,500 · 270")
@@ -877,9 +877,9 @@ def test_conversations_are_named_cleared_resumed_by_name_and_their_usage_shown(h
     early.made = later.made
     assert early.usage_none[1].startswith("**Usage** (model requests · tokens sent · tokens generated)\n"
                                           "- this conversation: 0 · 0 · 0\n")
-    assert next(c for c in conversations(path) if c.id == early.made).name == "early name"
+    assert next(c for c in conversations("default") if c.id == early.made).name == "early name"
     assert early.odd == ["This conversation is named “[/b] odd [b]name”.", "no conversation named or numbered “[/x]”"]
-    assert next(c for c in conversations(path) if c.id == app.second).name == "tokenizers"   # not "for another"
+    assert next(c for c in conversations("default") if c.id == app.second).name == "tokenizers"   # not "for another"
 
 
 def test_context_shows_what_the_next_request_holds(home, notes):
